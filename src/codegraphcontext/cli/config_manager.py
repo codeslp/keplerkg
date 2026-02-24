@@ -16,7 +16,7 @@ CONFIG_DIR = Path.home() / ".codegraphcontext"
 CONFIG_FILE = CONFIG_DIR / ".env"
 
 # Database credential keys (stored in same .env file but not managed as config)
-DATABASE_CREDENTIAL_KEYS = {"NEO4J_URI", "NEO4J_USERNAME", "NEO4J_PASSWORD"}
+DATABASE_CREDENTIAL_KEYS = {"NEO4J_URI", "NEO4J_USERNAME", "NEO4J_PASSWORD", "NEO4J_DATABASE"}
 
 # Default configuration values
 DEFAULT_CONFIG = {

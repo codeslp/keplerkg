@@ -288,7 +288,11 @@ def _load_credentials():
             os.environ.get("NEO4J_PASSWORD")
         ])
         if has_neo4j_creds:
-            console.print("[cyan]Using database: Neo4j[/cyan]")
+            neo4j_db = os.environ.get("NEO4J_DATABASE")
+            if neo4j_db:
+                console.print(f"[cyan]Using database: Neo4j (database: {neo4j_db})[/cyan]")
+            else:
+                console.print("[cyan]Using database: Neo4j[/cyan]")
         else:
             console.print("[yellow]⚠ DEFAULT_DATABASE=neo4j but credentials not found. Falling back to FalkorDB.[/yellow]")
     else:
@@ -700,7 +704,7 @@ def doctor():
             
             if uri and username and password:
                 console.print(f"   [cyan]Testing Neo4j connection to {uri}...[/cyan]")
-                is_connected, error_msg = DatabaseManager.test_connection(uri, username, password)
+                is_connected, error_msg = DatabaseManager.test_connection(uri, username, password, database=os.environ.get("NEO4J_DATABASE"))
                 if is_connected:
                     console.print(f"   [green]✓[/green] Neo4j connection successful")
                 else:
