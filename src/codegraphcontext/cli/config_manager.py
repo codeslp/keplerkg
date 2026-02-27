@@ -86,12 +86,14 @@ CONFIG_VALIDATORS = {
     "SCIP_INDEXER": ["true", "false"],
     "SKIP_EXTERNAL_RESOLUTION": ["true", "false"],
 }
+def ensure_config_dir(path: Path = CONFIG_DIR):
+    """
+    Ensure that the configuration directory exists.
+    Creates the directory and a logs subdirectory if they do not already exist.
+    """
+    path.mkdir(parents=True, exist_ok=True)
+    (path / "logs").mkdir(parents=True, exist_ok=True)
 
-
-def ensure_config_dir():
-    """Ensure configuration directory exists."""
-    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    (CONFIG_DIR / "logs").mkdir(parents=True, exist_ok=True)
 
 
 def load_config() -> Dict[str, str]:
