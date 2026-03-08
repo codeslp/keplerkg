@@ -14,16 +14,23 @@ is_win = sys.platform == 'win32'
 is_mac = sys.platform == 'darwin'
 is_linux = sys.platform == 'linux' or sys.platform == 'linux2'
 
-# Find site-packages dynamically
-# If we are in the venv, we can use sys.prefix
+# Find site-packages dynamically using the 'site' module
+import site
 prefix = Path(sys.prefix)
-if is_win:
-    site_packages = prefix / 'Lib' / 'site-packages'
-else:
-    # On Linux/Mac, find the pythonX.Y directory
-    lib_dir = prefix / 'lib'
-    py_dir = next(lib_dir.glob('python3.*'))
-    site_packages = py_dir / 'site-packages'
+search_paths = [prefix]
+# Add standard site-packages locations
+try:
+    search_paths.extend([Path(p) for p in site.getsitepackages()])
+except AttributeError:
+    # Getsitepackages not available in some venv configs
+    pass
+# Add user-local site-packages
+search_paths.append(Path(site.getusersitepackages()))
+# Ensure we only have unique, existing paths
+search_paths = list(set([p for p in search_paths if p.exists()]))
+
+print(f"Detected Platform: {sys.platform}")
+print(f"Searching for dependencies in: {[str(p) for p in search_paths]}")
 
 print(f"Detected Platform: {sys.platform}")
 print(f"Using site-packages: {site_packages}")
@@ -181,22 +188,34 @@ add_binary('tree_sitter_c_sharp', ext)
 # KùzuDB native extension
 add_binary('kuzu', ext)
 
-# ── 2. Bundle Logic ──────────────────────────────────────────────────────────
+# ── 2. Bundle Logic (Aggressive FalkorDB Collection) ──────────────────────────
+
+# Native dependencies detection
+def find_all_so_files():
+    """Scans all search paths for falkordb.so to ensure it's never missed."""
+    found = []
+    for path in search_paths:
+        if path.exists():
+            for f in path.rglob('falkordb.so'):
+                if f.is_file():
+                    # We put them in the root of the bundle for easiest discovery
+                    print(f"Bundling found native module: {f}")
+                    found.append((str(f), '.')) 
+    return found
+
+# Add every falkordb.so found to binaries
+binaries.extend(find_all_so_files())
 
 # Tricky packages collection (redislite, falkordb, falkordblite)
 if not is_win:
     for pkg in ['redislite', 'falkordb', 'falkordblite']:
-        t_datas, t_binaries, t_hiddenimports = collect_all(pkg)
-        datas += t_datas
-        binaries += t_binaries
-        hidden_imports += t_hiddenimports
-    
-    # Specific additions for falkordblite
-    # Ensure helper libraries are available at root for easier discovery
-    add_binary('falkordblite.libs', '*', '.')
-    add_binary('falkordblite.libs', '*')
-    add_binary('falkordblite.scripts', ext, '.')
-    add_binary('falkordblite.scripts', ext)
+        try:
+            t_datas, t_binaries, t_hiddenimports = collect_all(pkg)
+            datas += t_datas
+            binaries += t_binaries
+            hidden_imports += t_hiddenimports
+        except Exception as e:
+            print(f"Warning: collect_all failed for {pkg}: {e}")
 
 # stdlibs: dynamically imports py3.py, py312.py, etc. via importlib
 stdlibs_dir = find_pkg_dir('stdlibs')

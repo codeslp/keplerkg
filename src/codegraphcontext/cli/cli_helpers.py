@@ -27,10 +27,32 @@ def _initialize_services():
 
     try:
         db_manager.get_driver()
-    except ValueError as e:
-        console.print(f"[bold red]Database Connection Error:[/bold red] {e}")
-        console.print("Please ensure your Neo4j credentials are correct and the database is running.")
-        return None, None, None
+    except Exception as e:
+        # Check if this is a FalkorDB failure that should trigger a KùzuDB fallback
+        from ..core.database_falkordb import FalkorDBUnavailableError
+        if isinstance(e, FalkorDBUnavailableError):
+            console.print(f"[yellow]⚠ FalkorDB Lite is not functional in this environment: {e}[/yellow]")
+            console.print("[cyan]Falling back to KùzuDB for a reliable experience...[/cyan]")
+            
+            # Close the broken driver/socket
+            try:
+                db_manager.close_driver()
+            except Exception:
+                pass
+            
+            # Re-initialize explicitly with KùzuDB
+            from ..core.database_kuzu import KuzuDBManager
+            db_manager = KuzuDBManager()
+            try:
+                db_manager.get_driver()
+                console.print("[green]✓[/green] Successfully switched to KùzuDB fallback")
+            except Exception as kuzu_e:
+                console.print(f"[bold red]Critical Error:[/bold red] Both FalkorDB and KùzuDB failed: {kuzu_e}")
+                return None, None, None
+        else:
+            console.print(f"[bold red]Database Connection Error:[/bold red] {e}")
+            console.print("Please ensure your database is configured correctly or run 'cgc doctor'.")
+            return None, None, None
     
     # The GraphBuilder requires an event loop, even for synchronous-style execution
     try:
