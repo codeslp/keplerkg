@@ -466,15 +466,32 @@ class GraphBuilder:
             # Handle CONTAINS relationship between class to their children like variables
             for func in file_data.get('functions', []):
                 if func.get('class_context'):
-                    session.run("""
+                    # Try same-file match first (Python, JS, etc.)
+                    if not self._safe_run_create(session, """
                         MATCH (c:Class {name: $class_name, path: $path})
                         MATCH (fn:Function {name: $func_name, path: $path, line_number: $func_line})
                         MERGE (c)-[:CONTAINS]->(fn)
-                    """, 
-                    class_name=func['class_context'],
-                    path=file_path_str,
-                    func_name=func['name'],
-                    func_line=func['line_number'])
+                        RETURN count(*) as created
+                    """, {
+                        'class_name': func['class_context'],
+                        'path': file_path_str,
+                        'func_name': func['name'],
+                        'func_line': func['line_number']
+                    }):
+                        # Cross-file match for C/C++ where class is in .h and method in .cpp.
+                        # Note: matches by class name only (no path constraint), so classes
+                        # with identical names in different files could get false links.
+                        self._safe_run_create(session, """
+                            MATCH (c:Class {name: $class_name})
+                            MATCH (fn:Function {name: $func_name, path: $path, line_number: $func_line})
+                            MERGE (c)-[:CONTAINS]->(fn)
+                            RETURN count(*) as created
+                        """, {
+                            'class_name': func['class_context'],
+                            'path': file_path_str,
+                            'func_name': func['name'],
+                            'func_line': func['line_number']
+                        })
 
             # --- NEW: Class INCLUDES Module (Ruby mixins) ---
             for inc in file_data.get('module_inclusions', []):
