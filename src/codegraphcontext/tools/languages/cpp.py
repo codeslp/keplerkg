@@ -270,6 +270,7 @@ class CppTreeSitterParser:
         query_str = CPP_QUERIES['enums']
         for node, capture_name in execute_query(self.language, query_str, root_node):
             if capture_name == 'name':
+                name = self._get_node_text(node)
                 enum_node = node.parent
                 enum_data = {
                     "name": name,
