@@ -65,6 +65,8 @@ class RepositoryEventHandler(FileSystemEventHandler):
         # 3. After all files are parsed, create the relationships (e.g., function calls) between them.
         self.graph_builder._create_all_function_calls(self.all_file_data, self.imports_map)
         self.graph_builder._create_all_inheritance_links(self.all_file_data, self.imports_map)
+        # Free memory — all_file_data is only needed during the linking pass.
+        self.all_file_data.clear()
         info_logger(f"Initial scan and graph linking complete for: {self.repo_path}")
 
     def _debounce(self, event_path, action):
@@ -116,6 +118,8 @@ class RepositoryEventHandler(FileSystemEventHandler):
         info_logger("Re-linking the entire graph for calls and inheritance...")
         self.graph_builder._create_all_function_calls(self.all_file_data, self.imports_map)
         self.graph_builder._create_all_inheritance_links(self.all_file_data, self.imports_map)
+        # Free memory — all_file_data is only needed during the linking pass.
+        self.all_file_data.clear()
         info_logger(f"Graph refresh for change in {event_path_str} complete! ✅")
 
     # The following methods are called by the watchdog observer when a file event occurs.
