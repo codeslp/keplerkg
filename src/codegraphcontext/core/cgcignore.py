@@ -1,6 +1,6 @@
 from pathlib import Path
 from typing import Iterable, Optional, Tuple
-import pathspec
+from pathspec import PathSpec
 
 def parse_cgcignore_lines(lines: Iterable[str]) -> list[str]:
     """Return valid ignore patterns from raw .cgcignore lines.
@@ -47,7 +47,7 @@ def build_ignore_spec(
     ignore_root: Path,
     default_patterns: list[str],
     explicit_path: Optional[str] = None,
-) -> Tuple[pathspec.PathSpec, Optional[Path]]:
+) -> Tuple[PathSpec, Optional[Path]]:
     """Build PathSpec using merged default + user .cgcignore patterns.
 
     Returns the compiled spec and the discovered/created .cgcignore path.
@@ -57,7 +57,7 @@ def build_ignore_spec(
     if cgcignore_path:
         user_patterns = parse_cgcignore_lines(cgcignore_path.read_text(encoding="utf-8").splitlines())
         all_patterns = default_patterns + user_patterns
-        return pathspec.PathSpec.from_lines("gitwildmatch", all_patterns), cgcignore_path
+        return PathSpec.from_lines("gitwildmatch", all_patterns), cgcignore_path
 
     if explicit_path:
         target_path = Path(explicit_path)
@@ -66,4 +66,4 @@ def build_ignore_spec(
     else:
         target_path = ignore_root / ".cgcignore"
     ensure_default_cgcignore(target_path, default_patterns)
-    return pathspec.PathSpec.from_lines("gitwildmatch", default_patterns), target_path
+    return PathSpec.from_lines("gitwildmatch", default_patterns), target_path
