@@ -33,6 +33,7 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+          architecture: 'x64'
           cache: 'pip'
 
       - name: Install dependencies (Windows/Mac)
@@ -48,22 +49,17 @@ jobs:
         run: |
           pyinstaller cgc.spec --clean
 
-      - name: Build with PyInstaller (Linux - Manylinux)
+      - name: Install dependencies (Linux)
         if: runner.os == 'Linux'
         run: |
-          docker run --rm \
-            -v ${{ github.workspace }}:/src \
-            quay.io/pypa/manylinux2014_x86_64 \
-            /bin/bash -c "
-              set -e
-              yum install -y libffi-devel gcc python3-devel
-              cd /src
-              /opt/python/cp312-cp312/bin/python -m pip install --upgrade pip setuptools wheel build
-              /opt/python/cp312-cp312/bin/pip install .
-              /opt/python/cp312-cp312/bin/pip install --no-binary pyinstaller pyinstaller
-              /opt/python/cp312-cp312/bin/pyinstaller cgc.spec --clean
-            "
-          sudo chown -R $USER:$USER dist build
+          python -m pip install --upgrade pip setuptools wheel build
+          pip install .
+          pip install pyinstaller
+
+      - name: Build with PyInstaller (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          pyinstaller cgc.spec --clean
 
       - name: Rename artifact (Linux/Mac)
         if: runner.os != 'Windows'
