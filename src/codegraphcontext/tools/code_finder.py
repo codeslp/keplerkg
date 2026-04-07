@@ -9,6 +9,21 @@ from ..utils.path_ignore import cypher_path_not_under_ignore_dirs
 
 logger = logging.getLogger(__name__)
 
+
+def _levenshtein_distance(a: str, b: str) -> int:
+    """Levenshtein distance for short identifiers (typo-tolerant name search)."""
+    if len(a) < len(b):
+        return _levenshtein_distance(b, a)
+    if not b:
+        return len(a)
+    prev = list(range(len(b) + 1))
+    for i, c1 in enumerate(a):
+        curr = [i + 1]
+        for j, c2 in enumerate(b):
+            curr.append(min(prev[j + 1] + 1, curr[j] + 1, prev[j] + (c1 != c2)))
+        prev = curr
+    return prev[-1]
+
 class CodeFinder:
     """Module for finding relevant code snippets and analyzing relationships."""
 
@@ -42,11 +57,52 @@ class CodeFinder:
                 LIMIT 20
             """
 
-    def find_by_function_name(self, search_term: str, fuzzy_search: bool, repo_path: Optional[str] = None) -> List[Dict]:
-        """Find functions by name matching."""
+    def _find_by_name_fuzzy_portable(
+        self,
+        label: Literal["Function", "Class"],
+        search_term: str,
+        edit_distance: int,
+        repo_path: Optional[str],
+    ) -> List[Dict]:
+        """Fuzzy name match for backends without Lucene fuzzy syntax (Kùzu, FalkorDB, …)."""
+        if not search_term.strip():
+            return []
+        where_clause = "WHERE node.path STARTS WITH $repo_path" if repo_path else ""
+        limit_tail = "" if repo_path else " LIMIT 8000"
+        params: Dict[str, Any] = {}
+        if repo_path:
+            params["repo_path"] = repo_path
+        query = f"""
+            MATCH (node:{label})
+            {where_clause}
+            RETURN node.name as name, node.path as path, node.line_number as line_number,
+                node.source as source, node.docstring as docstring, node.is_dependency as is_dependency
+            {limit_tail}
+        """
         with self.driver.session() as session:
-            if not fuzzy_search:
-                # Use simple match for exact search to avoid fulltext index dependency
+            rows = session.run(query, **params).data()
+        q = search_term.lower()
+        scored: List[tuple[int, Dict]] = []
+        for row in rows:
+            nm = row.get("name")
+            if not isinstance(nm, str):
+                continue
+            d = _levenshtein_distance(q, nm.lower())
+            if d <= edit_distance:
+                scored.append((d, row))
+        scored.sort(key=lambda x: x[0])
+        return [r for _, r in scored[:20]]
+
+    def find_by_function_name(
+        self,
+        search_term: str,
+        fuzzy_search: bool,
+        repo_path: Optional[str] = None,
+        edit_distance: int = 2,
+    ) -> List[Dict]:
+        """Find functions by name matching."""
+        if not fuzzy_search:
+            with self.driver.session() as session:
                 result = session.run(f"""
                     MATCH (node:Function {{name: $name}})
                     {"WHERE node.path STARTS WITH $repo_path" if repo_path else ""}
@@ -55,19 +111,31 @@ class CodeFinder:
                     LIMIT 20
                 """, name=search_term, repo_path=repo_path)
                 return result.data()
-            
-            # Fuzzy search using fulltext index (Neo4j) or CONTAINS fallback (FalkorDB)
-            # On FalkorDB, format_query uses CONTAINS so we pass the raw term; on Neo4j
-            # we need the Lucene field-selector prefix.
-            formatted_search_term = search_term if self._is_falkordb else f"name:{search_term}"
-            result = session.run(self.format_query("Function", fuzzy_search, repo_path), search_term=formatted_search_term, repo_path=repo_path)
+
+        if self._is_falkordb:
+            return self._find_by_name_fuzzy_portable(
+                "Function", search_term, edit_distance, repo_path
+            )
+
+        formatted_search_term = f"name:{search_term}"
+        with self.driver.session() as session:
+            result = session.run(
+                self.format_query("Function", fuzzy_search, repo_path),
+                search_term=formatted_search_term,
+                repo_path=repo_path,
+            )
             return result.data()
 
-    def find_by_class_name(self, search_term: str, fuzzy_search: bool, repo_path: Optional[str] = None) -> List[Dict]:
+    def find_by_class_name(
+        self,
+        search_term: str,
+        fuzzy_search: bool,
+        repo_path: Optional[str] = None,
+        edit_distance: int = 2,
+    ) -> List[Dict]:
         """Find classes by name matching."""
-        with self.driver.session() as session:
-            if not fuzzy_search:
-                # Use simple match for exact search to avoid fulltext index dependency
+        if not fuzzy_search:
+            with self.driver.session() as session:
                 result = session.run(f"""
                     MATCH (node:Class {{name: $name}})
                     {"WHERE node.path STARTS WITH $repo_path" if repo_path else ""}
@@ -77,11 +145,18 @@ class CodeFinder:
                 """, name=search_term, repo_path=repo_path)
                 return result.data()
 
-            # Fuzzy search using fulltext index (Neo4j) or CONTAINS fallback (FalkorDB)
-            # On FalkorDB, format_query uses CONTAINS so we pass the raw term; on Neo4j
-            # we need the Lucene field-selector prefix.
-            formatted_search_term = search_term if self._is_falkordb else f"name:{search_term}"
-            result = session.run(self.format_query("Class", fuzzy_search, repo_path), search_term=formatted_search_term, repo_path=repo_path)
+        if self._is_falkordb:
+            return self._find_by_name_fuzzy_portable(
+                "Class", search_term, edit_distance, repo_path
+            )
+
+        formatted_search_term = f"name:{search_term}"
+        with self.driver.session() as session:
+            result = session.run(
+                self.format_query("Class", fuzzy_search, repo_path),
+                search_term=formatted_search_term,
+                repo_path=repo_path,
+            )
             return result.data()
 
     def find_by_variable_name(self, search_term: str, repo_path: Optional[str] = None) -> List[Dict]:
@@ -181,23 +256,26 @@ class CodeFinder:
 
     def find_related_code(self, user_query: str, fuzzy_search: bool, edit_distance: int, repo_path: Optional[str] = None) -> Dict[str, Any]:
         """Find code related to a query using multiple search strategies"""
-        # FalkorDB does not support Lucene-style fuzzy edit-distance syntax (e.g. term~2).
-        # On FalkorDB, always use the plain query so that the CONTAINS-based fallbacks work.
-        if fuzzy_search and self._is_falkordb:
-            logger.debug("FalkorDB backend: ignoring fuzzy edit-distance normalisation; using plain CONTAINS search.")
-            fuzzy_search = False
-
-        if fuzzy_search:
-            user_query_normalized = " ".join(map(lambda x: f"{x}~{edit_distance}", user_query.split(" ")))
-        else:
-            user_query_normalized = user_query
+        # Neo4j full-text uses Lucene fuzzy tokens (e.g. name:foo~2). Kùzu/FalkorDB use
+        # portable Levenshtein over candidate names instead.
+        lucene_fuzzy_query = (
+            " ".join(f"{t}~{edit_distance}" for t in user_query.split())
+            if fuzzy_search and not self._is_falkordb
+            else user_query
+        )
+        name_lookup_q = lucene_fuzzy_query if (fuzzy_search and not self._is_falkordb) else user_query
+        content_lookup_q = lucene_fuzzy_query if (fuzzy_search and not self._is_falkordb) else user_query
 
         results: Dict[str, Any] = {
-            "query": user_query_normalized,
-            "functions_by_name": self.find_by_function_name(user_query_normalized, fuzzy_search, repo_path),
-            "classes_by_name": self.find_by_class_name(user_query_normalized, fuzzy_search, repo_path),
+            "query": lucene_fuzzy_query if fuzzy_search else user_query,
+            "functions_by_name": self.find_by_function_name(
+                name_lookup_q, fuzzy_search, repo_path, edit_distance
+            ),
+            "classes_by_name": self.find_by_class_name(
+                name_lookup_q, fuzzy_search, repo_path, edit_distance
+            ),
             "variables_by_name": self.find_by_variable_name(user_query, repo_path),  # no fuzzy for variables as they are not using full-text index
-            "content_matches": self.find_by_content(user_query_normalized, repo_path)
+            "content_matches": self.find_by_content(content_lookup_q, repo_path),
         }
         
         all_results: List[Dict[str, Any]] = []
@@ -1069,4 +1147,14 @@ class CodeFinder:
                 RETURN r.name as name, r.path as path, r.is_dependency as is_dependency
                 ORDER BY r.name
             """)
-            return result.data()
+            rows = result.data()
+            bad = [r for r in rows if r.get("path") in (None, "")]
+            if bad:
+                logger.warning(
+                    "Found %s Repository record(s) with missing path in the graph; "
+                    "they are ignored when matching filesystem paths. If this persists, "
+                    "remove stale Repository nodes (e.g. Neo4j: "
+                    "MATCH (r:Repository) WHERE r.path IS NULL DETACH DELETE r) and re-index.",
+                    len(bad),
+                )
+            return rows

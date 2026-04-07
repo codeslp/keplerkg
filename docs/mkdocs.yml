@@ -37,6 +37,7 @@ nav:
     - Onboarding Guide: guides/onboarding.md
     - Neo4j Setup Wizard : guides/setup_deep_dive.md
     - MCP Setup Wizard : guides/mcp_guide.md
+    - "Agent skill (AI assistants)": agent_skill_codegraphcontext.md
     - Visualizing the Graph: guides/visualization.md
     - Using On-Demand Bundles: guides/bundles.md
     - CI/CD & Advanced: guides/ci_cd.md

@@ -23,6 +23,7 @@ cgc mcp setup
 | **Cursor** | Automatic | Requires "MCP" feature enabled in settings. |
 | **Claude Desktop** | Automatic | Works with the Claude 3.5 Sonnet model. |
 | **VS Code** | Semi-Automatic | Requires the **"Continue"** extension or similar MCP client. |
+| **OpenCode** | Manual | Add a stdio MCP server with command `cgc` and args `mcp`, `start`; mirror the same env vars as your CLI (`DEFAULT_DATABASE`, Neo4j, Kùzu, etc.). See the [OpenCode MCP servers guide](https://opencode.ai/docs/ko/mcp-servers/#_top). |
 
 ## 3. How to Use It (Once Connected)
 

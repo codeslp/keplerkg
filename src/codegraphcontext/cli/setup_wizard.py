@@ -135,12 +135,26 @@ def convert_mcp_json_to_yaml():
             yaml.dump(mcp_config, yaml_file, default_flow_style=False)
         console.print(f"[green]Generated devfile.yaml for Amazon Q Developer at {yaml_path}[/green]")
 
+def _print_opencode_mcp_instructions(mcp_config: dict) -> None:
+    """OpenCode manages MCP in its own UI; we only print the stdio snippet + doc link."""
+    console.print("\n[bold cyan]OpenCode[/bold cyan]")
+    console.print(
+        "Register a stdio MCP server in OpenCode using the same command, args, and env as below "
+        "(mirror your generated mcp.json so OpenCode and the CLI share one database)."
+    )
+    console.print(
+        "\n[dim]Vendor guide:[/dim] https://opencode.ai/docs/ko/mcp-servers/#_top"
+    )
+    console.print("\n[bold]Suggested MCP server JSON:[/bold]")
+    console.print(json.dumps(mcp_config, indent=2))
+
+
 def _configure_ide(mcp_config):
     """Asks user for their IDE and configures it automatically."""
     questions = [
         {
             "type": "confirm",
-            "message": "Automatically configure your IDE/CLI (VS Code, Cursor, Windsurf, Claude, Gemini, Cline, RooCode, ChatGPT Codex, Amazon Q Developer, Aider, Kiro, Antigravity)?",
+            "message": "Automatically configure your IDE/CLI (VS Code, Cursor, Windsurf, Claude, Gemini, Cline, RooCode, ChatGPT Codex, Amazon Q Developer, Aider, Kiro, Antigravity, OpenCode)?",
             "name": "configure_ide",
             "default": True,
         }
@@ -154,7 +168,7 @@ def _configure_ide(mcp_config):
         {
             "type": "list",
             "message": "Choose your IDE/CLI to configure:",
-            "choices": ["VS Code", "Cursor", "Windsurf", "Claude code", "Gemini CLI", "ChatGPT Codex", "Cline", "RooCode", "Amazon Q Developer", "JetBrainsAI", "Aider", "Kiro", "Antigravity", "None of the above"],
+            "choices": ["VS Code", "Cursor", "Windsurf", "Claude code", "Gemini CLI", "ChatGPT Codex", "Cline", "RooCode", "Amazon Q Developer", "JetBrainsAI", "Aider", "Kiro", "Antigravity", "OpenCode", "None of the above"],
             "name": "ide_choice",
         }
     ]
@@ -165,6 +179,13 @@ def _configure_ide(mcp_config):
         console.print("\n[cyan]You can add the MCP server manually to your IDE/CLI.[/cyan]")
         return
 
+    if ide_choice == "OpenCode":
+        _print_opencode_mcp_instructions(mcp_config)
+        console.print(
+            "\n[green]When you have pasted this into OpenCode, reload MCP and run "
+            "`cgc mcp start` from a terminal to verify the server starts cleanly.[/green]"
+        )
+        return
 
     if ide_choice in ["VS Code", "Cursor", "Claude code", "Gemini CLI", "ChatGPT Codex", "Cline", "Windsurf", "RooCode", "Amazon Q Developer", "JetBrainsAI", "Aider", "Kiro", "Antigravity"]:
         console.print(f"\n[bold cyan]Configuring for {ide_choice}...[/bold cyan]")

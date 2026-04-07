@@ -1,5 +1,7 @@
 from typing import Any, Dict
+
 from ...utils.debug_log import debug_log, error_logger
+from ...utils.repo_path import any_repo_matches_path
 
 def list_watched_paths(code_watcher, **args) -> Dict[str, Any]:
     """Tool to list all currently watched directory paths."""
@@ -50,7 +52,7 @@ def watch_directory(code_watcher, list_repositories_func, add_code_func, **args)
         # 2. Check if the repository is already indexed
         indexed_repos_result = list_repositories_func()
         indexed_repos = indexed_repos_result.get("repositories", [])
-        is_already_indexed = any(Path(repo["path"]).resolve() == path_obj for repo in indexed_repos)
+        is_already_indexed = any_repo_matches_path(indexed_repos, path_obj)
 
         # 3. Decide whether to perform an initial scan
         if is_already_indexed:

@@ -99,8 +99,9 @@ def find_code(code_finder: CodeFinder, **args) -> Dict[str, Any]:
     repo_path = args.get("repo_path")
 
     if fuzzy_search:
-        # Assuming minimal normalization is fine here if not method available
-        query = query.lower().replace("_", " ").strip()
+        # Preserve case for Lucene / Levenshtein name matching; lowercasing breaks
+        # camelCase fuzzy hits (see GH #758).
+        query = query.replace("_", " ").strip()
         
     try:
         debug_log(f"Finding code for query: {query} with fuzzy_search={fuzzy_search}, edit_distance={edit_distance}, repo_path={repo_path}")

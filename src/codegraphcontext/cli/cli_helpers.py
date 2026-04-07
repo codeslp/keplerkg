@@ -24,6 +24,7 @@ from ..tools.code_finder import CodeFinder
 from ..tools.graph_builder import GraphBuilder
 from ..tools.package_resolver import get_local_package_path
 from ..utils.debug_log import info_logger, warning_logger
+from ..utils.repo_path import any_repo_matches_path
 from .config_manager import resolve_context, ResolvedContext, register_repo_in_context, ensure_first_run_bootstrap
 
 console = Console()
@@ -175,8 +176,8 @@ def index_helper(path: str, context: Optional[str] = None):
         return
 
     indexed_repos = code_finder.list_indexed_repositories()
-    repo_exists = any(Path(repo["path"]).resolve() == path_obj for repo in indexed_repos)
-    
+    repo_exists = any_repo_matches_path(indexed_repos, path_obj)
+
     if repo_exists:
         # Check if the repository actually has files (not just an empty node from interrupted indexing)
         # Use variable-length path to handle both flat (Repository->File) and
@@ -184,7 +185,7 @@ def index_helper(path: str, context: Optional[str] = None):
         try:
             with db_manager.get_driver().session() as session:
                 result = session.run(
-                    "MATCH (r:Repository {path: $path})-[:CONTAINS*]->(f:File) RETURN count(f) as file_count",
+                    "MATCH (r:Repository {path: $path})-[:CONTAINS*]->(f:File) RETURN count(DISTINCT f) as file_count",
                     path=str(path_obj)
                 )
                 record = result.single()
@@ -284,7 +285,7 @@ def list_repos_helper(context: Optional[str] = None):
 
         for repo in repos:
             repo_type = "Dependency" if repo.get("is_dependency") else "Project"
-            table.add_row(repo["name"], repo["path"], repo_type)
+            table.add_row(repo.get("name") or "", str(repo.get("path") or ""), repo_type)
         
         console.print(table)
     except Exception as e:
@@ -471,8 +472,8 @@ def reindex_helper(path: str, context: Optional[str] = None):
 
     # Check if already indexed
     indexed_repos = code_finder.list_indexed_repositories()
-    repo_exists = any(Path(repo["path"]).resolve() == path_obj for repo in indexed_repos)
-    
+    repo_exists = any_repo_matches_path(indexed_repos, path_obj)
+
     if repo_exists:
         console.print(f"[yellow]Deleting existing index for: {path_obj}[/yellow]")
         try:
@@ -671,7 +672,7 @@ def watch_helper(path: str, context: Optional[str] = None):
     # transient empty result from list_indexed_repositories never triggers a
     # destructive full rescan of an already-populated graph.
     indexed_repos = code_finder.list_indexed_repositories()
-    is_indexed = any(Path(repo["path"]).resolve() == path_obj for repo in indexed_repos)
+    is_indexed = any_repo_matches_path(indexed_repos, path_obj)
     if not is_indexed:
         # Fallback: count File nodes whose path starts with this repo's path.
         # If > 100 exist, the repo is clearly already indexed — skip the scan.

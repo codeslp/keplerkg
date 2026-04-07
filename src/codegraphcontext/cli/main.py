@@ -111,6 +111,7 @@ def mcp_setup():
     - VS Code, Cursor, Windsurf
     - Claude Desktop, Gemini CLI
     - Cline, RooCode, Amazon Q Developer
+    - OpenCode (prints stdio config + link to vendor docs)
     
     Works with FalkorDB by default (no database setup needed).
     """
