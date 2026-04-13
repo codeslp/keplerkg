@@ -146,6 +146,52 @@ def build_function_call_groups(
     file_to_fn: List[Dict] = []
     file_to_cls: List[Dict] = []
 
+    # Pre-build per-language-extension filtered imports_map views.
+    # When a caller is Java, we only want to resolve against Java files —
+    # this prevents false-positive CALLS edges from names that coincidentally
+    # exist in another language's file (e.g. Java `add()` -> JS `add`).
+    _lang_imports_cache: Dict[str, dict] = {}
+
+    def _get_lang_imports(caller_lang: str) -> dict:
+        if caller_lang not in _lang_imports_cache:
+            # Map language name to typical file extensions
+            _LANG_EXTS: Dict[str, set] = {
+                "java":       {".java"},
+                "python":     {".py", ".ipynb"},
+                "javascript": {".js", ".jsx", ".mjs", ".cjs"},
+                "typescript": {".ts", ".tsx"},
+                "go":         {".go"},
+                "rust":       {".rs"},
+                "cpp":        {".cpp", ".h", ".hpp", ".hh"},
+                "c":          {".c"},
+                "c_sharp":    {".cs"},
+                "kotlin":     {".kt"},
+                "scala":      {".scala", ".sc"},
+                "ruby":       {".rb"},
+                "swift":      {".swift"},
+                "php":        {".php"},
+                "dart":       {".dart"},
+                "perl":       {".pl", ".pm"},
+                "haskell":    {".hs"},
+                "elixir":     {".ex", ".exs"},
+            }
+            exts = _LANG_EXTS.get(caller_lang)
+            if not exts:
+                # Unknown language — use full imports_map unchanged
+                _lang_imports_cache[caller_lang] = imports_map
+            else:
+                filtered: dict = {}
+                for name, paths in imports_map.items():
+                    same_lang = [p for p in paths if Path(p).suffix in exts]
+                    if same_lang:
+                        filtered[name] = same_lang
+                    elif paths:
+                        # Keep non-file entries (e.g. package names with no extension)
+                        if not any(Path(p).suffix for p in paths):
+                            filtered[name] = paths
+                _lang_imports_cache[caller_lang] = filtered
+        return _lang_imports_cache[caller_lang]
+
     for idx, file_data in enumerate(all_file_data):
         caller_file_path = str(Path(file_data["path"]).resolve())
         func_names = {f["name"] for f in file_data.get("functions", [])}
@@ -156,9 +202,12 @@ def build_function_call_groups(
             for imp in file_data.get("imports", [])
         }
 
+        caller_lang = file_data.get("lang", "")
+        effective_imports_map = _get_lang_imports(caller_lang) if caller_lang else imports_map
+
         for call in file_data.get("function_calls", []):
             resolved = resolve_function_call(
-                call, caller_file_path, local_names, local_imports, imports_map, skip_external
+                call, caller_file_path, local_names, local_imports, effective_imports_map, skip_external
             )
             if not resolved:
                 continue
