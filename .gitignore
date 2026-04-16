@@ -76,3 +76,13 @@ cgc_btc/
 *.spec
 todo.md
 .codegraphcontext
+
+# btrain operational state (not source code — do not track)
+.btrain/*
+!.btrain/project.toml
+.claude/collab/
+
+# agentchattr runtime data (chat logs, uploads, tokens — not source)
+agentchattr/data/
+agentchattr/.venv/
+agentchattr/uploads/
