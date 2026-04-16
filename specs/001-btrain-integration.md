@@ -173,19 +173,41 @@ Has anything in the lane's locked files' graph neighborhood changed outside the 
 
 If `--since` is omitted, cgraph uses the lane's `first_seen` timestamp from the advisory state file (§5.1); if that's also absent, falls back to the lane's claim time from btrain's handoff metadata.
 
-#### `cgraph sync-check` (decision 4)
+#### `cgraph sync-check [--source-dir <path>]` (decision 4)
 
-Runs `git fetch upstream` in the cgraph repo itself and reports commits on `upstream/main` not yet merged into `origin/main`. Never auto-merges. Output:
+Reports commits on `upstream/main` not yet merged into `origin/main` of the cgraph fork. Never auto-merges.
+
+**Source-checkout requirement.** sync-check needs a git checkout of the cgraph fork with `upstream` and `origin` remotes configured. This is the natural install mode for contributors, but users who installed cgraph via `pip install cgraph` (pointed at by `[cgraph].bin_path`) have no checkout. Resolution order:
+
+1. `--source-dir <path>` flag (explicit CLI override).
+2. `[cgraph].source_checkout` in `.btrain/project.toml` (persistent config for btrain integration).
+3. Auto-detect: if the cgraph binary's install location contains a `.git/` directory with an `upstream` remote, use that.
+4. If none of the above resolve, emit `skipped` output instead of failing.
+
+**Success output:**
 
 ```json
 {
   "upstream": "CodeGraphContext/CodeGraphContext",
+  "source_dir": "/Users/.../cgraph",
   "local_head": "...",
   "upstream_head": "...",
   "behind_by": 14,
   "new_commits": [{"sha": "...", "subject": "..."}, ...]
 }
 ```
+
+**Skipped output (no source checkout available):**
+
+```json
+{
+  "skipped": true,
+  "reason": "no_source_checkout",
+  "suggestion": "Set [cgraph].source_checkout in .btrain/project.toml to the path of your cgraph fork clone, or pass --source-dir. Installed binaries have no upstream to compare against."
+}
+```
+
+btrain's adapter treats `skipped: true` as "sync-check not applicable" — it does NOT raise a `cgraph_unavailable` advisory. Source-checkout users get the upstream-lag signal; installed-binary users just don't. Exit code is 0 in both cases; `sync-check` never errors on install topology.
 
 A quarterly cron or manual `cgraph sync-check` keeps the fork fresh on the user's schedule.
 
@@ -271,8 +293,8 @@ These are the triggers inside **btrain** (not cgraph) that shell out to cgraph. 
 | `bth` output when `status: needs-review` | `cgraph review-packet` (refs passed if resolvable; omitted otherwise — cgraph falls through §4.3) | Reviewer sees "cgraph review packet available — run: cgraph review-packet ..." as a tip. |
 | `pre-handoff` skill, after diff gate | `cgraph review-packet ...` | Prints advisory if `untested_caller` fires. **Never blocks the handoff** in v1 (soft-warn per decision 5). |
 | `btrain doctor` | `cgraph sync-check` | Reports if cgraph fork is behind upstream. |
-| `btrain handoff claim` / `btrain status` | adapter runs `cgraph blast-radius` to detect overlap, then `cgraph advise --situation lock_overlap` for the pre-formatted tip | Detection and advisory production are two steps: the heavier command computes the condition and populates the advise cache; `advise` is the formatting lookup. One-line tip in btrain stdout. |
-| Agent runs `btrain status` | `cgraph advise` per active lane (pull model, see §5.3) | Surfaces all currently-active advisories across every active lane, deduped per §5.1. |
+| `btrain handoff claim` | adapter runs `cgraph blast-radius --files X --lane <id>` to detect overlap, then `cgraph advise --situation lock_overlap` for the pre-formatted tip | Detection and advisory production are two steps: the heavier command computes the condition and populates the advise cache; `advise` is the formatting lookup. One-line tip in btrain stdout. |
+| Agent runs `btrain status` | adapter refreshes the enabled per-lane producer commands (`blast-radius` for `lock_overlap`, `drift-check` for `drift`), then calls `cgraph advise` only to format any fresh tips (pull model, see §5.3) | Surfaces currently-active advisories across every active lane, deduped per §5.1, without depending on a warm cache. |
 
 **Every integration is opt-in** via `[cgraph]` in `.btrain/project.toml`:
 
@@ -280,9 +302,10 @@ These are the triggers inside **btrain** (not cgraph) that shell out to cgraph. 
 [cgraph]
 enabled = true
 bin_path = "cgraph"                               # default; can point at custom install
+source_checkout = "/Users/me/code/cgraph"         # optional; only needed for `cgraph sync-check` on installed-binary setups
 db_path = "/Volumes/SSD/.cgraph/db"               # decision 3 — external SSD supported
 model_cache = "/Volumes/SSD/.cache/jina"
-advise_on = ["lock_overlap", "drift", "review_ready", "packet_truncated"]
+advise_on = ["lock_overlap", "drift", "packet_truncated"]
 advise_on_resolution = false                      # opt-in: show one-liner when a condition resolves
 
 # Per-lane overrides (optional). Absent lanes inherit project defaults.
@@ -312,10 +335,10 @@ This means: no spam while a long-running condition persists, but no lost signal 
 | `untested_caller` | `sorted(touched_function_ids_without_test_coverage)` |
 | `cross_module_impact` | `sorted(module_boundaries_crossed)` |
 | `stale_index` | `sorted(stale_file_paths)` |
-| `packet_truncated` | `source + ":" + str(total_touched_node_count)` |
+| `packet_truncated` | `handoff_id + ":" + source + ":" + sorted(truncated_node_ids)` |
 | `missing_base_ref` / `empty_diff` / `untracked_only` / `untracked_unindexed_omitted` / `excluded_by_cgcignore` / `refs_diverged_from_main` / `unsupported_repo_shape` / `no_diff_available` | `lane_id + ":" + handoff_id` (one per handoff attempt) |
 
-Any new advisory kind MUST declare its hash rule before shipping.
+Any new advisory kind MUST declare its hash rule before shipping. `packet_truncated` includes the truncated node identities, not just counts, so two different oversized packets on the same lane/handoff do not collapse into one dedupe key.
 
 **State file:** `.btrain/cgraph-advisory-state.jsonl` (btrain-owned). Despite the `.jsonl` extension this is **not** append-only. It is a small JSONL-formatted snapshot of **active advisories only**, read in full and rewritten in full on each update. Resolved advisories are removed from this file immediately and preserved only in telemetry (§5.2). Typical size: < 2KB per repo. One line per active advisory:
 
@@ -351,10 +374,12 @@ Problem: lane-A holds locks. Lane-B claims with overlap → lane-B is warned by 
 
 **Decision: pull model.** `btrain status` aggregates advisories across every active lane, not just the caller's.
 
-- When any agent runs `btrain status`, the adapter iterates active lanes and calls cgraph per-lane.
+- When any agent runs `btrain status`, the adapter iterates active lanes and runs the producer commands for the enabled advisory kinds on each lane (`blast-radius` for `lock_overlap`, `drift-check` for `drift`). It then calls `advise` only to format tips from those freshly-computed conditions.
 - Output groups advisories by lane: `lane a: lock_overlap with lane b on verify_token`, `lane b: drift on src/auth/`, etc.
 - The §5.1 lifecycle applies unchanged — each `(lane, kind, context_hash)` surfaces once when it first appears and then stays quiet. Pull model just widens *which* lanes get evaluated at each `btrain status` call.
 - A single status call may surface new advisories across multiple lanes; it still commits through the single shared advisory-state lock and rewrites one shared active-state snapshot atomically.
+
+`review-packet`-derived advisories such as `packet_truncated` are not recomputed by a plain `btrain status` call because they depend on generating a packet. They are produced on the review-packet path, then surfaced/deduped by the same lifecycle once present.
 
 Why pull over push: zero cross-lane coupling, no mid-lane interrupts, agents see the information when they naturally check status, and `btrain status` becomes the canonical "situational awareness" surface.
 
@@ -363,8 +388,8 @@ Caveat: an agent who never runs `btrain status` on their own lane won't see cros
 **Performance.** Fanning out cgraph calls across N active lanes serially would make `btrain status` stall proportionally. Mitigations:
 
 1. **Parallel fanout.** The adapter fires all per-lane `cgraph` calls concurrently (Node `Promise.all`), bounded by the max of the per-command budgets (§3.4) rather than their sum.
-2. **Status-level cache.** For `btrain status`, the adapter reuses any advisory whose `last_surfaced` is within the last 2s for the same `(lane, kind, context_hash)` rather than re-querying cgraph. This makes rapid successive `btrain status` calls cheap.
-3. **Lane-count budget.** If `active_lanes > 8`, the adapter samples (oldest-first) the first 8 and flags the rest as `cgraph: N additional lanes not analyzed — run \`btrain status --lane <id>\` for a specific one`. Prevents runaway cost on pathological project layouts.
+2. **Status-level cache.** For `btrain status`, the adapter may reuse producer results computed within the last 2s for the same `(lane, producer-kind, producer-input-hash)` rather than re-running the same heavy command. This makes rapid successive `btrain status` calls cheap without pretending that `advise` itself is the source of truth.
+3. **Lane-count budget.** If `active_lanes > 8`, the adapter samples (oldest-first) the first 8 and flags the rest as `cgraph: N additional lanes not analyzed — run \`btrain handoff --lane <id>\` for a specific one`. Uses `btrain handoff --lane` (which exists today and accepts `--lane`) rather than a nonexistent `btrain status --lane` variant. Prevents runaway cost on pathological project layouts.
 
 ## 6. Embeddings (decision 3)
 
@@ -423,8 +448,8 @@ Before promoting any advisory to hard-fail we want ≥ 30 days of telemetry (JSO
 ## 8. Upstream-sync policy (decision 4)
 
 - Fork relationship is the sync primitive. `origin = codeslp/cgraph`, `upstream = CodeGraphContext/CodeGraphContext`.
-- Most implementation lives in a **top-level `cgraph_ext/`** directory so the bulk of our code stays outside upstream's source tree.
-- One deliberate upstream seam remains: `src/codegraphcontext/cli/main.py` must register/import the new Typer commands, and `cgc_entry.py` may need a packaging-level shim. That seam is intentionally small, but it is still an upstream-owned merge surface.
+- Most implementation lives in a sibling package at **`src/codegraphcontext_ext/`** so the bulk of our code stays outside upstream's `src/codegraphcontext/` tree while still shipping cleanly with the repo's current setuptools `src` layout.
+- One deliberate upstream seam remains: `src/codegraphcontext/cli/main.py` must register/import the new Typer commands, and `cgc_entry.py` may need a small PyInstaller-facing shim. That seam is intentionally small, but it is still an upstream-owned merge surface.
 - When upstream files must be modified, prefer subclassing/wrapping over editing in place.
 - `cgraph sync-check` surfaces new upstream commits; user decides when to `git merge upstream/main`.
 - Monthly minimum cadence. Major upstream version jumps (0.x → 0.y) get a checklist.
@@ -438,34 +463,35 @@ Before promoting any advisory to hard-fail we want ≥ 30 days of telemetry (JSO
 
 ### 8.2 CI strategy
 
-- cgraph ships its own CI (`.github/workflows/cgraph.yml`) that runs **only** under `cgraph_ext/` and `schemas/` — upstream's CI files in `.github/workflows/` are untouched and keep running independently. On upstream sync, both CIs run; cgraph's CI guards our additions, upstream's guards the inherited surface.
+- cgraph ships its own CI (`.github/workflows/cgraph.yml`) that runs **only** under `src/codegraphcontext_ext/` and `schemas/` — upstream's CI files in `.github/workflows/` are untouched and keep running independently. On upstream sync, both CIs run; cgraph's CI guards our additions, upstream's guards the inherited surface.
 - If an upstream sync breaks upstream's own CI, that's a signal to hold the merge and investigate — we don't suppress upstream CI even though we don't depend on it for cgraph-specific code.
 
 ## 9. Repo layout
 
 ```
 cgraph/
-├── src/                        # upstream, mostly unmodified
-│   └── codegraphcontext/cli/main.py
-│                              # upstream-owned Typer entrypoint; registers cgraph commands
-├── cgraph_ext/                 # our additions — top-level, no collision with src/
-│   ├── commands/
-│   │   ├── context.py
-│   │   ├── review_packet.py
-│   │   ├── blast_radius.py
-│   │   ├── drift_check.py
-│   │   ├── advise.py
-│   │   └── sync_check.py
-│   ├── hybrid/
-│   │   ├── ann.py              # KùzuDB HNSW query wrapper
-│   │   └── traverse.py         # Cypher traversal helpers
-│   ├── embeddings/
-│   │   └── providers.py        # local, voyage, openai
-│   ├── daemon/
-│   │   └── serve.py            # `cgraph serve` warm-daemon (§3.4)
-│   └── io/
-│       ├── json_stdout.py      # enforce output contract
-│       └── schema_check.py     # validate every command's output against schemas/
+├── src/
+│   ├── codegraphcontext/       # upstream, mostly unmodified
+│   │   └── cli/main.py
+│   │                          # upstream-owned Typer entrypoint; registers cgraph commands
+│   └── codegraphcontext_ext/   # our additions — sibling package, shippable under the existing src layout
+│       ├── commands/
+│       │   ├── context.py
+│       │   ├── review_packet.py
+│       │   ├── blast_radius.py
+│       │   ├── drift_check.py
+│       │   ├── advise.py
+│       │   └── sync_check.py
+│       ├── hybrid/
+│       │   ├── ann.py          # KùzuDB HNSW query wrapper
+│       │   └── traverse.py     # Cypher traversal helpers
+│       ├── embeddings/
+│       │   └── providers.py    # local, voyage, openai
+│       ├── daemon/
+│       │   └── serve.py        # `cgraph serve` warm-daemon (§3.4)
+│       └── io/
+│           ├── json_stdout.py  # enforce output contract
+│           └── schema_check.py # validate every command's output against schemas/
 ├── schemas/                    # JSON Schema for every cgraph command output
 │   ├── context.json
 │   ├── review-packet.json
@@ -476,18 +502,18 @@ cgraph/
 ├── specs/                      # this file lives here
 ├── tests/cgraph_ext/           # our tests
 ├── .github/workflows/
-│   └── cgraph.yml              # our CI, scoped to cgraph_ext/ + schemas/
+│   └── cgraph.yml              # our CI, scoped to src/codegraphcontext_ext/ + schemas/
 ├── cgc_entry.py                # existing entrypoint; may need a small import shim
 └── README.md                   # upstream; we add a "cgraph additions" section
 ```
 
-Most new code lives under the top-level `cgraph_ext/` namespace. The CLI registration seam in upstream-owned entrypoints is small but real, so upstream merges can still touch that boundary.
+Most new code lives under the `src/codegraphcontext_ext/` sibling package. The CLI registration seam in upstream-owned entrypoints is small but real, so upstream merges can still touch that boundary.
 
 ## 10. Phases
 
 **Phase 0 — Scaffolding (week 1)**
 - Confirm upstream builds and indexes this repo locally.
-- Add `cgraph_ext/` skeleton and `schemas/` directory; CI passes under `.github/workflows/cgraph.yml`.
+- Add `src/codegraphcontext_ext/` skeleton and `schemas/` directory; CI passes under `.github/workflows/cgraph.yml`.
 - Ship `cgraph sync-check` (simplest; validates output contract and schema-validation harness).
 - Publish JSON Schemas for all six new commands as stubs — populated by later phases.
 
