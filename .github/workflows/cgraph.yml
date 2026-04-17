@@ -1,0 +1,49 @@
+name: cgraph
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/cgraph.yml"
+      - "pyproject.toml"
+      - "schemas/**"
+      - "src/codegraphcontext_ext/**"
+      - "tests/cgraph_ext/**"
+      - "tests/unit/test_packaging.py"
+  pull_request:
+    paths:
+      - ".github/workflows/cgraph.yml"
+      - "pyproject.toml"
+      - "schemas/**"
+      - "src/codegraphcontext_ext/**"
+      - "tests/cgraph_ext/**"
+      - "tests/unit/test_packaging.py"
+  workflow_dispatch:
+
+jobs:
+  cgraph:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: src
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install build
+          python -m pip install .[dev]
+
+      - name: Build package
+        run: python -m build
+
+      - name: Run cgraph tests
+        run: python -m pytest -q tests/cgraph_ext tests/unit/test_packaging.py

@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://codeslp.dev/cgraph/schemas/sync-check.json",
+  "title": "cgraph sync-check response",
+  "oneOf": [
+    {
+      "type": "object",
+      "required": [
+        "upstream",
+        "source_dir",
+        "local_head",
+        "upstream_head",
+        "behind_by",
+        "new_commits"
+      ],
+      "properties": {
+        "upstream": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_dir": {
+          "type": "string",
+          "minLength": 1
+        },
+        "local_head": {
+          "type": "string",
+          "minLength": 7
+        },
+        "upstream_head": {
+          "type": "string",
+          "minLength": 7
+        },
+        "behind_by": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "new_commits": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "sha",
+              "subject"
+            ],
+            "properties": {
+              "sha": {
+                "type": "string",
+                "minLength": 7
+              },
+              "subject": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": [
+        "skipped",
+        "reason",
+        "suggestion"
+      ],
+      "properties": {
+        "skipped": {
+          "const": true
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "suggestion": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    }
+  ]
+}

@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://codeslp.dev/cgraph/schemas/context.json",
+  "title": "cgraph context response",
+  "type": "object",
+  "required": ["query", "seeds", "neighborhood", "token_estimate", "token_estimate_basis"],
+  "properties": {
+    "query": {
+      "type": "string",
+      "description": "The natural-language query that was searched."
+    },
+    "seeds": {
+      "type": "array",
+      "description": "Top-k ANN search results.",
+      "items": {
+        "type": "object",
+        "required": ["uid", "name", "file", "score"],
+        "properties": {
+          "uid": { "type": "string" },
+          "name": { "type": ["string", "null"] },
+          "file": { "type": ["string", "null"], "description": "path:line_number" },
+          "table": { "type": "string" },
+          "score": { "type": "number", "minimum": 0, "maximum": 1 }
+        },
+        "additionalProperties": false
+      }
+    },
+    "neighborhood": {
+      "type": "object",
+      "required": ["callers", "callees", "imports"],
+      "properties": {
+        "callers": { "$ref": "#/$defs/nodeList" },
+        "callees": { "$ref": "#/$defs/nodeList" },
+        "imports": { "$ref": "#/$defs/nodeList" }
+      },
+      "additionalProperties": false
+    },
+    "token_estimate": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Approximate token count for the payload."
+    },
+    "token_estimate_basis": {
+      "type": "string",
+      "description": "Tokenizer used for the estimate."
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "nodeList": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["uid", "name", "file"],
+        "properties": {
+          "uid": { "type": "string" },
+          "name": { "type": ["string", "null"] },
+          "file": { "type": ["string", "null"] },
+          "kind": { "type": ["string", "null"] }
+        },
+        "additionalProperties": false
+      }
+    }
+  }
+}

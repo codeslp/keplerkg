@@ -26,9 +26,9 @@ sequential_triggers = []
 project_notes = ""
 
 [lanes]
-ids = ["a", "b", "c", "d"]
+ids = ["a", "b", "c", "d", "e", "f"]
 enabled = true
-per_agent = 2
+per_agent = 3
 
 [lanes.a]
 handoff_path = ".claude/collab/HANDOFF_A.md"
@@ -41,3 +41,9 @@ handoff_path = ".claude/collab/HANDOFF_C.md"
 
 [lanes.d]
 handoff_path = ".claude/collab/HANDOFF_D.md"
+
+[lanes.e]
+handoff_path = ".claude/collab/HANDOFF_E.md"
+
+[lanes.f]
+handoff_path = ".claude/collab/HANDOFF_F.md"

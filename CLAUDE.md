@@ -11,18 +11,20 @@ This repo uses the `btrain` collaboration workflow.
 - Before editing, do a short pre-flight review of the locked files, nearby diff, and likely risk areas so you start from known problems.
 - Run `btrain status` or `btrain doctor` if the local workflow files look stale.
 - Repo config lives at `.btrain/project.toml`.
+- Use the `feedback-triage` skill when processing user-reported issues. It logs entries to `.claude/collab/FEEDBACK_LOG.md` and drives test-first resolution.
+- Use the `bug-fix` skill for developer-found bugs. Write a failing reproduction test before editing production code.
 
 ### Collaboration Setup
 
 - Active collaborating agents: `claude`, `codex`
-- Current lane target: 4 lane(s) (2 per collaborating agent): `a`, `b`, `c`, `d`
+- Current lane target: 6 lane(s) (3 per collaborating agent): `a`, `b`, `c`, `d`, `e`, `f`
 - Change `[agents].active` or `[lanes].per_agent`, then run `btrain init`, `btrain agents set`, or `btrain agents add` to scaffold missing lanes and refresh docs.
 
 ### Multi-Lane Workflow
 
 When `[lanes]` is enabled in `project.toml`, agents work concurrently on separate lanes:
 
-- Use `--lane <id>` (e.g. `a`, `b`, `c`, `d`) with `handoff claim|update|resolve`.
+- Use `--lane <id>` (e.g. `a`, `b`, `c`, `d`, `e`, `f`) with `handoff claim|update|resolve`.
 - Lock files with `--files "path/"` when claiming to prevent cross-lane collisions.
 - Run `btrain locks` to see active file locks.
 - When your lane is done, hand it to a peer reviewer while you continue on other work.

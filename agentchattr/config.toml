@@ -1,0 +1,29 @@
+[server]
+port = 3333
+host = "127.0.0.1"
+data_dir = "./data"
+
+# cgraph agents — matches .btrain/project.toml [agents].active
+[agents.claude]
+command = "claude"
+cwd = ".."
+color = "#da7756"
+label = "Claude"
+
+[agents.codex]
+command = "codex"
+cwd = ".."
+color = "#10a37f"
+label = "Codex"
+
+[btrain]
+repo_path = ".."
+poll_interval = 5
+
+[routing]
+default = "none"
+max_agent_hops = 4
+
+[images]
+upload_dir = "./uploads"
+max_size_mb = 10

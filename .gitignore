@@ -73,6 +73,15 @@ GRANT_KNOWLEDGE_GRAPH.md
 cgc_btc/
 # Claude
 .claude/*
+# cgraph-specific TLA+ process skills are tracked — they encode repo governance,
+# not harness defaults. Other skills under .claude/skills/ remain local.
+!.claude/skills/
+.claude/skills/*
+!.claude/skills/tla-pin-sync/
+!.claude/skills/tla-run-tlc/
+!.claude/skills/tla-author/
+!.claude/skills/tla-trace-explain/
+!.claude/skills/speckit-formal/
 *.spec
 todo.md
 .codegraphcontext
@@ -86,3 +95,5 @@ todo.md
 agentchattr/data/
 agentchattr/.venv/
 agentchattr/uploads/
+viz-embeddings.html
+viz-graph.html

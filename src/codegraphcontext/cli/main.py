@@ -42,6 +42,10 @@ from .cli_helpers import (
     unwatch_helper,
     list_watching_helper,
 )
+try:
+    from codegraphcontext_ext.cli import register_extensions as register_cgraph_extensions
+except ImportError:
+    register_cgraph_extensions = None
 
 # Set the log level for the noisy neo4j, asyncio, and urllib3 loggers to keep the output clean.
 # Get the log level from config, defaulting to WARNING
@@ -80,6 +84,9 @@ app = typer.Typer(
     help="CodeGraphContext: An MCP server for AI-powered code analysis.\n\n[DEPRECATED] 'cgc start' is deprecated. Use 'cgc mcp start' instead.",
     add_completion=True,
 )
+if register_cgraph_extensions is not None:
+    register_cgraph_extensions(app)
+
 console = Console(stderr=True)
 
 # Configure basic logging for the application.

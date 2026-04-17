@@ -1,0 +1,142 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://codeslp.dev/cgraph/schemas/review-packet.json",
+  "title": "cgraph review-packet response",
+  "type": "object",
+  "required": [
+    "source",
+    "base",
+    "head",
+    "diff_stats",
+    "touched_nodes",
+    "callers_not_in_diff",
+    "callees_not_in_diff",
+    "cross_module_impact",
+    "advisories"
+  ],
+  "properties": {
+    "source": {
+      "type": "string",
+      "enum": ["diff", "staged", "workdir", "untracked", "locked_files"],
+      "description": "How the packet was built (§4.3 fallback chain)."
+    },
+    "base": {
+      "type": ["string", "null"],
+      "description": "Git ref for diff base; null if source != 'diff'."
+    },
+    "head": {
+      "type": ["string", "null"],
+      "description": "Git ref for diff head; null if source != 'diff'."
+    },
+    "diff_stats": {
+      "type": "object",
+      "required": ["files", "additions", "deletions"],
+      "properties": {
+        "files": { "type": "integer", "minimum": 0 },
+        "additions": { "type": "integer", "minimum": 0 },
+        "deletions": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "touched_nodes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["uid", "name", "kind"],
+        "properties": {
+          "uid": { "type": "string" },
+          "name": { "type": "string" },
+          "file": { "type": ["string", "null"] },
+          "kind": { "type": "string" }
+        }
+      }
+    },
+    "callers_not_in_diff": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["uid", "name", "kind"],
+        "properties": {
+          "uid": { "type": "string" },
+          "name": { "type": "string" },
+          "file": { "type": ["string", "null"] },
+          "kind": { "type": "string" },
+          "untested": { "type": "boolean" }
+        }
+      }
+    },
+    "callees_not_in_diff": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["uid", "name", "kind"],
+        "properties": {
+          "uid": { "type": "string" },
+          "name": { "type": "string" },
+          "file": { "type": ["string", "null"] },
+          "kind": { "type": "string" }
+        }
+      }
+    },
+    "cross_module_impact": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Top-level module names impacted by the change."
+    },
+    "advisories": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["level", "kind", "detail"],
+        "properties": {
+          "level": {
+            "type": "string",
+            "enum": ["warn", "info"]
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "missing_base_ref",
+              "empty_diff",
+              "untracked_only",
+              "stale_index",
+              "excluded_by_cgcignore",
+              "untracked_unindexed_omitted",
+              "worktree_synthesized",
+              "refs_diverged_from_main",
+              "unsupported_repo_shape",
+              "no_diff_available",
+              "untested_caller",
+              "packet_truncated"
+            ]
+          },
+          "detail": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "truncated": {
+      "type": "boolean",
+      "description": "Present and true when any bucket exceeded --max-nodes."
+    },
+    "total_nodes": {
+      "type": "object",
+      "properties": {
+        "touched": { "type": "integer", "minimum": 0 },
+        "callers": { "type": "integer", "minimum": 0 },
+        "callees": { "type": "integer", "minimum": 0 }
+      },
+      "description": "Original node counts before truncation."
+    },
+    "returned_nodes": {
+      "type": "object",
+      "properties": {
+        "touched": { "type": "integer", "minimum": 0 },
+        "callers": { "type": "integer", "minimum": 0 },
+        "callees": { "type": "integer", "minimum": 0 }
+      },
+      "description": "Node counts after truncation."
+    }
+  },
+  "additionalProperties": false
+}

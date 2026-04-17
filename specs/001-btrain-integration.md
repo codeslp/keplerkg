@@ -1,8 +1,8 @@
 # Spec 001 — cgraph: a btrain-native hybrid GraphRAG layer
 
-**Status:** draft v0.2
+**Status:** draft v0.6
 **Owner:** codeslp
-**Last updated:** 2026-04-16
+**Last updated:** 2026-04-17
 **Upstream:** [CodeGraphContext/CodeGraphContext](https://github.com/CodeGraphContext/CodeGraphContext) (MIT, forked at [codeslp/cgraph](https://github.com/codeslp/cgraph))
 
 ---
@@ -26,7 +26,7 @@ Today all four situations consume tokens linearly with code size. With a structu
 - Not a new graph database. We use KùzuDB via upstream's existing backend.
 - Not a parser. Tree-sitter parsing is upstream's job.
 - Not a replacement for `git diff`. cgraph augments; it does not compete on commit-level operations.
-- Not hard-failing guardrails. Every check is soft-warn in v1. Hard fails only land after soft-warn data shows low false-positive rates.
+- Not hard-failing guardrails by default. v1 is soft-warn for every advisory *except* three named §6.5 standards rules (`circular_imports`, `test_import_in_prod`, and the Python `__name` specialisation of `cross_file_private_access`) where the query is deterministic and a false positive has never been observed in the design corpus. Promotion of any other advisory to hard-fail requires ≥ 30 days of telemetry per §7. See decision 5 (§13).
 
 ## 3. Architecture
 
@@ -44,12 +44,14 @@ btrain knows about cgraph. cgraph does not know about btrain. This keeps cgraph 
 
 A thin module inside **btrain**, not cgraph: `src/brain_train/cgraph_adapter.mjs`. Its job:
 
-- Locate the `cgraph` binary (honor `[cgraph].bin_path` in `.btrain/project.toml`, else `$PATH`). Prefer the `cgraph serve` daemon socket if present (§3.4).
+- Locate the cgraph CLI executable. Honor `[cgraph].bin_path` in `.btrain/project.toml`; otherwise try `cgc` first (the console script this fork inherits from upstream) and `cgraph` second if a compatibility alias is later added. Prefer the `cgc serve` daemon socket if present (§3.4).
 - Translate btrain state (locked files, lane id, base ref) into cgraph CLI arguments.
 - Parse cgraph's stdout JSON, optionally validating against `schemas/<command>.json` in dev mode.
 - Own the **advisory state machine** — read/write `.btrain/cgraph-advisory-state.jsonl` under the OS advisory file lock, append telemetry events to `.btrain/logs/cgraph-advisories.jsonl`. Full lifecycle rules in §5.1.
 - Enforce per-command timeout budgets (§3.4).
 - Degrade gracefully: if `cgraph` is missing, errors, or times out, btrain prints a one-line "cgraph unavailable — skipping advisory" to stderr and continues. **cgraph is never a hard dependency of btrain.**
+
+**CLI naming decision.** The fork/distribution is called **cgraph**, but MVP commands land on the existing upstream `cgc` executable and `cgc_entry.py` PyInstaller path. This keeps Phase 0 aligned with the current package metadata (`pyproject.toml` exports `cgc = "codegraphcontext.cli.main:app"`) and with the seam already added in `src/codegraphcontext/cli/main.py`. A separate `cgraph` shell alias or wrapper is optional later, but the spec must not assume it exists by default.
 
 ### 3.3 Btrain-facing output contract
 
@@ -61,7 +63,7 @@ Every **new btrain-facing command in §4.2** follows the same I/O discipline:
 
 This is non-negotiable for the commands btrain parses. Agents consuming cgraph must be able to pipe stdout directly into a parser without stripping prose.
 
-**Inherited upstream commands are explicitly out of scope.** `cgraph index` and `cgraph watch` in §4.1 keep their current human-facing Typer/Rich stdout in v1. btrain does not parse them on the handoff path, so we do not retrofit them into JSON-only commands. If we later need machine-readable indexing/watch control, we add explicit wrappers or new commands rather than changing the inherited UX in place.
+**Inherited upstream commands are explicitly out of scope.** `cgc index` and `cgc watch` in §4.1 keep their current human-facing Typer/Rich stdout in v1. btrain does not parse them on the handoff path, so we do not retrofit them into JSON-only commands. If we later need machine-readable indexing/watch control, we add explicit wrappers or new commands rather than changing the inherited UX in place.
 
 **Schemas.** Every command ships a matching JSON Schema at `schemas/<command>.json`. CI runs each command against fixture inputs and validates stdout against the schema. Contract drift is a test failure, not a runtime surprise.
 
@@ -71,12 +73,14 @@ This is non-negotiable for the commands btrain parses. Agents consuming cgraph m
 
 | Command | Budget | On timeout |
 | --- | --- | --- |
-| `cgraph advise` | 200ms | adapter proceeds without the tip, silently |
-| `cgraph blast-radius` | 2s | adapter surfaces `cgraph_timeout` advisory and proceeds |
-| `cgraph drift-check` | 2s | same |
-| `cgraph review-packet` | 5s | adapter falls back to raw-diff packet + `cgraph_timeout` advisory |
-| `cgraph context` | 3s | adapter prints "cgraph slow; falling back to raw code read" |
-| `cgraph sync-check` | 5s | adapter silently skips |
+| `cgc advise` (tip lookup, §4.2) | 200ms | adapter proceeds without the tip, silently |
+| `cgc blast-radius` | 2s | adapter surfaces `cgraph_timeout` advisory and proceeds |
+| `cgc drift-check` | 2s | same |
+| `cgc review-packet` | 5s | adapter falls back to raw-diff packet + `cgraph_timeout` advisory |
+| `cgc context` | 3s | adapter prints "cgraph slow; falling back to raw code read" |
+| `cgc sync-check` | 5s | adapter silently skips |
+
+`cgc audit` is **not** in this table. Audit calls are invoked by hooks, skill scripts, and CI — not by the btrain adapter. Each invoking runner owns its own timeout; see §6.6 "Timeout ownership per vector" for per-vector budgets and fallback behavior.
 
 No btrain command is ever blocked by cgraph. Every call has a budget and a fallback.
 
@@ -84,25 +88,25 @@ No btrain command is ever blocked by cgraph. Every call has a budget and a fallb
 
 Two mitigations ship in v1:
 
-1. **Warm-daemon mode (`cgraph serve`).** Long-lived background process speaking a minimal line-protocol over a Unix domain socket at `~/.cache/cgraph/ipc.sock`. CLI commands detect the socket, forward requests, and relay the daemon's stdout. Cold start happens once at daemon startup, not per invocation. Daemon is **optional**; `launchd` / `systemd` templates ship in the repo for users who want always-on.
+1. **Warm-daemon mode (`cgc serve`).** Long-lived background process speaking a minimal line-protocol over a Unix domain socket at `~/.cache/cgraph/ipc.sock`. CLI commands detect the socket, forward requests, and relay the daemon's stdout. Cold start happens once at daemon startup, not per invocation. Daemon is **optional**; `launchd` / `systemd` templates ship in the repo for users who want always-on.
 2. **Subprocess fallback.** When the socket is absent, CLI falls back to direct Python process. Subject to normal budgets. For first-call-heavy paths like `advise`, this means the first tip may time out silently — acceptable in v1, revisited if telemetry shows high cold-miss rate.
 
 btrain's adapter prefers the socket; if not present, it falls through.
 
-**Concurrent cgraph processes.** `cgraph watch` + ad-hoc CLI calls + daemon may share the KùzuDB directory. KùzuDB allows one writer at a time; readers are concurrent. Write operations (`embed`, `index`) acquire an exclusive process-file lock at `$db_path/.cgraph.lock`; contending calls fail fast with `kind: "db_busy"` instead of hanging.
+**Concurrent cgraph processes.** `cgc watch` + ad-hoc CLI calls + daemon may share the KùzuDB directory. KùzuDB allows one writer at a time; readers are concurrent. Write operations (`embed`, `index`) acquire an exclusive process-file lock at `$db_path/.cgraph.lock`; contending calls fail fast with `kind: "db_busy"` instead of hanging.
 
 ## 4. Command surface (MVP)
 
 ### 4.1 Inherited from upstream (documented, unchanged)
 
-- `cgraph index [path]` — full parse, populates KùzuDB.
-- `cgraph watch [path]` — daemon, incremental updates on file change.
+- `cgc index [path]` — full parse, populates KùzuDB.
+- `cgc watch [path]` — daemon, incremental updates on file change.
 
 These inherited commands keep upstream's existing human-readable CLI behavior and are intentionally outside the JSON-only stdout contract in §3.3.
 
 ### 4.2 New in cgraph
 
-#### `cgraph context <query> [--lane <id>] [--k <n>] [--depth <n>]`
+#### `cgc context <query> [--lane <id>] [--k <n>] [--depth <n>]`
 
 Hybrid retrieval. Runs ANN vector search for top-`k` (default 8) semantically relevant function/class nodes, then traverses `depth` hops (default 1) of CALLS / IMPORTS / DEFINED_IN edges. Emits:
 
@@ -124,7 +128,7 @@ Hybrid retrieval. Runs ANN vector search for top-`k` (default 8) semantically re
 
 Replaces the "read 10 files to ground yourself" pattern.
 
-#### `cgraph review-packet [--base <ref>] [--head <ref>] [--files <paths>] [--include-untracked] [--include-staged] [--include-workdir]`
+#### `cgc review-packet [--base <ref>] [--head <ref>] [--files <paths>] [--include-untracked] [--include-staged] [--include-workdir]`
 
 Generates the reviewer's JSON. **Base and head are both optional** so the command works when btrain hands off without a usable diff (see §4.3). Output:
 
@@ -157,7 +161,7 @@ The `source` field tells the reviewer how the packet was built so they're never 
 
 btrain's adapter does not set these by default; they exist for human CLI use and edge-case wiring.
 
-#### `cgraph blast-radius --files <paths> [--lane <id>]`
+#### `cgc blast-radius --files <paths> [--lane <id>]`
 
 Pre-lock collision check. Expands the requested lock set through the graph and reports:
 
@@ -165,23 +169,23 @@ Pre-lock collision check. Expands the requested lock set through the graph and r
 - Overlap with other active btrain lanes (btrain adapter passes the lock table in).
 - Advisory level per overlap (soft-warn v1).
 
-This command is also the primary producer of `lock_overlap` advisories consumed by `cgraph advise` (see §5.1 lifecycle). When btrain detects that a claim or status check calls for overlap analysis, it runs `blast-radius` first and then asks `advise` for the pre-formatted tip.
+This command is also the primary producer of `lock_overlap` advisories consumed by `cgc advise` (see §5.1 lifecycle). When btrain detects that a claim or status check calls for overlap analysis, it runs `blast-radius` first and then asks `advise` for the pre-formatted tip.
 
-#### `cgraph drift-check --lane <id> [--since <timestamp>]`
+#### `cgc drift-check --lane <id> [--since <timestamp>]`
 
 Has anything in the lane's locked files' graph neighborhood changed outside the lane since `--since`? Used by btrain to warn owners mid-lane that upstream or sibling code shifted under them.
 
 If `--since` is omitted, cgraph uses the lane's `first_seen` timestamp from the advisory state file (§5.1); if that's also absent, falls back to the lane's claim time from btrain's handoff metadata.
 
-#### `cgraph sync-check [--source-dir <path>]` (decision 4)
+#### `cgc sync-check [--source-dir <path>]` (decision 4)
 
 Reports commits on `upstream/main` not yet merged into `origin/main` of the cgraph fork. Never auto-merges.
 
-**Source-checkout requirement.** sync-check needs a git checkout of the cgraph fork with `upstream` and `origin` remotes configured. This is the natural install mode for contributors, but users who installed cgraph via `pip install cgraph` (pointed at by `[cgraph].bin_path`) have no checkout. Resolution order:
+**Source-checkout requirement.** sync-check needs a git checkout of the cgraph fork with `upstream` and `origin` remotes configured. This is the natural install mode for contributors, but users who invoke the packaged CLI via the default `cgc` entrypoint (or any custom path pointed at by `[cgraph].bin_path`) may not have a nearby checkout. Resolution order:
 
 1. `--source-dir <path>` flag (explicit CLI override).
 2. `[cgraph].source_checkout` in `.btrain/project.toml` (persistent config for btrain integration).
-3. Auto-detect: if the cgraph binary's install location contains a `.git/` directory with an `upstream` remote, use that.
+3. Auto-detect: if the resolved CLI executable's install location contains a `.git/` directory with an `upstream` remote, use that.
 4. If none of the above resolve, emit `skipped` output instead of failing.
 
 **Success output:**
@@ -203,23 +207,25 @@ Reports commits on `upstream/main` not yet merged into `origin/main` of the cgra
 {
   "skipped": true,
   "reason": "no_source_checkout",
-  "suggestion": "Set [cgraph].source_checkout in .btrain/project.toml to the path of your cgraph fork clone, or pass --source-dir. Installed binaries have no upstream to compare against."
+  "suggestion": "Set [cgraph].source_checkout in .btrain/project.toml to the path of your cgraph fork clone, or pass --source-dir. Standalone CLI installs have no upstream to compare against."
 }
 ```
 
 btrain's adapter treats `skipped: true` as "sync-check not applicable" — it does NOT raise a `cgraph_unavailable` advisory. Source-checkout users get the upstream-lag signal; installed-binary users just don't. Exit code is 0 in both cases; `sync-check` never errors on install topology.
 
-A quarterly cron or manual `cgraph sync-check` keeps the fork fresh on the user's schedule.
+A quarterly cron or manual `cgc sync-check` keeps the fork fresh on the user's schedule.
 
-#### `cgraph advise --situation <kind> [--context <json>]`
+#### `cgc advise --situation <kind> [--context <json>]`
 
-The agent-advisory surface (your #2 addition). btrain calls this when it detects a situation where graph reasoning beats git. Returns a short, concrete recommendation:
+The agent-advisory surface (your #2 addition). btrain calls this when it detects a situation where graph reasoning beats git. Returns a short, concrete recommendation.
+
+**Scope note.** `cgc advise` is the lightweight **tip-lookup** command — a read-only fetch from a precomputed situation table, never a query runner, never a gate. The heavier standards-audit command that the enforcement vectors in §6.6 invoke is a separate binary subcommand (`cgc audit`) with its own latency budget (§3.4), flags, and output schema. Any reference to "audit", "`--scope`", "`--graph`", "`--baseline`", or "`--require-hard-zero`" in this spec refers to `cgc audit`, not `cgc advise`.
 
 ```json
 {
   "situation": "lock_overlap",
   "advisory_id": "adv_2026041619_ab12cd",
-  "suggestion": "Run `cgraph blast-radius --files src/auth/ --lane b` — lane A holds locks on 3 transitive callers.",
+  "suggestion": "Run `cgc blast-radius --files src/auth/ --lane b` — lane A holds locks on 3 transitive callers.",
   "rationale": "git diff won't show you who calls verify_token; the graph does."
 }
 ```
@@ -228,7 +234,7 @@ btrain surfaces these as one-line tips in its own output. Agents see them inline
 
 **`advisory_id` is a correlation handle.** When an agent subsequently runs the recommended command, cgraph logs the `advisory_id` in the telemetry log (§5.2) so §11 metric 3 (adoption rate) is actually measurable. Without the ID, adoption is unattributable.
 
-**Latency budget: < 200ms per call.** `cgraph advise` is a lookup, not a query — it reads a precomputed advisory table keyed by `situation`. The table is populated by the heavier commands (`blast-radius`, `drift-check`, `review-packet`) as they run; advise itself never triggers a full graph walk.
+**Latency budget: < 200ms per call.** `cgc advise` is a lookup, not a query — it reads a precomputed advisory table keyed by `situation`. The table is populated by the heavier commands (`blast-radius`, `drift-check`, `review-packet`) as they run; advise itself never triggers a full graph walk.
 
 **Cold-table behavior.** If btrain calls `advise` before any heavier command has populated the table for that situation, cgraph returns `{"situation": "...", "advisory_id": null, "suggestion": null, "rationale": "no cached analysis; run <the relevant command> first"}`. The adapter suppresses the tip. Adapter is expected to run the heavier command in the background on detection of the triggering event, so by the next `btrain status` the table is warm.
 
@@ -236,7 +242,7 @@ If cgraph cannot respond inside 200ms, the btrain adapter times out silently (§
 
 ### 4.3 Diff-absent modes (fallback hierarchy)
 
-`cgraph review-packet` walks a fallback chain until it produces non-empty content. Each step is labeled in the output `source` field so the reviewer always knows what they're looking at:
+`cgc review-packet` walks a fallback chain until it produces non-empty content. Each step is labeled in the output `source` field so the reviewer always knows what they're looking at:
 
 1. **`diff`** — `base..head` both resolve and produce a non-empty diff. Default path.
 2. **`staged`** — no usable diff refs, but `git diff --cached` is non-empty. Uses index.
@@ -250,12 +256,12 @@ At every step, cgraph emits advisories when the data is suspicious:
 - **`empty_diff`** — refs resolved but `base..head` is empty. Triggers `staged` → `workdir` → `untracked` → `locked_files` fallback.
 - **`untracked_only`** — all changed paths are untracked. Tells reviewer "this lane's work is not committed yet."
 - **`untracked_unindexed_omitted`** — one or more brand-new untracked files could not be synthesized from the worktree (unsupported language, parse failure, or `.cgcignore` exclusion). Packet lists the omitted paths explicitly so they are never silently dropped.
-- **`stale_index`** — for a file in the packet, its **content hash** (via `git hash-object <file>`) differs from the hash stored alongside the KùzuDB node's last index record. Using content hash avoids false positives on fresh clones where every file's mtime is the checkout time. Suggests `cgraph index <path>` or restart `cgraph watch`.
+- **`stale_index`** — for a file in the packet, its **content hash** (via `git hash-object <file>`) differs from the hash stored alongside the KùzuDB node's last index record. Using content hash avoids false positives on fresh clones where every file's mtime is the checkout time. Suggests `cgc index <path>` or restart `cgc watch`.
 - **`excluded_by_cgcignore`** — ≥ 1 file in the diff matches `.cgcignore`. Prevents the silently-empty-packet failure mode.
 - **`refs_diverged_from_main`** — `base` is not an ancestor of `head`; diff spans a merge. Packet is still correct but flagged.
 - **`unsupported_repo_shape`** — emitted when the repo is in a shape cgraph can't fully handle. Details below.
 
-**Key invariant:** `cgraph review-packet` never exits non-zero because of an "unusual" diff state. It always emits JSON, always sets `source`, always lists any advisories. Brand-new untracked files are either synthesized from the worktree or called out as omitted. The btrain adapter decides whether to surface advisories; cgraph's job is to report honestly.
+**Key invariant:** `cgc review-packet` never exits non-zero because of an "unusual" diff state. It always emits JSON, always sets `source`, always lists any advisories. Brand-new untracked files are either synthesized from the worktree or called out as omitted. The btrain adapter decides whether to surface advisories; cgraph's job is to report honestly.
 
 **Repo-shape edge cases.** cgraph probes `git rev-parse --is-inside-work-tree`, `--is-bare-repository`, and `--show-superproject-working-tree` on every invocation and sets the `unsupported_repo_shape` advisory when any of the following holds, while still producing best-effort output:
 
@@ -278,7 +284,7 @@ Every truncated packet carries a **context-aware workaround advisory** with `kin
 | --- | --- |
 | `locked_files` + `untracked_only` advisory | `"Commit or stage your changes and re-run — the packet will narrow to just what you touched."` |
 | `locked_files` + no diff-related advisory (lane just claimed, no edits) | `"Once you start editing, re-run with --include-workdir to scope to changed files only."` |
-| `locked_files`, broad scope, commits exist | `"Narrow with --files <subpath>, or query by intent: cgraph context '<topic>'."` |
+| `locked_files`, broad scope, commits exist | `"Narrow with --files <subpath>, or query by intent: cgc context '<topic>'."` |
 | `workdir` / `staged` / `untracked` (rare — means uncommitted change set itself is huge) | `"Commit in smaller logical chunks, or narrow with --files <subpath>."` |
 
 The suggestion is embedded as plain text in the JSON so the consuming agent can surface it directly without translation.
@@ -289,20 +295,20 @@ These are the triggers inside **btrain** (not cgraph) that shell out to cgraph. 
 
 | btrain event | cgraph call | What the agent sees |
 | --- | --- | --- |
-| `btrain handoff claim --files X` | `cgraph blast-radius --files X --lane <id>` | Advisory if any listed file has high-fan-in callers outside X. Never blocks the claim. |
-| `bth` output when `status: needs-review` | `cgraph review-packet` (refs passed if resolvable; omitted otherwise — cgraph falls through §4.3) | Reviewer sees "cgraph review packet available — run: cgraph review-packet ..." as a tip. |
-| `pre-handoff` skill, after diff gate | `cgraph review-packet ...` | Prints advisory if `untested_caller` fires. **Never blocks the handoff** in v1 (soft-warn per decision 5). |
-| `btrain doctor` | `cgraph sync-check` | Reports if cgraph fork is behind upstream. |
-| `btrain handoff claim` | adapter runs `cgraph blast-radius --files X --lane <id>` to detect overlap, then `cgraph advise --situation lock_overlap` for the pre-formatted tip | Detection and advisory production are two steps: the heavier command computes the condition and populates the advise cache; `advise` is the formatting lookup. One-line tip in btrain stdout. |
-| Agent runs `btrain status` | adapter refreshes the enabled per-lane producer commands (`blast-radius` for `lock_overlap`, `drift-check` for `drift`), then calls `cgraph advise` only to format any fresh tips (pull model, see §5.3) | Surfaces currently-active advisories across every active lane, deduped per §5.1, without depending on a warm cache. |
+| `btrain handoff claim --files X` | `cgc blast-radius --files X --lane <id>` | Advisory if any listed file has high-fan-in callers outside X. Never blocks the claim. |
+| `bth` output when `status: needs-review` | `cgc review-packet` (refs passed if resolvable; omitted otherwise — cgraph falls through §4.3) | Reviewer sees "cgraph review packet available — run: cgc review-packet ..." as a tip. |
+| `pre-handoff` skill, after diff gate | `cgc review-packet ...` | Prints advisory if `untested_caller` fires. **Never blocks the handoff** in v1 (soft-warn per decision 5). |
+| `btrain doctor` | `cgc sync-check` | Reports if cgraph fork is behind upstream. |
+| `btrain handoff claim` | adapter runs `cgc blast-radius --files X --lane <id>` to detect overlap, then `cgc advise --situation lock_overlap` for the pre-formatted tip | Detection and advisory production are two steps: the heavier command computes the condition and populates the advise cache; `advise` is the formatting lookup. One-line tip in btrain stdout. |
+| Agent runs `btrain status` | adapter refreshes the enabled per-lane producer commands (`blast-radius` for `lock_overlap`, `drift-check` for `drift`), then calls `cgc advise` only to format any fresh tips (pull model, see §5.3) | Surfaces currently-active advisories across every active lane, deduped per §5.1, without depending on a warm cache. |
 
 **Every integration is opt-in** via `[cgraph]` in `.btrain/project.toml`:
 
 ```toml
 [cgraph]
 enabled = true
-bin_path = "cgraph"                               # default; can point at custom install
-source_checkout = "/Users/me/code/cgraph"         # optional; only needed for `cgraph sync-check` on installed-binary setups
+bin_path = "cgc"                                  # default: existing upstream console script; can point at a wrapper or alias
+source_checkout = "/Users/me/code/cgraph"         # optional; only needed for `cgc sync-check` on standalone-install setups
 db_path = "/Volumes/SSD/.cgraph/db"               # decision 3 — external SSD supported
 model_cache = "/Volumes/SSD/.cache/jina"
 advise_on = ["lock_overlap", "drift", "packet_truncated"]
@@ -340,6 +346,8 @@ This means: no spam while a long-running condition persists, but no lost signal 
 
 Any new advisory kind MUST declare its hash rule before shipping. `packet_truncated` includes the truncated node identities, not just counts, so two different oversized packets on the same lane/handoff do not collapse into one dedupe key.
 
+**Explicitly excluded from this table:** `cgc audit` timeouts. These are transient runner-local events, not persistent code conditions, and are handled by each invoking runner's own timeout mechanism (see §6.6 "Timeout ownership per vector"). They do not enter the advisory lifecycle.
+
 **State file:** `.btrain/cgraph-advisory-state.jsonl` (btrain-owned). Despite the `.jsonl` extension this is **not** append-only. It is a small JSONL-formatted snapshot of **active advisories only**, read in full and rewritten in full on each update. Resolved advisories are removed from this file immediately and preserved only in telemetry (§5.2). Typical size: < 2KB per repo. One line per active advisory:
 
 ```json
@@ -348,7 +356,7 @@ Any new advisory kind MUST declare its hash rule before shipping. `packet_trunca
 
 **Lifecycle rules per btrain advisory-surfacing event** (table in §5):
 
-1. Adapter asks cgraph for current conditions for the lane (e.g. `cgraph blast-radius --lane b`).
+1. Adapter asks cgraph for current conditions for the lane (e.g. `cgc blast-radius --lane b`).
 2. For each condition returned, compute its `context_hash`.
 3. Match against state file:
    - **No matching active entry** → write new entry, surface the advisory (set `last_surfaced` = now).
@@ -391,7 +399,7 @@ Caveat: an agent who never runs `btrain status` on their own lane won't see cros
 2. **Status-level cache.** For `btrain status`, the adapter may reuse producer results computed within the last 2s for the same `(lane, producer-kind, producer-input-hash)` rather than re-running the same heavy command. This makes rapid successive `btrain status` calls cheap without pretending that `advise` itself is the source of truth.
 3. **Lane-count budget.** If `active_lanes > 8`, the adapter samples (oldest-first) the first 8 and flags the rest as `cgraph: N additional lanes not analyzed — run \`btrain handoff --lane <id>\` for a specific one`. Uses `btrain handoff --lane` (which exists today and accepts `--lane`) rather than a nonexistent `btrain status --lane` variant. Prevents runaway cost on pathological project layouts.
 
-## 6. Embeddings (decision 3)
+## 6. Graph-layer capabilities (decisions 3, 6, 7, 8, 9)
 
 ### 6.1 Model choice
 
@@ -406,9 +414,9 @@ Code is not English prose. General-purpose sentence-transformers (MiniLM et al.)
 
 - **Default:** `jina-embeddings-v2-base-code` (local). Code-trained, 8K context handles real-world function lengths, open weights, CPU-runnable.
 - **Configurable:** via `[cgraph.embedding]` — `model`, `provider` (`local` | `voyage` | `openai`), `dimensions`.
-- **Distribution.** Model is **not** bundled with the cgraph package (too large for PyPI norms). First `cgraph embed` run downloads from HuggingFace to `$SENTENCE_TRANSFORMERS_HOME` (or `$HF_HOME`, in that precedence order), with an explicit progress bar on stderr. Subsequent runs load from cache. `cgraph embed --check-model` verifies the weights exist without triggering a download — useful for air-gapped environments that pre-stage the cache.
+- **Distribution.** Model is **not** bundled with the cgraph package (too large for PyPI norms). First `cgc embed` run downloads from HuggingFace to `$SENTENCE_TRANSFORMERS_HOME` (or `$HF_HOME`, in that precedence order), with an explicit progress bar on stderr. Subsequent runs load from cache. `cgc embed --check-model` verifies the weights exist without triggering a download — useful for air-gapped environments that pre-stage the cache.
 - **Storage impact:** 10K functions × 768 dims × 4 bytes ≈ 30MB. Negligible.
-- **Rationale documented:** embedding-choice rationale plus a `cgraph eval-embeddings` command (out-of-MVP, §12 Q4) so teams can A/B on their own corpus.
+- **Rationale documented:** embedding-choice rationale plus a `cgc eval-embeddings` command (out-of-MVP, §12 Q4) so teams can A/B on their own corpus.
 
 ### 6.2 Storage and privacy
 
@@ -418,13 +426,182 @@ Code is not English prose. General-purpose sentence-transformers (MiniLM et al.)
 ### 6.3 Ingestion
 
 - **Backend requirement:** KùzuDB only in v1. Upstream CGC supports FalkorDB Lite and Neo4j too, but cgraph's ALTER / HNSW / vector columns rely on KùzuDB-specific syntax. On startup, cgraph probes the upstream-configured backend and, if non-KùzuDB, exits with `kind: "unsupported_backend", detail: "cgraph v1 requires kuzu; found <backend>. Set CGC backend to kuzu and re-index."`. FalkorDB/Neo4j support is a post-v1 question (§12 new entry).
-- `cgraph embed` command (new) walks existing Function/Class nodes in KùzuDB, generates vectors, writes them back via `ALTER TABLE ... ADD embedding FLOAT[768]` (dimensionality derived from configured model, not hardcoded). Idempotent.
-- Changing model = re-embed. `cgraph embed --force` triggers full re-vectorization. Dimensions are detected from the column schema; mismatch fails loudly.
-- **Automation:** a `cgraph watch --with-embeddings` flag extends upstream's watcher to vectorize new/changed nodes incrementally. Alternatively, a post-commit git hook template ships in the repo.
+- `cgc embed` command (new) walks existing Function/Class nodes in KùzuDB, generates vectors, writes them back via `ALTER TABLE ... ADD embedding FLOAT[768]` (dimensionality derived from configured model, not hardcoded). Idempotent.
+- Changing model = re-embed. `cgc embed --force` triggers full re-vectorization. Dimensions are detected from the column schema; mismatch fails loudly.
+- **Automation:** a `cgc watch --with-embeddings` flag extends upstream's watcher to vectorize new/changed nodes incrementally. Alternatively, a post-commit git hook template ships in the repo.
 
-## 7. Guardrails (decision 5: soft-warn only in v1)
+### 6.4 Graph roles and lifecycle
 
-Every advisory has three fields: `level` (always `warn` in v1), `kind`, `detail`. No guardrail blocks an agent action in v1. All land inside cgraph output JSON; btrain surfaces them verbatim.
+Each Kùzu store lives at `$db_path/<name>/`; `<name>` is either the git ref the graph pins, or one of two reserved lifecycle roles.
+
+| Graph | Scope | Updated |
+| --- | --- | --- |
+| `working/<lane>` | per-lane worktree uncommitted state | every agent edit, via `cgc index --incremental` from a PostToolUse hook (§6.6) |
+| `review/<lane>` | snapshot of `working/<lane>` at handoff time | once, on `btrain handoff update --status needs-review` |
+| `<git-ref>` (`main`, `production`, `release/v1.3`, …) | pinned to a tracked git ref | whenever the ref moves (merge, tag) |
+
+Graph name is the git ref itself rather than an abstract label. If prod is deployed from `main`, the reference graph is `main`. If prod lives on a separate `production` branch, both `main` and `production` coexist — callers choose explicitly.
+
+`working/<lane>` and `review/<lane>` are the only reserved non-ref names. Per-lane git worktrees (btrain `--worktree` flow, decision 8) are the assumption; without worktrees the fallback is a single `working` graph tracking `$PWD`.
+
+Config (defaults suitable for single-ref projects):
+
+```toml
+[cgraph.graphs]
+tracked_refs = ["main"]  # add "production", "release/*" etc. as needed
+```
+
+**Snapshot lifecycle.** `cgc snapshot --from working/<lane> --to review/<lane>` runs as part of the `pre-handoff` skill on the `needs-review` transition (decision 7). The snapshot records the commit sha and a content hash of the working tree. On `btrain handoff resolve`, `review/<lane>` is deleted; on `changes-requested`, it is rebuilt on the next `needs-review` transition.
+
+**Stale-index handling.** Hook-driven audits call `cgc index --incremental --files <changed>` before querying `working/<lane>`. Failure (parser error, Kùzu conflict) emits `stale_index` per §7 and skips the affected files; the other files in scope still get audited.
+
+### 6.5 Code-quality standards as graph queries (decision 6)
+
+Style and type-checking are well-served by existing tools (black, ruff, mypy, …). cgraph's contribution is **structural** — rules keyed to what the graph knows: call edges, inheritance depth, docstring presence on public API, complexity measured at parse time. These are the rules hardest to catch with pattern-matching linters and easiest to catch with a graph query.
+
+**Standards definition format.** Each rule is a YAML file under `standards/`:
+
+```yaml
+id: function_cyclomatic_complexity
+advisory_kind: high_complexity
+severity: warn                # warn | hard — hard requires the §7 telemetry gate EXCEPT the three named carve-out rules in the table below (see §2, §7, decision 5)
+summary: Function exceeds cyclomatic complexity threshold.
+query: |
+  MATCH (f:Function)
+  WHERE f.cyclomatic_complexity > $warn_threshold
+    AND NOT f.path CONTAINS '/tests/'
+    AND NOT f.is_dependency
+  RETURN f.uid, f.name, f.path, f.line_number,
+         f.cyclomatic_complexity AS metric
+thresholds:
+  warn: 10
+  hard: 15
+suggestion: "Split {{name}} ({{metric}} branches) — extract cohesive blocks into helpers."
+exemptions: _exemptions.yaml
+```
+
+Cypher `$var` placeholders are resolved from `thresholds`. `suggestion` is rendered per offender using the `RETURN`ed columns (Mustache-style templating).
+
+**Seed rules shipped in v1 (12 rules, 7 categories).** All ship `severity: warn` at MVP except three `hard` rules where "false positive" is not a real concern.
+
+| # | id | category | graph signal | defaults | severity |
+| --- | --- | --- | --- | --- | --- |
+| 1 | `function_cyclomatic_complexity` | Complexity | `Function.cyclomatic_complexity` | warn > 10, hard > 15 | warn→hard |
+| 2 | `function_too_long` | Complexity | `end_line - line_number` | warn > 50, hard > 100 | warn |
+| 3 | `class_too_large` | Complexity | `Class -[:CONTAINS]-> Function` count | warn > 20, hard > 40 | warn |
+| 4 | `parameter_count` | Complexity | `size(f.args)` | warn > 5, hard > 8 | warn |
+| 5 | `missing_docstring_public` | Clarity | `Function/Class` where `name NOT STARTS WITH '_'` and `docstring IS NULL` | — | warn |
+| 6 | `excessive_fan_out` | Coupling | distinct outgoing `CALLS` per `Function` | warn > 15, hard > 25 | warn |
+| 7 | `cross_file_private_access` | Coupling | `CALLS` where target `name STARTS WITH '_'` across `File` boundary | — | warn (Python `__name` → hard) |
+| 8 | `circular_imports` | Coupling | cycle on `IMPORTS*` | — | **hard** |
+| 9 | `test_import_in_prod` | Coupling | non-test `File` `IMPORTS` test-path `Module` | — | **hard** |
+| 10 | `unreferenced_public_function` | Dead code | public `Function`, zero incoming `CALLS`, no exempt decorator | — | warn |
+| 11 | `unreferenced_public_class` | Dead code | `Class` with no incoming `CALLS`/`INHERITS` | — | warn |
+| 12 | `deep_inheritance` | Inheritance | transitive `INHERITS*` depth | warn > 4, hard > 6 | warn |
+
+Rules map to new advisory kinds registered in §7 (list below).
+
+**What we explicitly don't do.** Formatting, typing, clone detection, naming regex, magic-number detection, and comment density are handled by other tools — cgraph does not duplicate them. Some security patterns (hardcoded credentials reachable from public handlers) are graph-queryable and may arrive as v2 rules.
+
+**Exemptions.** `standards/_exemptions.yaml` holds framework-entrypoint decorators and path patterns that rules can opt into:
+
+```yaml
+decorators:
+  python: [pytest.fixture, pytest.mark.*, app.route, typer.command, click.command, dataclass, property]
+  typescript: [Injectable, Controller, getServerSideProps]
+  rust: [test, tokio::test, cfg(test), derive]
+function_name_patterns:
+  go: ["^Test", "^Benchmark", "^Example"]
+paths: ["**/tests/**", "**/test/**", "**/*_test.*", "**/__pycache__/**"]
+```
+
+Rules with `exemptions: _exemptions.yaml` inject the relevant clauses into their `WHERE`.
+
+**Advisory output shape.** Each violation produces an advisory per §7, keyed by `(lane_id, kind, context_hash)` with `context_hash = BLAKE3(sorted offender uids)`. Payload:
+
+```json
+{
+  "kind": "high_complexity",
+  "severity": "warn",
+  "standard_id": "function_cyclomatic_complexity",
+  "threshold_applied": {"warn": 10, "hard": 15},
+  "offenders": [
+    {"uid": "...", "name": "parse_query", "path": "src/.../retrieval.py", "line_number": 412, "metric_value": 14}
+  ],
+  "suggestion": "Split parse_query (14 branches) — extract cohesive blocks into helpers."
+}
+```
+
+### 6.6 Enforcement vectors (decision 7: CLI only in v1)
+
+Four vectors, all shelling out to `cgc audit` (the standards-runner; distinct from `cgc advise` per §4.2). MCP is deferred (§12 Q7) — CLI hooks give deterministic enforcement that does not depend on an agent remembering to call a tool.
+
+| Vector | Command | When | Purpose |
+| --- | --- | --- | --- |
+| Claude Code `PostToolUse` hook | `cgc audit --scope diff --format claude-hook` | after every `Edit`/`Write` tool | per-edit audit; `warn` → system reminder; `hard` → exit 2 blocks next tool call |
+| Claude Code `Stop` hook | `cgc audit --scope session --format claude-hook --require-hard-zero` | before turn closes | backstop if per-edit hook timed out; `decision: "block"` on hard violations |
+| `pre-handoff` skill step | `cgc audit --scope lane --require-hard-zero` | before `btrain handoff update --status needs-review` | gate between agent turn and reviewer |
+| CI (`.github/workflows/cgraph.yml`) | `cgc audit --graph review/<lane> --baseline main --require-hard-zero` | on PR open / update | final gate; regression-only — long-standing offenders don't block unrelated PRs |
+
+**CLI surface:**
+
+```
+cgc audit --scope <scope> [--graph <name>] [--baseline <name>] [--format <fmt>] [--require-hard-zero]
+cgc audit --list                   # list registered standards and their current severity
+cgc audit --explain <standard_id>  # show rule definition, thresholds, and resolved exemption set
+cgc standards run --id <id>        # single-rule invocation for development
+cgc snapshot --from <graph> --to <graph>
+cgc index --incremental --files <paths>
+```
+
+Flags:
+
+- `--scope`: `diff` | `session` | `lane` | `all` | `function:<uid>`
+- `--graph`: defaults to `working/<lane>` when `.btrain/lane-pin` is present, else `working`
+- `--baseline`: compare mode — only surface offenders present in `--graph` and **not** in `--baseline`
+- `--format`: `json` (default; cgraph's standard §3.3 shape) | `claude-hook` (hook JSON; exit 2 on hard) | `summary` (terminal table)
+- `--require-hard-zero`: exits 2 if any `hard` violation fires; used by pre-handoff and CI gates
+
+**Timeout ownership per vector.** §3.4 timeout budgets apply only to btrain-adapter calls (`cgc advise`, `blast-radius`, etc.). `cgc audit` invocations bypass the adapter — each invoking runner owns its own timeout:
+
+| Vector | Timeout owner | Budget | On timeout |
+| --- | --- | --- | --- |
+| `PostToolUse` hook | Claude Code hook runner (`timeout` field in `settings.json`) | 5s recommended | Hook exits non-zero; agent sees stderr warning, tool call is not blocked |
+| `Stop` hook | Claude Code hook runner | 10s recommended | Hook exits non-zero; turn closes without audit gate |
+| `pre-handoff` skill | Skill script wrapper (shell `timeout` or equivalent) | 15s | Skill prints "cgraph audit timed out — proceeding without standards gate" to stderr; handoff is **not** blocked (soft-fail, consistent with §7 soft-warn default) |
+| CI step | GitHub Actions `timeout-minutes` on the step | 60s | Step fails; PR check reports "cgraph audit timed out" |
+
+**Audit timeouts are not advisory-tracked.** Unlike the §5 advisory lifecycle (which tracks persistent code conditions via the btrain adapter), audit timeouts are transient infrastructure events. They are reported via exit code and stderr by the invoking runner and do not produce entries in `.btrain/cgraph-advisory-state.jsonl`. Rationale: (1) hook/CI runners are outside btrain's advisory write path — the adapter is the sole writer per §5.1; (2) a timeout is not a code condition that persists across invocations; (3) each runner already has its own timeout reporting mechanism.
+
+**Output schema (json format).** `cgc audit` emits a single JSON object on stdout per §3.3:
+
+```json
+{
+  "graph": "working/a",
+  "baseline": null,
+  "scope": "lane",
+  "standards_evaluated": 12,
+  "advisories": [
+    { /* §6.5 violation payload shape */ }
+  ],
+  "counts": {"warn": 3, "hard": 0},
+  "hard_zero": true
+}
+```
+
+Schema ships at `schemas/audit.json`. `cgc advise` retains its own `schemas/advise.json` (§4.2 shape). The two commands never share an output contract.
+
+## 7. Guardrails (decision 5: soft-warn by default; three named hard exceptions)
+
+Every advisory has three fields: `level` (`warn` by default; `hard` reserved for the three carve-out standards rules named below), `kind`, `detail`. In v1 no guardrail blocks an agent action *except* when `cgc audit` surfaces a `hard` violation from one of the three carve-out rules (see §2 and decision 5 in §13). All advisories land inside cgraph output JSON; btrain surfaces them verbatim.
+
+**The three v1 hard exceptions (all produced by §6.5 `cgc audit`):**
+
+- `circular_imports` — deterministic cycle detection on `IMPORTS*`.
+- `test_import_in_prod` — path-based check on `IMPORTS`; the condition is a strict violation, not a heuristic.
+- `cross_file_private_access` when the target is a Python `__name`-mangled symbol — the mangling makes the caller's intent unambiguous.
+
+The remaining 9 standards rules in §6.5 ship `warn` and are subject to the telemetry-gated promotion rule at the bottom of this section. All non-standards advisory kinds (`lock_overlap`, `drift`, `untested_caller`, etc.) stay `warn` for the full v1 lifetime.
 
 Initial advisory kinds:
 
@@ -443,6 +620,23 @@ Initial advisory kinds:
 - `refs_diverged_from_main` — `base..head` spans a merge; reviewer should check merge commits.
 - `packet_truncated` — review-packet exceeded `max_nodes`; carries a context-aware `suggestion` field (see §4.4).
 
+**Standards-produced kinds (see §6.5 for query shapes):**
+
+- `high_complexity` — function cyclomatic complexity exceeds threshold.
+- `long_function` — function body exceeds line-count threshold.
+- `god_class` — class contains too many methods.
+- `long_signature` — function parameter count exceeds threshold.
+- `missing_docstring_public` — public function or class has no docstring.
+- `high_fan_out` — function calls too many distinct others.
+- `cross_file_private_access` — call to a leading-underscore symbol across file boundary (Python `__name` mangling → hard).
+- `circular_imports` — cycle detected in module import graph. Hard.
+- `test_import_in_prod` — production file imports from a test-path module. Hard.
+- `unreferenced_public_function` — public function has no callers and no exempt decorator.
+- `unreferenced_public_class` — public class is never referenced.
+- `deep_inheritance` — class inheritance chain exceeds depth threshold.
+
+**Not an advisory kind:** `audit_timeout`. Audit command timeouts are runner-local status responses (see §6.6 "Timeout ownership per vector" and §5.1 exclusion note), not tracked in the advisory registry.
+
 Before promoting any advisory to hard-fail we want ≥ 30 days of telemetry (JSONL log of `warn` events + agent outcome) showing < 5% false-positive rate.
 
 ## 8. Upstream-sync policy (decision 4)
@@ -451,7 +645,7 @@ Before promoting any advisory to hard-fail we want ≥ 30 days of telemetry (JSO
 - Most implementation lives in a sibling package at **`src/codegraphcontext_ext/`** so the bulk of our code stays outside upstream's `src/codegraphcontext/` tree while still shipping cleanly with the repo's current setuptools `src` layout.
 - One deliberate upstream seam remains: `src/codegraphcontext/cli/main.py` must register/import the new Typer commands, and `cgc_entry.py` may need a small PyInstaller-facing shim. That seam is intentionally small, but it is still an upstream-owned merge surface.
 - When upstream files must be modified, prefer subclassing/wrapping over editing in place.
-- `cgraph sync-check` surfaces new upstream commits; user decides when to `git merge upstream/main`.
+- `cgc sync-check` surfaces new upstream commits; user decides when to `git merge upstream/main`.
 - Monthly minimum cadence. Major upstream version jumps (0.x → 0.y) get a checklist.
 
 ### 8.1 Versioning
@@ -473,14 +667,15 @@ cgraph/
 ├── src/
 │   ├── codegraphcontext/       # upstream, mostly unmodified
 │   │   └── cli/main.py
-│   │                          # upstream-owned Typer entrypoint; registers cgraph commands
+│   │                          # upstream-owned Typer entrypoint; registers cgraph commands on the `cgc` CLI
 │   └── codegraphcontext_ext/   # our additions — sibling package, shippable under the existing src layout
 │       ├── commands/
 │       │   ├── context.py
 │       │   ├── review_packet.py
 │       │   ├── blast_radius.py
 │       │   ├── drift_check.py
-│       │   ├── advise.py
+│       │   ├── advise.py         # §4.2 tip-lookup
+│       │   ├── audit.py          # §6.6 standards runner
 │       │   └── sync_check.py
 │       ├── hybrid/
 │       │   ├── ann.py          # KùzuDB HNSW query wrapper
@@ -488,16 +683,33 @@ cgraph/
 │       ├── embeddings/
 │       │   └── providers.py    # local, voyage, openai
 │       ├── daemon/
-│       │   └── serve.py        # `cgraph serve` warm-daemon (§3.4)
-│       └── io/
-│           ├── json_stdout.py  # enforce output contract
-│           └── schema_check.py # validate every command's output against schemas/
+│       │   └── serve.py        # `cgc serve` warm-daemon (§3.4)
+│       ├── io/
+│       │   ├── json_stdout.py  # enforce output contract
+│       │   └── schema_check.py # validate every command's output against schemas/
+│       ├── standards_loader.py # YAML + Cypher runner for §6.5 rules
+│       └── snapshots.py        # graph snapshot / incremental index helpers (§6.4)
+├── standards/                  # §6.5 code-quality rules (one YAML per rule)
+│   ├── function_cyclomatic_complexity.yaml
+│   ├── function_too_long.yaml
+│   ├── class_too_large.yaml
+│   ├── parameter_count.yaml
+│   ├── missing_docstring_public.yaml
+│   ├── excessive_fan_out.yaml
+│   ├── cross_file_private_access.yaml
+│   ├── circular_imports.yaml
+│   ├── test_import_in_prod.yaml
+│   ├── unreferenced_public_function.yaml
+│   ├── unreferenced_public_class.yaml
+│   ├── deep_inheritance.yaml
+│   └── _exemptions.yaml        # shared decorator/path/name-pattern carve-outs
 ├── schemas/                    # JSON Schema for every cgraph command output
 │   ├── context.json
 │   ├── review-packet.json
 │   ├── blast-radius.json
 │   ├── drift-check.json
-│   ├── advise.json
+│   ├── advise.json             # §4.2 tip-lookup shape
+│   ├── audit.json              # §6.6 standards-runner shape
 │   └── sync-check.json
 ├── specs/                      # this file lives here
 ├── tests/cgraph_ext/           # our tests
@@ -514,36 +726,50 @@ Most new code lives under the `src/codegraphcontext_ext/` sibling package. The C
 **Phase 0 — Scaffolding (week 1)**
 - Confirm upstream builds and indexes this repo locally.
 - Add `src/codegraphcontext_ext/` skeleton and `schemas/` directory; CI passes under `.github/workflows/cgraph.yml`.
-- Ship `cgraph sync-check` (simplest; validates output contract and schema-validation harness).
+- Ship `cgc sync-check` (simplest; validates output contract and schema-validation harness).
 - Publish JSON Schemas for all six new commands as stubs — populated by later phases.
 
 **Phase 1 — Hybrid retrieval (week 2-3)**
-- `cgraph embed` + schema ALTER; KùzuDB-only backend probe.
-- `cgraph context <query>` end-to-end with local embeddings (Jina v2 code).
+- `cgc embed` + schema ALTER; KùzuDB-only backend probe.
+- `cgc context <query>` end-to-end with local embeddings (Jina v2 code).
 - Tests: retrieval recall on a small fixture repo, JSON shape validation against `schemas/context.json`.
 
 **Phase 2 — Review packet + blast radius + replay harness (week 3-4)**
-- `cgraph review-packet` against a real btrain lane's diff. All §4.3 fallback sources implemented (diff/staged/workdir/untracked/locked_files).
-- `cgraph blast-radius` with lane-lock awareness via adapter.
+- `cgc review-packet` against a real btrain lane's diff. All §4.3 fallback sources implemented (diff/staged/workdir/untracked/locked_files).
+- `cgc blast-radius` with lane-lock awareness via adapter.
 - **Replay harness:** small Node script that reads btrain's recent handoff history and re-runs review-packet + blast-radius against each, logging output sizes. Needed for §11 metrics; without it, success is immeasurable.
 - Measure: tokens-per-review vs. raw-diff baseline on 10 recent btrain handoffs.
 
 **Phase 3 — btrain adapter + advisories + warm daemon (week 4-5)**
 - `src/brain_train/cgraph_adapter.mjs` lands in btrain (separate PR on btrain repo). Includes: per-command timeout budgets (§3.4), parallel fanout + status-level cache (§5.3), OS advisory-file-lock on advisory state (§5.1), `advisory_id` correlation capture.
 - `[cgraph]` config section supported in `.btrain/project.toml`.
-- `cgraph advise` wired into `btrain handoff`, `bth`, `pre-handoff`.
-- **`cgraph serve` warm daemon** with `launchd`/`systemd` templates. Optional but strongly recommended.
+- `cgc advise` wired into `btrain handoff`, `bth`, `pre-handoff`.
+- **`cgc serve` warm daemon** with `launchd`/`systemd` templates. Optional but strongly recommended.
 - Advisory state file (`.btrain/cgraph-advisory-state.jsonl`) and telemetry log (`.btrain/logs/cgraph-advisories.jsonl`) wired end-to-end with correlation IDs flowing through.
 
 **Phase 4 — Drift and polish (week 5-6)**
-- `cgraph drift-check` plus `btrain status` pull-model integration.
+- `cgc drift-check` plus `btrain status` pull-model integration.
 - README overhaul: distinguish upstream commands from cgraph additions.
-- First `cgraph sync-check` cadence documented.
+- First `cgc sync-check` cadence documented.
+
+**Phase 5 — Code-quality standards (week 6-7)**
+- Standards loader (`standards/*.yaml` → parameterised Cypher runner with exemption injection).
+- Ship the 12 seed rules per §6.5 — 9 at `severity: warn`, 3 at `hard` (`circular_imports`, `test_import_in_prod`, Python-`__name` specialisation of `cross_file_private_access`).
+- `cgc audit` CLI surface per §6.6 (scopes, `--graph`, `--baseline`, formats, `--require-hard-zero`) with matching `schemas/audit.json`.
+- `cgc snapshot` + `cgc index --incremental` helpers per §6.4.
+- Graph-role lifecycle wired through btrain transitions: pre-handoff snapshot on `needs-review`, delete on `resolve`, rebuild on `changes-requested`.
+
+**Phase 6 — Agent-write enforcement wiring (week 7-8)**
+- `.claude/settings.json` template: `PostToolUse` + `Stop` hooks calling `cgc audit`.
+- `pre-handoff` skill gate: `cgc audit --scope lane --require-hard-zero` before `btrain handoff update --status needs-review`.
+- `.github/workflows/cgraph.yml` regression gate: `cgc audit --graph review/<lane> --baseline main --require-hard-zero` on PR; warn-level advisories comment on the PR.
+- Calibration tooling: `cgc audit --calibration-report` reads `.btrain/logs/cgraph-advisories.jsonl`, reports per-kind FP rate to inform §7 `warn → hard` promotion decisions.
+- **External dependency:** btrain worktree support (`--worktree` on `handoff claim`, CWD-based lane inference, snapshot hook on `needs-review`). If btrain worktrees ship late, Phase 6 falls back to a single `working` graph with path-filtered scoping and accepts that per-lane diffs stay noisy until worktrees arrive.
 
 **Out of scope for MVP, tracked separately:**
 - Jira / deployment / org-chart nodes in the graph (proposal §1). Code-only for now.
-- Hard-fail guardrails.
-- MCP server modifications.
+- Hard-fail guardrails **except** the three `hard` standards rules in §6.5 where correctness is unambiguous.
+- MCP server modifications (§12 Q7).
 
 ## 11. Success metrics
 
@@ -557,12 +783,14 @@ All measured against btrain's last 30 handoffs, replayed with cgraph on vs. off 
 
 ## 12. Open questions
 
-- **Q1:** Does btrain's `handoff_history` format have enough structure for `cgraph review-packet` to derive base/head refs without re-parsing the handoff file? The §4.3 fallback chain tolerates missing refs, so this is a polish question — worth a small `btrain handoff refs --lane <id>` helper in a later btrain PR. **Open, low priority.**
+- **Q1:** Does btrain's `handoff_history` format have enough structure for `cgc review-packet` to derive base/head refs without re-parsing the handoff file? The §4.3 fallback chain tolerates missing refs, so this is a polish question — worth a small `btrain handoff refs --lane <id>` helper in a later btrain PR. **Open, low priority.**
 - **Q2:** ~~Cross-lane advisory surfacing~~ → **Closed.** Pull model via `btrain status` per §5.3.
 - **Q3:** ~~Advisory telemetry storage~~ → **Closed.** btrain-owned at `.btrain/logs/cgraph-advisories.jsonl`.
-- **Q4:** Embedding provider for repos with highly domain-specific jargon — Jina v2 code is strong on general code but may underperform on e.g. legal or medical domain-specific jargon. Ship a small eval harness (`cgraph eval-embeddings`) so teams can A/B providers on their own corpus. **Out of MVP scope.**
-- **Q5:** Graph-backed `MEMORY.md`? Today MEMORY.md accumulates narrative. A `cgraph memory-refresh` command could regenerate the "current state" section from the graph. Exciting but big — **phase 5+.**
+- **Q4:** Embedding provider for repos with highly domain-specific jargon — Jina v2 code is strong on general code but may underperform on e.g. legal or medical domain-specific jargon. Ship a small eval harness (`cgc eval-embeddings`) so teams can A/B providers on their own corpus. **Out of MVP scope.**
+- **Q5:** Graph-backed `MEMORY.md`? Today MEMORY.md accumulates narrative. A `cgc memory-refresh` command could regenerate the "current state" section from the graph. Exciting but big — **phase 5+.**
 - **Q6:** FalkorDB Lite and Neo4j backend support. v1 is KùzuDB-only (§6.3) because vector-column ALTER / HNSW syntax differs by backend. Post-v1 work: abstract the embedding-store layer behind a provider interface, or pick the right backend-specific idiom per target. **Deferred; revisit when a cgraph user requests non-KùzuDB.**
+- **Q7:** MCP tool surface for `cgc advise` (tip lookup) and `cgc audit` (standards runner). v1 is CLI-only per decision 7 — hooks give deterministic enforcement that does not depend on an agent remembering to call a tool. MCP would let agents verify voluntarily mid-reasoning at the cost of weakening enforcement. Revisit if adoption patterns suggest voluntary verification adds value we can't get from hooks. **Deferred.**
+- **Q8:** Language coverage for §6.5 rules. Upstream parsers populate `cyclomatic_complexity`, `docstring`, `decorators`, and `args` fully for Python and TypeScript, partially for Rust / Go / Java. Open question: do we gate rules per `Function.lang`, or emit advisories across all languages and accept partial accuracy until parser coverage catches up? **Open; answered during Phase 5 implementation as we see real data.**
 
 ## 13. Decisions recorded
 
@@ -571,5 +799,9 @@ All measured against btrain's last 30 handoffs, replayed with cgraph on vs. off 
 | 1 | Integration direction | (a) btrain-knows-cgraph, with btrain-side adapter |
 | 2 | MVP priorities | Review packets, blast-radius, pre-handoff gate, context fetch — plus agent-advisory tips for dysfunction situations |
 | 3 | Embeddings | Local default `jina-embeddings-v2-base-code` (code-specific, 8K ctx, 768-dim); swappable provider; paths configurable (external SSD supported); `voyage-code-3` as API upgrade path |
-| 4 | Upstream sync | User-gated via `cgraph sync-check`; never auto-merge |
-| 5 | Guardrail tone | Soft-warn only in v1; hard-fail requires telemetry |
+| 4 | Upstream sync | User-gated via `cgc sync-check`; never auto-merge |
+| 5 | Guardrail tone | Soft-warn by default in v1. Three named §6.5 standards rules (`circular_imports`, `test_import_in_prod`, Python `__name` specialisation of `cross_file_private_access`) ship `hard` from MVP because their queries are deterministic and false-positives are not a realistic risk. Every other advisory kind stays `warn` and requires ≥ 30 days of telemetry per §7 before any `warn → hard` promotion |
+| 6 | Code-quality standards definition | YAML-per-rule under `standards/`; Cypher query with thresholded `$var` bindings; shared `_exemptions.yaml` for framework/path carve-outs |
+| 7 | Enforcement vectors | CLI-only in v1 (PostToolUse + Stop + pre-handoff + CI). MCP deferred to post-v1 (§12 Q7) |
+| 8 | Graph naming | `working/<lane>` + `review/<lane>` + ref-named (`main`, `production`, `release/*`). Per-lane git worktrees assumed (btrain `--worktree` flow); fallback to single `working` if worktrees unavailable |
+| 9 | Enforcement surface command | `cgc advise --situation` is a 200ms tip-lookup (§4.2); `cgc audit` is the heavier standards runner (§6.6) used by PostToolUse/Stop hooks, pre-handoff, and CI. Separate subcommands, separate schemas (`schemas/advise.json`, `schemas/audit.json`), separate latency budgets (§3.4). Any `--scope`, `--graph`, `--baseline`, `--require-hard-zero` flag applies to `cgc audit` only |
