@@ -194,7 +194,9 @@ def test_embed_rejects_unknown_provider_as_bad_parameter(monkeypatch):
     result = runner.invoke(app, ["embed", "--check-model", "--provider", "cohere"])
 
     assert result.exit_code != 0
-    normalized = " ".join(result.output.replace("│", " ").split())
+    import re
+    clean = re.sub(r"\x1b\[[0-9;]*m", "", result.output)
+    normalized = " ".join(clean.replace("│", " ").split())
     assert "Unsupported embedding provider 'cohere'" in normalized
     assert "local, voyage, openai" in normalized
 

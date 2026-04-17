@@ -114,7 +114,9 @@ def test_sync_check_cli_rejects_non_git_source_dir(tmp_path: Path):
     result = runner.invoke(app, ["sync-check", "--source-dir", str(not_a_repo)])
 
     assert result.exit_code != 0
-    normalized = " ".join(result.output.replace("│", " ").split())
+    import re
+    clean = re.sub(r"\x1b\[[0-9;]*m", "", result.output)
+    normalized = " ".join(clean.replace("│", " ").split())
     assert "is not inside a git checkout" in normalized
 
 
