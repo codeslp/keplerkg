@@ -3,5 +3,57 @@
   "$id": "https://codeslp.dev/cgraph/schemas/drift-check.json",
   "title": "cgraph drift-check response",
   "type": "object",
-  "additionalProperties": true
+  "required": ["ok", "kind", "since", "files", "nodes_in_scope", "neighbors", "drifted", "advisories"],
+  "properties": {
+    "ok": { "type": "boolean" },
+    "kind": { "type": "string", "const": "drift_check" },
+    "lane": { "type": ["string", "null"] },
+    "since": { "type": "string" },
+    "files": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "nodes_in_scope": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/node" }
+    },
+    "neighbors": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/node" }
+    },
+    "neighbor_files": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "drifted": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/node" }
+    },
+    "advisories": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/advisory" }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "node": {
+      "type": "object",
+      "required": ["uid", "name", "file", "kind"],
+      "properties": {
+        "uid": { "type": "string" },
+        "name": { "type": ["string", "null"] },
+        "file": { "type": ["string", "null"] },
+        "kind": { "type": "string" }
+      }
+    },
+    "advisory": {
+      "type": "object",
+      "required": ["level", "kind", "detail"],
+      "properties": {
+        "level": { "type": "string", "enum": ["warn", "info"] },
+        "kind": { "type": "string", "enum": ["no_graph"] },
+        "detail": { "type": "string" }
+      }
+    }
+  }
 }

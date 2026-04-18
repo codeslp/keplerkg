@@ -67,6 +67,13 @@ def _dispatch(cmd: str, args: dict[str, Any]) -> dict[str, Any]:
             locks_json=args.get("locks_json"),
             max_nodes=args.get("max_nodes", 50),
         )
+    if cmd == "drift-check":
+        from ..commands.drift_check import build_drift_check_payload
+        return build_drift_check_payload(
+            files=args.get("files", []),
+            since=args.get("since", ""),
+            lane=args.get("lane"),
+        )
     # Fallback: unknown command
     return {
         "ok": False,

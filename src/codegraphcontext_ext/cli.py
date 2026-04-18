@@ -7,6 +7,7 @@ import typer
 from .commands.advise import SUMMARY as ADVISE_SUMMARY, advise_command
 from .commands.blast_radius import SUMMARY as BLAST_RADIUS_SUMMARY, blast_radius_command
 from .commands.context import SUMMARY as CONTEXT_SUMMARY, context_command
+from .commands.drift_check import SUMMARY as DRIFT_CHECK_SUMMARY, drift_check_command
 from .commands.embed import SUMMARY as EMBED_SUMMARY, embed_command
 from .commands.export_embeddings import (
     SUMMARY as EXPORT_EMB_SUMMARY,
@@ -26,6 +27,7 @@ def register_extensions(app: typer.Typer) -> None:
 
     app.command(name="advise", help=ADVISE_SUMMARY)(advise_command)
     app.command(name="blast-radius", help=BLAST_RADIUS_SUMMARY)(blast_radius_command)
+    app.command(name="drift-check", help=DRIFT_CHECK_SUMMARY)(drift_check_command)
     app.command(name="sync-check", help=SYNC_CHECK_SUMMARY)(sync_check_command)
     app.command(name="embed", help=EMBED_SUMMARY)(embed_command)
     app.command(name="search", help=CONTEXT_SUMMARY)(context_command)
