@@ -2,6 +2,8 @@ import subprocess
 import shutil
 import os
 import json
+import shlex
+import sys
 import pytest
 import uuid
 import time
@@ -13,16 +15,33 @@ from codegraphcontext.tools.graph_builder import DEFAULT_IGNORE_PATTERNS
 
 # Use unique directory for EACH test run to avoid conflicts
 BASE_TEST_DIR = Path("/tmp/cgc_test")
+CLI_OVERRIDE_ENV = "CGC_TEST_CLI"
 
 def get_unique_test_dir():
     """Generate unique test directory"""
     unique_id = str(uuid.uuid4())[:8]
     return BASE_TEST_DIR / f"test_{unique_id}"
 
+def cli_command():
+    """Resolve the available CLI name after the KeplerKG rename."""
+    override = os.environ.get(CLI_OVERRIDE_ENV)
+    if override:
+        return override
+
+    for candidate in ("cgc", "kkg", "codegraphcontext"):
+        if shutil.which(candidate):
+            return candidate
+
+    return f"{shlex.quote(sys.executable)} -m codegraphcontext.cli.main"
+
 def run(cmd):
     """Run command and return output"""
     result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
     return result.stdout + result.stderr
+
+def run_cli(args):
+    """Run the CLI with a stable command resolution order."""
+    return run(f"{cli_command()} {args}")
 
 def setup_test_dir(test_dir: Path):
     """Create clean test directory"""
@@ -34,7 +53,7 @@ def setup_test_dir(test_dir: Path):
 def clean_db_completely():
     """Completely clean the database"""
     # Delete ALL nodes
-    run('cgc query "MATCH (n) DETACH DELETE n"')
+    run_cli('query "MATCH (n) DETACH DELETE n"')
     time.sleep(1)  # Wait for DB to sync
 
 def delete_repo_from_db(repo_path: Path):
@@ -42,38 +61,36 @@ def delete_repo_from_db(repo_path: Path):
     path_str = str(repo_path.resolve())
     # Escape quotes properly for shell
     escaped_path = path_str.replace('"', '\\"')
-    run(f'cgc query "MATCH (r:Repository {{path: \\"{escaped_path}\\"}})-[:CONTAINS*]->(n) DETACH DELETE r, n"')
-    run(f'cgc query "MATCH (r:Repository {{path: \\"{escaped_path}\\"}}) DETACH DELETE r"')
+    run_cli(f'query "MATCH (r:Repository {{path: \\"{escaped_path}\\"}})-[:CONTAINS*]->(n) DETACH DELETE r, n"')
+    run_cli(f'query "MATCH (r:Repository {{path: \\"{escaped_path}\\"}}) DETACH DELETE r"')
 
 def index_repo(test_dir: Path):
     """Index the test repository"""
-    output = run(f"cgc index {test_dir}")
+    output = run_cli(f"index {shlex.quote(str(test_dir))}")
     print(f"INDEX OUTPUT: {output[:500]}")  # Debug
     time.sleep(0.5)  # Wait for indexing to complete
     return output
 
 def query_all_files():
     """Query ALL files in database for debugging"""
-    output = run('cgc query "MATCH (f:File) RETURN f.name, f.path LIMIT 20"')
+    output = run_cli('query "MATCH (f:File) RETURN f.name, f.path LIMIT 20"')
     print(f"ALL FILES IN DB: {output}")
     return output
 
 def query_all_repos():
     """Query ALL repositories in database for debugging"""
-    output = run('cgc query "MATCH (r:Repository) RETURN r.name, r.path"')
+    output = run_cli('query "MATCH (r:Repository) RETURN r.name, r.path"')
     print(f"ALL REPOS IN DB: {output}")
     return output
 
 def query_files_for_repo(test_dir: Path):
     """Query files ONLY from specific test repository"""
-    repo_path = str(test_dir.resolve())
-    
     # Debug: Show all repos first
     query_all_repos()
     
     # Use simpler query - match by repository name (folder name)
     repo_name = test_dir.name
-    output = run(f'cgc query "MATCH (r:Repository)-[:CONTAINS*]->(f:File) WHERE r.path CONTAINS \\"{repo_name}\\" RETURN f.name"')
+    output = run_cli(f'query "MATCH (r:Repository)-[:CONTAINS*]->(f:File) WHERE r.path CONTAINS \\"{repo_name}\\" RETURN f.name"')
     
     print(f"QUERY OUTPUT for {repo_name}: {output}")
     
@@ -100,6 +117,22 @@ def extract_file_names(output):
 # ============================================================
 # TC-01 to TC-11: Unit Tests (No database needed)
 # ============================================================
+
+def test_cli_command_prefers_kkg_when_cgc_is_missing(monkeypatch):
+    monkeypatch.delenv(CLI_OVERRIDE_ENV, raising=False)
+    monkeypatch.setattr(
+        shutil,
+        "which",
+        lambda name: f"/tmp/{name}" if name in {"kkg", "codegraphcontext"} else None,
+    )
+
+    assert cli_command() == "kkg"
+
+def test_cli_command_falls_back_to_python_module(monkeypatch):
+    monkeypatch.delenv(CLI_OVERRIDE_ENV, raising=False)
+    monkeypatch.setattr(shutil, "which", lambda name: None)
+
+    assert cli_command() == f"{shlex.quote(sys.executable)} -m codegraphcontext.cli.main"
 
 def test_tc01_default_ignore_patterns_exists():
     """Verify DEFAULT_IGNORE_PATTERNS list exists and is not empty"""
