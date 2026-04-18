@@ -1,8 +1,5 @@
-import pytest
+"""Placeholder tests — kept as a file so git history is clean.
 
-from codegraphcontext_ext.daemon.serve import serve
-
-
-def test_daemon_serve_is_a_phase0_placeholder():
-    with pytest.raises(NotImplementedError):
-        serve()
+The Phase 0 daemon.serve placeholder was replaced by the full
+implementation in Phase 3. Tests for serve are now in test_serve.py.
+"""

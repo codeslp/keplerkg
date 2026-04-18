@@ -3,5 +3,24 @@
   "$id": "https://codeslp.dev/cgraph/schemas/advise.json",
   "title": "cgraph advise response",
   "type": "object",
-  "additionalProperties": true
+  "required": ["situation", "advisory_id", "suggestion", "rationale"],
+  "properties": {
+    "situation": {
+      "type": "string",
+      "description": "The advisory situation key that was looked up."
+    },
+    "advisory_id": {
+      "type": ["string", "null"],
+      "description": "Dedup-friendly ID (adv_<hour>_<hash6>) or null if no tip available."
+    },
+    "suggestion": {
+      "type": ["string", "null"],
+      "description": "Actionable suggestion text or null if situation is unknown/suppressed."
+    },
+    "rationale": {
+      "type": "string",
+      "description": "Why this tip matters or why no tip was returned."
+    }
+  },
+  "additionalProperties": false
 }

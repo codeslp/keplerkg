@@ -12,6 +12,7 @@ def test_register_extensions_registers_sync_check_embed_and_context():
     register_extensions(app)
 
     assert [command.name for command in app.registered_commands] == [
+        "advise",
         "blast-radius",
         "sync-check",
         "embed",
@@ -22,6 +23,7 @@ def test_register_extensions_registers_sync_check_embed_and_context():
         "viz-dashboard",
         "viz-projector",
         "export-embeddings",
+        "serve",
     ]
 
 

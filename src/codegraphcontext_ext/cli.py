@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import typer
 
+from .commands.advise import SUMMARY as ADVISE_SUMMARY, advise_command
 from .commands.blast_radius import SUMMARY as BLAST_RADIUS_SUMMARY, blast_radius_command
 from .commands.context import SUMMARY as CONTEXT_SUMMARY, context_command
 from .commands.embed import SUMMARY as EMBED_SUMMARY, embed_command
@@ -17,11 +18,13 @@ from .commands.viz_dashboard import SUMMARY as VIZ_DASHBOARD_SUMMARY, viz_dashbo
 from .commands.viz_embeddings import SUMMARY as VIZ_EMB_SUMMARY, viz_embeddings_command
 from .commands.viz_graph import SUMMARY as VIZ_GRAPH_SUMMARY, viz_graph_command
 from .commands.viz_projector import SUMMARY as VIZ_PROJECTOR_SUMMARY, viz_projector_command
+from .daemon.serve import SUMMARY as SERVE_SUMMARY, serve_command
 
 
 def register_extensions(app: typer.Typer) -> None:
     """Register cgraph extension commands on the upstream Typer app."""
 
+    app.command(name="advise", help=ADVISE_SUMMARY)(advise_command)
     app.command(name="blast-radius", help=BLAST_RADIUS_SUMMARY)(blast_radius_command)
     app.command(name="sync-check", help=SYNC_CHECK_SUMMARY)(sync_check_command)
     app.command(name="embed", help=EMBED_SUMMARY)(embed_command)
@@ -32,3 +35,4 @@ def register_extensions(app: typer.Typer) -> None:
     app.command(name="viz-dashboard", help=VIZ_DASHBOARD_SUMMARY)(viz_dashboard_command)
     app.command(name="viz-projector", help=VIZ_PROJECTOR_SUMMARY)(viz_projector_command)
     app.command(name="export-embeddings", help=EXPORT_EMB_SUMMARY)(export_embeddings_command)
+    app.command(name="serve", help=SERVE_SUMMARY)(serve_command)
