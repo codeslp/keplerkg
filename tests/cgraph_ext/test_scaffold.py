@@ -18,6 +18,9 @@ def test_register_extensions_registers_sync_check_embed_and_context():
         "review-packet",
         "viz-embeddings",
         "viz-graph",
+        "viz-dashboard",
+        "viz-projector",
+        "export-embeddings",
     ]
 
 

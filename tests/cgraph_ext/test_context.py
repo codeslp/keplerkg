@@ -206,7 +206,7 @@ def test_context_command_emits_json(monkeypatch):
     fake_conn = _FakeConn(ann_rows=[], traverse_rows=[])
 
     with patch(
-        "codegraphcontext_ext.commands.context._get_kuzu_connection",
+        "codegraphcontext_ext.commands.context.get_kuzu_connection",
         return_value=fake_conn,
     ), patch(
         "codegraphcontext_ext.commands.context.create_provider",
@@ -236,7 +236,7 @@ def test_context_command_with_seeds(monkeypatch):
     fake_conn = _FakeConn(ann_rows=ann_rows, traverse_rows=traverse_rows)
 
     with patch(
-        "codegraphcontext_ext.commands.context._get_kuzu_connection",
+        "codegraphcontext_ext.commands.context.get_kuzu_connection",
         return_value=fake_conn,
     ), patch(
         "codegraphcontext_ext.commands.context.create_provider",

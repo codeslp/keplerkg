@@ -21,19 +21,11 @@ from ..embeddings.runtime import (
 from ..hybrid.ann import search as ann_search
 from ..hybrid.traverse import traverse
 from ..io.json_stdout import emit_json
+from ..io.kuzu import get_kuzu_connection
 
 COMMAND_NAME = "context"
 SCHEMA_FILE = "context.json"
 SUMMARY = "Hybrid retrieval: ANN vector search + graph traversal."
-
-
-def _get_kuzu_connection() -> Any:
-    """Obtain a raw kuzu.Connection from upstream's singleton manager."""
-    from codegraphcontext.core.database_kuzu import KuzuDBManager
-
-    manager = KuzuDBManager()
-    driver = manager.get_driver()
-    return driver.conn
 
 
 def _estimate_tokens(text: str) -> int:
@@ -124,7 +116,7 @@ def context_command(
     query_vector = query_vectors[0]
 
     # Connect and search
-    conn = _get_kuzu_connection()
+    conn = get_kuzu_connection()
 
     seeds = ann_search(conn, query_vector, k=k)
 

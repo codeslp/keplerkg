@@ -1,0 +1,159 @@
+/* cgraph-patch.css — simplified dark theme + hidden advanced controls.
+ *
+ * Loaded by the vendored Projector's index.html via <link rel="stylesheet">.
+ * Relies on the patch JS cloning this into each Polymer shadow root; the
+ * Polymer components keep their own internal styles isolated from the light
+ * DOM, so a document-level <link> alone can't reach them.
+ *
+ * Palette mirrors the cgraph dashboard (GitHub dark).
+ *   bg main:   #0d1117
+ *   bg panel:  #161b22
+ *   bg hover:  #1c2029
+ *   border:    #30363d
+ *   text:      #c9d1d9
+ *   muted:     #8b949e
+ *   accent:    #58a6ff
+ */
+
+:root {
+  --cgraph-bg:        #0d1117;
+  --cgraph-bg-panel:  #161b22;
+  --cgraph-bg-hover:  #1c2029;
+  --cgraph-border:    #30363d;
+  --cgraph-text:      #c9d1d9;
+  --cgraph-muted:     #8b949e;
+  --cgraph-accent:    #58a6ff;
+}
+
+/* --- top-level body + Polymer chrome --- */
+html, body {
+  background: var(--cgraph-bg) !important;
+  color: var(--cgraph-text) !important;
+}
+
+/* The dark maroon header band at the top of the Projector — drop it.
+ * We already have a cgraph nav bar above the iframe. */
+vz-projector-app > app-header,
+vz-projector-app app-toolbar,
+[class*="app-header"][class*="toolbar"] {
+  display: none !important;
+}
+
+/* --- shadow-root-scoped overrides (applied via JS clone) --- */
+
+.ink-panel, #left-pane, #right-pane, #main,
+.container, .title, paper-input, paper-dropdown-menu, paper-button {
+  background-color: var(--cgraph-bg) !important;
+  color: var(--cgraph-text) !important;
+}
+
+.title, #left-pane .title, #right-pane .title {
+  border-bottom-color: var(--cgraph-border) !important;
+  color: var(--cgraph-text) !important;
+}
+
+.dirs, .item-details, .notice, .help-link {
+  color: var(--cgraph-muted) !important;
+}
+
+.ink-tab, .projection-tab {
+  color: var(--cgraph-muted) !important;
+  border-bottom: 2px solid transparent !important;
+}
+.ink-tab.active, .projection-tab.active, .ink-tab[active], .projection-tab[active] {
+  color: var(--cgraph-accent) !important;
+  border-bottom-color: var(--cgraph-accent) !important;
+}
+
+.ink-button {
+  background: var(--cgraph-bg-panel) !important;
+  color: var(--cgraph-text) !important;
+  border: 1px solid var(--cgraph-border) !important;
+}
+.ink-button:hover {
+  background: var(--cgraph-bg-hover) !important;
+  border-color: var(--cgraph-accent) !important;
+}
+
+paper-checkbox {
+  --paper-checkbox-checked-color: var(--cgraph-accent);
+  --paper-checkbox-unchecked-color: var(--cgraph-muted);
+  --paper-checkbox-label-color: var(--cgraph-text);
+}
+
+paper-input, paper-dropdown-menu {
+  --paper-input-container-color: var(--cgraph-muted);
+  --paper-input-container-focus-color: var(--cgraph-accent);
+  --paper-input-container-input-color: var(--cgraph-text);
+  color: var(--cgraph-text);
+}
+
+#reset-zoom, #help3d-icon, .help-3d-icon {
+  background: var(--cgraph-bg-panel) !important;
+  color: var(--cgraph-text) !important;
+}
+
+/* Nearest-neighbor list items */
+.nn-list .neighbor, .neighbor-link, .similarity-label {
+  color: var(--cgraph-text) !important;
+}
+.similarity-value {
+  color: var(--cgraph-muted) !important;
+}
+
+/* Dialog + modal backgrounds */
+paper-dialog, paper-toast {
+  background: var(--cgraph-bg-panel) !important;
+  color: var(--cgraph-text) !important;
+  border: 1px solid var(--cgraph-border) !important;
+}
+
+/* Loading spinner is white-on-white against dark; switch to accent. */
+paper-spinner-lite {
+  --paper-spinner-color: var(--cgraph-accent);
+}
+
+/* --- simple-mode hides --- */
+/* These rules only engage when <body> has the .cgraph-simple class,
+ * applied by cgraph-patch.js unless the URL has ?advanced=1.               */
+
+.cgraph-simple #label-button,
+.cgraph-simple #publish-container,
+.cgraph-simple #downloadMetadataLink,
+.cgraph-simple .data-step,
+.cgraph-simple #upload,
+.cgraph-simple #host-embedding,
+.cgraph-simple #checkpoint-file,
+.cgraph-simple #metadata-file,
+.cgraph-simple .sphereize-container,
+.cgraph-simple .edit-by-container,
+.cgraph-simple .tag-selection-container,
+.cgraph-simple #pca-sampling,
+.cgraph-simple #pca-x, .cgraph-simple #pca-y, .cgraph-simple #pca-z,
+.cgraph-simple .pca-component-picker,
+.cgraph-simple .run-umap-button,
+.cgraph-simple #custom-tab,
+.cgraph-simple .metadata-card-description {
+  display: none !important;
+}
+
+/* Hide the "Edit by" / "Tag selection as" row, the Spherize checkbox, the
+ * Load/Publish/Download bar, Checkpoint and Metadata paths, and the
+ * "PCA is approximate" notice.  Text-based fallbacks in case the IDs above
+ * don't exist or get renamed. */
+
+.cgraph-simple paper-input[label="Edit by"],
+.cgraph-simple paper-input[label="Tag selection as"],
+.cgraph-simple paper-dropdown-menu[label="Edit by"],
+.cgraph-simple [aria-label="Edit by"],
+.cgraph-simple [aria-label="Tag selection as"] {
+  display: none !important;
+}
+
+/* Shrink the left panel's "DATA" section in simple mode — the only useful
+ * thing in it at that point is the Label by / Color by dropdowns. */
+.cgraph-simple .data-panel-header,
+.cgraph-simple .data-panel-footer,
+.cgraph-simple [id^="upload-"] {
+  display: none !important;
+}

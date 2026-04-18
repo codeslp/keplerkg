@@ -1,8 +1,13 @@
-"""cgc viz-graph: interactive force-directed graph of code structure.
+"""cgc viz-graph: interactive graph of code structure via Cytoscape.js.
 
-Reads nodes and edges from KùzuDB, generates a standalone HTML file
-with a vanilla-JS force-directed layout.  Color by node type, hover for
-details, drag to rearrange.  No external dependencies — works offline.
+Standalone HTML output; Cytoscape.js + cytoscape-dagre are loaded from unpkg
+so opening the file requires a live internet connection.  The earlier vanilla
+force-directed sim jittered visibly at 1-2K nodes — Cytoscape layouts compute
+positions with `animate: false` and paint once.
+
+Layouts (via --layout): cose (default, stabilized force-directed), dagre
+(hierarchical top-down, good for File→Class→Function), concentric (rings
+by node type), grid / breadthfirst / circle (fully deterministic).
 """
 
 from __future__ import annotations
@@ -18,10 +23,13 @@ import typer
 
 from ..embeddings.runtime import probe_backend_support
 from ..io.json_stdout import emit_json
+from ..io.kuzu import get_kuzu_connection
 
 COMMAND_NAME = "viz-graph"
 SCHEMA_FILE = "context.json"  # reuse context schema stub for metadata
-SUMMARY = "Interactive force-directed graph of code structure."
+SUMMARY = "Interactive Cytoscape.js graph of code structure."
+
+_LAYOUTS = ("cose", "dagre", "concentric", "grid", "breadthfirst", "circle")
 
 # Node tables to include.  Order matters for layering.
 _NODE_TABLES = ("File", "Module", "Class", "Function", "Variable")
@@ -32,24 +40,16 @@ _NODE_TABLES = ("File", "Module", "Class", "Function", "Variable")
 # COALESCE across the same three columns so File/Module-backed edges resolve
 # to the same identifier the corresponding node was registered under — without
 # this, CONTAINS and INHERITS edges whose source or target is a File or Module
-# silently drop (`src in nodes and dst in nodes` fails at line ~80).
+# silently drop (`src in nodes and dst in nodes` fails downstream).
 _NODE_UID = "COALESCE(a.uid, a.path, a.name)"
 _NODE_DST = "COALESCE(b.uid, b.path, b.name)"
 
-# Relationship tables to include.
 _REL_QUERIES = [
     ("CONTAINS", f"MATCH (a)-[r:CONTAINS]->(b) RETURN {_NODE_UID} AS src_uid, {_NODE_DST} AS dst_uid, 'CONTAINS' AS type"),
     ("CALLS", "MATCH (a)-[r:CALLS]->(b) RETURN a.uid AS src_uid, b.uid AS dst_uid, 'CALLS' AS type"),
     ("IMPORTS", "MATCH (a:File)-[r:IMPORTS]->(b:Module) RETURN a.path AS src_uid, b.name AS dst_uid, 'IMPORTS' AS type"),
     ("INHERITS", f"MATCH (a)-[r:INHERITS]->(b) RETURN {_NODE_UID} AS src_uid, {_NODE_DST} AS dst_uid, 'INHERITS' AS type"),
 ]
-
-
-def _get_kuzu_connection() -> Any:
-    from codegraphcontext.core.database_kuzu import KuzuDBManager
-    manager = KuzuDBManager()
-    driver = manager.get_driver()
-    return driver.conn
 
 
 def _fetch_graph(conn: Any, *, limit: int) -> dict[str, Any]:
@@ -104,19 +104,17 @@ _HTML_TEMPLATE = """<!DOCTYPE html>
   body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
          background: #0d1117; color: #c9d1d9; overflow: hidden; }
   #header { padding: 16px 24px; border-bottom: 1px solid #30363d; display: flex;
-            justify-content: space-between; align-items: center; }
-  #header h1 { font-size: 18px; font-weight: 600; }
-  #header .stats { font-size: 13px; color: #8b949e; }
-  svg { width: 100vw; height: calc(100vh - 56px); }
-  .link { stroke-opacity: 0.3; }
-  .link-CALLS { stroke: #f0883e; }
-  .link-CONTAINS { stroke: #30363d; }
-  .link-IMPORTS { stroke: #58a6ff; }
-  .link-INHERITS { stroke: #d2a8ff; }
-  .node-label { font-size: 9px; fill: #8b949e; pointer-events: none; }
+            justify-content: space-between; align-items: center; gap: 16px; }
+  #header h1 { font-size: 18px; font-weight: 600; white-space: nowrap; }
+  #header .stats { font-size: 13px; color: #8b949e; white-space: nowrap; }
+  #header .controls { display: flex; align-items: center; gap: 12px; margin-left: auto; }
+  #header select, #header input { background: #0d1117; color: #c9d1d9; border: 1px solid #30363d;
+                                   border-radius: 6px; padding: 6px 10px; font-size: 12px; }
+  #header input { width: 220px; }
+  #cy { width: 100vw; height: calc(100vh - 57px); background: #0d1117; }
   .tooltip { position: absolute; background: #161b22; border: 1px solid #30363d;
              border-radius: 6px; padding: 10px 14px; font-size: 12px; pointer-events: none;
-             max-width: 360px; box-shadow: 0 4px 12px rgba(0,0,0,0.4); display: none; }
+             max-width: 360px; box-shadow: 0 4px 12px rgba(0,0,0,0.4); display: none; z-index: 20; }
   .tooltip .name { font-weight: 600; color: #58a6ff; margin-bottom: 4px; }
   .tooltip .path { color: #8b949e; }
   .legend { position: absolute; top: 72px; right: 24px; background: #161b22;
@@ -124,16 +122,28 @@ _HTML_TEMPLATE = """<!DOCTYPE html>
   .legend-item { display: flex; align-items: center; gap: 8px; margin: 4px 0; font-size: 12px; }
   .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
   .legend-line { width: 20px; height: 2px; }
-  .legend-section { font-size: 10px; color: #8b949e; margin-top: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .legend-section { font-size: 10px; color: #8b949e; margin-top: 8px;
+                    text-transform: uppercase; letter-spacing: 0.5px; }
 </style>
 </head>
 <body>
 <div id="header">
   <h1>cgraph — Code Graph</h1>
-  <div class="stats">__NODE_COUNT__ nodes &middot; __EDGE_COUNT__ edges</div>
+  <div class="stats">__NODE_COUNT__ nodes &middot; __EDGE_COUNT__ edges &middot; layout: <span id="layout-label">__LAYOUT_NAME__</span></div>
+  <div class="controls">
+    <select id="layout-select">
+      <option value="cose">cose</option>
+      <option value="dagre">dagre</option>
+      <option value="concentric">concentric</option>
+      <option value="grid">grid</option>
+      <option value="breadthfirst">breadthfirst</option>
+      <option value="circle">circle</option>
+    </select>
+    <input id="search" type="text" placeholder="Search node name...">
+  </div>
 </div>
-<svg id="graph"></svg>
-<div class="legend" id="legend">
+<div id="cy"></div>
+<div class="legend">
   <div class="legend-section">Nodes</div>
   <div class="legend-item"><div class="legend-dot" style="background:#8b949e"></div>File</div>
   <div class="legend-item"><div class="legend-dot" style="background:#f778ba"></div>Module</div>
@@ -145,215 +155,305 @@ _HTML_TEMPLATE = """<!DOCTYPE html>
   <div class="legend-item"><div class="legend-line" style="background:#f0883e"></div>Calls</div>
   <div class="legend-item"><div class="legend-line" style="background:#58a6ff"></div>Imports</div>
   <div class="legend-item"><div class="legend-line" style="background:#d2a8ff"></div>Inherits</div>
+  <div class="legend-section" style="margin-top:12px">Interactions</div>
+  <div class="legend-item" style="color:#8b949e">Tap: highlight neighborhood</div>
+  <div class="legend-item" style="color:#8b949e">Scroll: zoom &middot; Drag: pan</div>
 </div>
 <div class="tooltip" id="tooltip"></div>
+<script src="https://unpkg.com/cytoscape@3.28.1/dist/cytoscape.min.js"></script>
+<script src="https://unpkg.com/dagre@0.8.5/dist/dagre.min.js"></script>
+<script src="https://unpkg.com/cytoscape-dagre@2.5.0/cytoscape-dagre.js"></script>
 <script>
 const GRAPH = __GRAPH_JSON__;
+const INITIAL_LAYOUT = "__LAYOUT_NAME__";
 const COLORS = { File: "#8b949e", Module: "#f778ba", Class: "#d2a8ff", Function: "#7ee787", Variable: "#79c0ff" };
-const SIZES = { File: 8, Module: 6, Class: 7, Function: 5, Variable: 4 };
 const EDGE_COLORS = { CONTAINS: "#30363d", CALLS: "#f0883e", IMPORTS: "#58a6ff", INHERITS: "#d2a8ff" };
+const SIZES = { File: 18, Module: 14, Class: 16, Function: 10, Variable: 8 };
+const TYPE_RANK = { File: 5, Module: 4, Class: 3, Function: 2, Variable: 1 };
 
-const svg = document.getElementById("graph");
-const W = window.innerWidth, H = window.innerHeight - 56;
-svg.setAttribute("viewBox", "0 0 " + W + " " + H);
+if (typeof cytoscapeDagre !== "undefined") cytoscape.use(cytoscapeDagre);
 
-// State
-const nodes = GRAPH.nodes.map(n => ({
-  ...n, x: W/2 + (Math.random()-0.5)*W*0.4, y: H/2 + (Math.random()-0.5)*H*0.4, vx: 0, vy: 0,
-  fx: null, fy: null
-}));
-const nodeMap = {};
-nodes.forEach(n => nodeMap[n.id] = n);
-const edges = GRAPH.edges.map(e => ({source: nodeMap[e.source], target: nodeMap[e.target], type: e.type}))
-  .filter(e => e.source && e.target);
+const elements = [
+  ...GRAPH.nodes.map(n => ({
+    data: { id: n.id, label: n.name, type: n.type, path: n.path, line: n.line },
+  })),
+  ...GRAPH.edges.map((e, i) => ({
+    data: { id: "e" + i, source: e.source, target: e.target, type: e.type },
+  })),
+];
 
-// SVG groups for zoom
-const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
-svg.appendChild(g);
+// animate:false — layout computes positions and paints once, no jitter.
+const LAYOUT_CONFIGS = {
+  cose:         { name: "cose", animate: false, nodeRepulsion: 8000, idealEdgeLength: 70, nodeOverlap: 12, gravity: 0.25, numIter: 1500 },
+  dagre:        { name: "dagre", rankDir: "TB", animate: false, spacingFactor: 1.1, nodeDimensionsIncludeLabels: true },
+  concentric:   { name: "concentric", animate: false, concentric: n => TYPE_RANK[n.data("type")] || 0, levelWidth: () => 1, minNodeSpacing: 30 },
+  grid:         { name: "grid", animate: false, avoidOverlap: true, condense: false },
+  breadthfirst: { name: "breadthfirst", animate: false, directed: true, spacingFactor: 1.1 },
+  circle:       { name: "circle", animate: false },
+};
 
-// Create edge elements
-const lineEls = edges.map(e => {
-  const l = document.createElementNS("http://www.w3.org/2000/svg", "line");
-  l.setAttribute("class", "link link-" + e.type);
-  l.setAttribute("stroke", EDGE_COLORS[e.type] || "#30363d");
-  l.setAttribute("stroke-width", "1");
-  g.appendChild(l);
-  return l;
+const cy = cytoscape({
+  container: document.getElementById("cy"),
+  elements: elements,
+  wheelSensitivity: 0.25,
+  style: [
+    { selector: "node", style: {
+        "background-color": ele => COLORS[ele.data("type")] || "#8b949e",
+        "width": ele => SIZES[ele.data("type")] || 8,
+        "height": ele => SIZES[ele.data("type")] || 8,
+        "label": ele => ["File","Module","Class"].includes(ele.data("type")) ? ele.data("label") : "",
+        "color": "#8b949e",
+        "font-size": 9,
+        "text-halign": "right",
+        "text-valign": "center",
+        "text-margin-x": 4,
+        "text-wrap": "none",
+        "opacity": 0.9,
+    }},
+    { selector: "edge", style: {
+        "line-color": ele => EDGE_COLORS[ele.data("type")] || "#30363d",
+        "width": 1,
+        "curve-style": "straight",
+        "target-arrow-shape": "triangle",
+        "target-arrow-color": ele => EDGE_COLORS[ele.data("type")] || "#30363d",
+        "arrow-scale": 0.5,
+        "opacity": 0.35,
+    }},
+    { selector: ".faded", style: { "opacity": 0.08 } },
+    { selector: ".hit",   style: { "opacity": 1, "z-index": 10 } },
+    { selector: "node.hit", style: { "border-width": 2, "border-color": "#58a6ff" } },
+  ],
+  layout: LAYOUT_CONFIGS[INITIAL_LAYOUT] || LAYOUT_CONFIGS.cose,
 });
 
-// Create node elements
-const circleEls = nodes.map((n, i) => {
-  const c = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-  c.setAttribute("r", SIZES[n.type] || 4);
-  c.setAttribute("fill", COLORS[n.type] || "#8b949e");
-  c.setAttribute("opacity", "0.85");
-  c.setAttribute("cursor", "grab");
-  c.dataset.idx = i;
-  g.appendChild(c);
-  return c;
-});
-
-// Create labels for Class, File, Module nodes
-const labelNodes = nodes.filter(n => n.type === "Class" || n.type === "File" || n.type === "Module");
-const labelEls = labelNodes.map(n => {
-  const t = document.createElementNS("http://www.w3.org/2000/svg", "text");
-  t.setAttribute("class", "node-label");
-  t.setAttribute("dx", "10");
-  t.setAttribute("dy", "3");
-  t.textContent = n.name;
-  g.appendChild(t);
-  return t;
-});
-
-// Tooltip
+// Tooltip on hover
 const tooltip = document.getElementById("tooltip");
-svg.addEventListener("mouseover", e => {
-  if (e.target.tagName === "circle") {
-    const n = nodes[e.target.dataset.idx];
-    tooltip.textContent = '';
-    const nd = document.createElement('div');
-    nd.className = 'name';
-    nd.appendChild(document.createTextNode(n.name + ' '));
-    const ts = document.createElement('span');
-    ts.style.cssText = 'color:#8b949e;font-weight:normal';
-    ts.textContent = '(' + n.type + ')';
-    nd.appendChild(ts);
-    tooltip.appendChild(nd);
-    if (n.path) {
-      const pd = document.createElement('div');
-      pd.className = 'path';
-      pd.textContent = n.path + (n.line ? ':' + n.line : '');
-      tooltip.appendChild(pd);
-    }
-    tooltip.style.display = "block";
+cy.on("mouseover", "node", e => {
+  const n = e.target.data();
+  tooltip.textContent = "";
+  const nd = document.createElement("div");
+  nd.className = "name";
+  nd.appendChild(document.createTextNode(n.label + " "));
+  const ts = document.createElement("span");
+  ts.style.cssText = "color:#8b949e;font-weight:normal";
+  ts.textContent = "(" + n.type + ")";
+  nd.appendChild(ts);
+  tooltip.appendChild(nd);
+  if (n.path) {
+    const pd = document.createElement("div");
+    pd.className = "path";
+    pd.textContent = n.path + (n.line ? ":" + n.line : "");
+    tooltip.appendChild(pd);
+  }
+  tooltip.style.display = "block";
+});
+cy.on("mousemove", e => {
+  const ev = e.originalEvent;
+  if (ev) {
+    tooltip.style.left = (ev.pageX + 12) + "px";
+    tooltip.style.top = (ev.pageY - 12) + "px";
   }
 });
-svg.addEventListener("mousemove", e => {
-  tooltip.style.left = (e.pageX + 12) + "px";
-  tooltip.style.top = (e.pageY - 12) + "px";
+cy.on("mouseout", "node", () => { tooltip.style.display = "none"; });
+
+// Tap to highlight closed neighborhood; tap background to clear.
+function clearHighlight() { cy.elements().removeClass("faded hit"); }
+cy.on("tap", "node", e => {
+  clearHighlight();
+  cy.elements().addClass("faded");
+  e.target.closedNeighborhood().removeClass("faded").addClass("hit");
 });
-svg.addEventListener("mouseout", e => {
-  if (e.target.tagName === "circle") tooltip.style.display = "none";
+cy.on("tap", e => { if (e.target === cy) clearHighlight(); });
+
+// Layout switcher
+const layoutSelect = document.getElementById("layout-select");
+const layoutLabel = document.getElementById("layout-label");
+layoutSelect.value = INITIAL_LAYOUT;
+layoutSelect.addEventListener("change", () => {
+  const name = layoutSelect.value;
+  layoutLabel.textContent = name;
+  cy.layout(LAYOUT_CONFIGS[name] || LAYOUT_CONFIGS.cose).run();
 });
 
-// Zoom + pan via wheel/pinch
-let tx = 0, ty = 0, scale = 1;
-function applyTransform() { g.setAttribute("transform", "translate("+tx+","+ty+") scale("+scale+")"); }
-svg.addEventListener("wheel", e => {
-  e.preventDefault();
-  const factor = e.deltaY < 0 ? 1.1 : 0.9;
-  const rect = svg.getBoundingClientRect();
-  const mx = e.clientX - rect.left, my = e.clientY - rect.top;
-  tx = mx - (mx - tx) * factor;
-  ty = my - (my - ty) * factor;
-  scale *= factor;
-  applyTransform();
-}, {passive: false});
-
-// Pan via middle-click or shift+drag
-let panning = false, panStartX, panStartY, panTx, panTy;
-svg.addEventListener("mousedown", e => {
-  if (e.button === 1 || (e.button === 0 && e.shiftKey)) {
-    panning = true; panStartX = e.clientX; panStartY = e.clientY; panTx = tx; panTy = ty;
-    e.preventDefault();
-  }
+// Search: exact-prefix highlight, Enter fits to matches.
+const search = document.getElementById("search");
+search.addEventListener("input", () => {
+  const q = search.value.trim().toLowerCase();
+  clearHighlight();
+  if (!q) return;
+  const matches = cy.nodes().filter(n => (n.data("label") || "").toLowerCase().includes(q));
+  if (matches.length === 0) return;
+  cy.elements().addClass("faded");
+  matches.union(matches.connectedEdges()).union(matches.openNeighborhood()).removeClass("faded").addClass("hit");
 });
-window.addEventListener("mousemove", e => {
-  if (panning) { tx = panTx + e.clientX - panStartX; ty = panTy + e.clientY - panStartY; applyTransform(); }
-});
-window.addEventListener("mouseup", () => { panning = false; });
-
-// Drag nodes
-let dragging = null;
-svg.addEventListener("mousedown", e => {
-  if (e.target.tagName === "circle" && !e.shiftKey && e.button === 0) {
-    const idx = +e.target.dataset.idx;
-    dragging = nodes[idx];
-    dragging.fx = dragging.x; dragging.fy = dragging.y;
-    e.preventDefault();
+search.addEventListener("keydown", e => {
+  if (e.key === "Enter") {
+    const hits = cy.$(".hit");
+    if (hits.length > 0) cy.fit(hits, 40);
   }
 });
-window.addEventListener("mousemove", e => {
-  if (dragging) {
-    const rect = svg.getBoundingClientRect();
-    dragging.fx = (e.clientX - rect.left - tx) / scale;
-    dragging.fy = (e.clientY - rect.top - ty) / scale;
-  }
-});
-window.addEventListener("mouseup", () => { if (dragging) { dragging.fx = null; dragging.fy = null; dragging = null; } });
-
-// Force simulation
-let alpha = 1;
-function simulate() {
-  if (alpha < 0.001) { requestAnimationFrame(simulate); return; }
-  alpha *= 0.995;
-
-  // Centering force
-  nodes.forEach(n => { n.vx += (W/2 - n.x) * 0.001; n.vy += (H/2 - n.y) * 0.001; });
-
-  // Charge repulsion (N^2 — fine for graphs under ~2000 nodes)
-  for (let i = 0; i < nodes.length; i++) {
-    for (let j = i + 1; j < nodes.length; j++) {
-      const dx = nodes[j].x - nodes[i].x, dy = nodes[j].y - nodes[i].y;
-      const d2 = dx * dx + dy * dy + 1;
-      const d = Math.sqrt(d2);
-      const f = -150 * alpha / d2;
-      const fx = (dx / d) * f, fy = (dy / d) * f;
-      nodes[i].vx -= fx; nodes[i].vy -= fy;
-      nodes[j].vx += fx; nodes[j].vy += fy;
-    }
-  }
-
-  // Link spring force
-  edges.forEach(e => {
-    const dx = e.target.x - e.source.x, dy = e.target.y - e.source.y;
-    const d = Math.sqrt(dx * dx + dy * dy) || 1;
-    const f = (d - 60) * 0.03 * alpha;
-    const fx = (dx / d) * f, fy = (dy / d) * f;
-    e.source.vx += fx; e.source.vy += fy;
-    e.target.vx -= fx; e.target.vy -= fy;
-  });
-
-  // Velocity damping + position update
-  nodes.forEach(n => {
-    if (n.fx != null) { n.x = n.fx; n.vx = 0; }
-    else { n.vx *= 0.6; n.x += n.vx; }
-    if (n.fy != null) { n.y = n.fy; n.vy = 0; }
-    else { n.vy *= 0.6; n.y += n.vy; }
-  });
-
-  // Render
-  for (let i = 0; i < edges.length; i++) {
-    lineEls[i].setAttribute("x1", edges[i].source.x);
-    lineEls[i].setAttribute("y1", edges[i].source.y);
-    lineEls[i].setAttribute("x2", edges[i].target.x);
-    lineEls[i].setAttribute("y2", edges[i].target.y);
-  }
-  for (let i = 0; i < nodes.length; i++) {
-    circleEls[i].setAttribute("cx", nodes[i].x);
-    circleEls[i].setAttribute("cy", nodes[i].y);
-  }
-  for (let i = 0; i < labelNodes.length; i++) {
-    labelEls[i].setAttribute("x", labelNodes[i].x);
-    labelEls[i].setAttribute("y", labelNodes[i].y);
-  }
-
-  requestAnimationFrame(simulate);
-}
-
-// Restart alpha on drag
-svg.addEventListener("mousedown", e => { if (e.target.tagName === "circle") alpha = 0.3; });
-simulate();
 </script>
 </body>
 </html>"""
 
 
-def _generate_html(graph: dict[str, Any]) -> str:
+_HTML_TEMPLATE_3D = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>cgraph — Code Graph (3D)</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+         background: #0d1117; color: #c9d1d9; overflow: hidden; }
+  #header { position: absolute; top: 0; left: 0; right: 0; z-index: 20;
+            padding: 16px 24px; border-bottom: 1px solid #30363d;
+            background: rgba(13,17,23,0.85); backdrop-filter: blur(6px);
+            display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+  #header h1 { font-size: 18px; font-weight: 600; }
+  #header .stats { font-size: 13px; color: #8b949e; }
+  #header .controls { display: flex; align-items: center; gap: 12px; margin-left: auto; }
+  #header input { background: #0d1117; color: #c9d1d9; border: 1px solid #30363d;
+                   border-radius: 6px; padding: 6px 10px; font-size: 12px; width: 220px; }
+  #graph { width: 100vw; height: 100vh; }
+  .tooltip { position: absolute; background: #161b22; border: 1px solid #30363d;
+             border-radius: 6px; padding: 10px 14px; font-size: 12px; pointer-events: none;
+             max-width: 360px; box-shadow: 0 4px 12px rgba(0,0,0,0.4); display: none; z-index: 30; }
+  .tooltip .name { font-weight: 600; color: #58a6ff; margin-bottom: 4px; }
+  .tooltip .path { color: #8b949e; }
+  .legend { position: absolute; top: 72px; right: 24px; background: #161b22;
+            border: 1px solid #30363d; border-radius: 6px; padding: 12px 16px; z-index: 10; }
+  .legend-item { display: flex; align-items: center; gap: 8px; margin: 4px 0; font-size: 12px; }
+  .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+  .legend-line { width: 20px; height: 2px; }
+  .legend-section { font-size: 10px; color: #8b949e; margin-top: 8px;
+                    text-transform: uppercase; letter-spacing: 0.5px; }
+</style>
+</head>
+<body>
+<div id="header">
+  <h1>cgraph — Code Graph (3D)</h1>
+  <div class="stats">__NODE_COUNT__ nodes &middot; __EDGE_COUNT__ edges &middot; drag to rotate</div>
+  <div class="controls">
+    <input id="search" type="text" placeholder="Search node name...">
+  </div>
+</div>
+<div id="graph"></div>
+<div class="legend">
+  <div class="legend-section">Nodes</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#8b949e"></div>File</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#f778ba"></div>Module</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#d2a8ff"></div>Class</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#7ee787"></div>Function</div>
+  <div class="legend-item"><div class="legend-dot" style="background:#79c0ff"></div>Variable</div>
+  <div class="legend-section" style="margin-top:12px">Edges</div>
+  <div class="legend-item"><div class="legend-line" style="background:#30363d"></div>Contains</div>
+  <div class="legend-item"><div class="legend-line" style="background:#f0883e"></div>Calls</div>
+  <div class="legend-item"><div class="legend-line" style="background:#58a6ff"></div>Imports</div>
+  <div class="legend-item"><div class="legend-line" style="background:#d2a8ff"></div>Inherits</div>
+  <div class="legend-section" style="margin-top:12px">Interactions</div>
+  <div class="legend-item" style="color:#8b949e">Drag: rotate &middot; Scroll: zoom</div>
+  <div class="legend-item" style="color:#8b949e">Right-drag: pan &middot; Click: focus</div>
+</div>
+<div class="tooltip" id="tooltip"></div>
+<script src="https://unpkg.com/3d-force-graph@1.73.4/dist/3d-force-graph.min.js"></script>
+<script>
+const GRAPH = __GRAPH_JSON__;
+const COLORS = { File: "#8b949e", Module: "#f778ba", Class: "#d2a8ff", Function: "#7ee787", Variable: "#79c0ff" };
+const EDGE_COLORS = { CONTAINS: "#30363d", CALLS: "#f0883e", IMPORTS: "#58a6ff", INHERITS: "#d2a8ff" };
+const SIZES = { File: 6, Module: 5, Class: 5, Function: 3.5, Variable: 2.5 };
+
+const graphData = {
+  nodes: GRAPH.nodes.map(n => ({
+    id: n.id, name: n.name, type: n.type, path: n.path, line: n.line,
+  })),
+  links: GRAPH.edges.map(e => ({ source: e.source, target: e.target, type: e.type })),
+};
+
+const tooltip = document.getElementById("tooltip");
+function showTooltip(n, event) {
+  tooltip.textContent = "";
+  const nd = document.createElement("div");
+  nd.className = "name";
+  nd.appendChild(document.createTextNode(n.name + " "));
+  const ts = document.createElement("span");
+  ts.style.cssText = "color:#8b949e;font-weight:normal";
+  ts.textContent = "(" + n.type + ")";
+  nd.appendChild(ts);
+  tooltip.appendChild(nd);
+  if (n.path) {
+    const pd = document.createElement("div");
+    pd.className = "path";
+    pd.textContent = n.path + (n.line ? ":" + n.line : "");
+    tooltip.appendChild(pd);
+  }
+  tooltip.style.left = (event.pageX + 12) + "px";
+  tooltip.style.top = (event.pageY - 12) + "px";
+  tooltip.style.display = "block";
+}
+document.getElementById("graph").addEventListener("mousemove", e => {
+  if (tooltip.style.display === "block") {
+    tooltip.style.left = (e.pageX + 12) + "px";
+    tooltip.style.top = (e.pageY - 12) + "px";
+  }
+});
+
+// cooldownTicks=120 / d3AlphaDecay=0.05 — sim settles in ~1.5s then hard-stops.
+// Not the never-converging pathology the old vanilla sim had.
+const Graph = ForceGraph3D()(document.getElementById("graph"))
+  .graphData(graphData)
+  .backgroundColor("#0d1117")
+  .nodeRelSize(4)
+  .nodeVal(n => SIZES[n.type] || 3)
+  .nodeColor(n => COLORS[n.type] || "#8b949e")
+  .nodeLabel(n => n.name + " (" + n.type + ")")
+  .linkColor(l => EDGE_COLORS[l.type] || "#30363d")
+  .linkOpacity(0.35)
+  .linkDirectionalArrowLength(3)
+  .linkDirectionalArrowRelPos(1)
+  .cooldownTicks(120)
+  .d3AlphaDecay(0.05)
+  .warmupTicks(0)
+  .onNodeHover(n => {
+    document.getElementById("graph").style.cursor = n ? "pointer" : null;
+    if (!n) { tooltip.style.display = "none"; return; }
+    // 3d-force-graph doesn't pass the pointer event — synthesize from last mousemove.
+    const evt = window._lastMove || { pageX: window.innerWidth / 2, pageY: window.innerHeight / 2 };
+    showTooltip(n, evt);
+  })
+  .onNodeClick(n => {
+    // Zoom camera to focus on the clicked node.
+    const distance = 80;
+    const distRatio = 1 + distance / Math.hypot(n.x || 1, n.y || 1, n.z || 1);
+    Graph.cameraPosition(
+      { x: (n.x || 0) * distRatio, y: (n.y || 0) * distRatio, z: (n.z || 0) * distRatio },
+      n,
+      1500,
+    );
+  });
+
+document.addEventListener("mousemove", e => { window._lastMove = e; });
+
+// Search: filter nodes by name; dim everything else.
+const search = document.getElementById("search");
+search.addEventListener("input", () => {
+  const q = search.value.trim().toLowerCase();
+  Graph
+    .nodeOpacity(q ? (n => (n.name || "").toLowerCase().includes(q) ? 1 : 0.1) : 0.85)
+    .linkOpacity(q ? 0.05 : 0.35);
+});
+</script>
+</body>
+</html>"""
+
+
+def _generate_html(graph: dict[str, Any], *, layout: str = "cose", three_d: bool = False) -> str:
     safe_json = json.dumps(graph).replace("</", "<\\/")
-    html = _HTML_TEMPLATE.replace("__GRAPH_JSON__", safe_json)
+    template = _HTML_TEMPLATE_3D if three_d else _HTML_TEMPLATE
+    html = template.replace("__GRAPH_JSON__", safe_json)
     html = html.replace("__NODE_COUNT__", str(len(graph["nodes"])))
     html = html.replace("__EDGE_COUNT__", str(len(graph["edges"])))
+    html = html.replace("__LAYOUT_NAME__", layout)
     return html
 
 
@@ -368,20 +468,35 @@ def viz_graph_command(
         "--limit",
         help="Max nodes per table to fetch.",
     ),
+    layout: str = typer.Option(
+        "cose",
+        "--layout",
+        help=f"2D initial layout ({', '.join(_LAYOUTS)}). Ignored when --3d is set.",
+    ),
+    three_d: bool = typer.Option(
+        False,
+        "--3d/--2d",
+        help="Render in 3D via 3d-force-graph (drag-rotate, scroll-zoom). Default is 2D Cytoscape.",
+    ),
     no_open: bool = typer.Option(
         False,
         "--no-open",
         help="Write file but don't open in browser.",
     ),
 ) -> None:
-    """Visualize code graph as an interactive force-directed diagram."""
+    """Visualize code graph as an interactive diagram (2D Cytoscape or 3D force-directed)."""
+
+    if layout not in _LAYOUTS:
+        raise typer.BadParameter(
+            f"unknown layout {layout!r}; expected one of {sorted(_LAYOUTS)}"
+        )
 
     backend_payload = probe_backend_support()
     if not backend_payload["ok"]:
         typer.echo(emit_json(backend_payload))
         raise typer.Exit(code=1)
 
-    conn = _get_kuzu_connection()
+    conn = get_kuzu_connection()
     print("Fetching graph data...", file=sys.stderr)
     graph = _fetch_graph(conn, limit=limit)
 
@@ -393,7 +508,7 @@ def viz_graph_command(
         }))
         raise typer.Exit(code=1)
 
-    html = _generate_html(graph)
+    html = _generate_html(graph, layout=layout, three_d=three_d)
 
     if output:
         out_path = output
@@ -414,6 +529,8 @@ def viz_graph_command(
         "kind": "viz_graph",
         "nodes": len(graph["nodes"]),
         "edges": len(graph["edges"]),
+        "layout": layout,
+        "mode": "3d" if three_d else "2d",
         "output": os.path.abspath(out_path),
     }))
     raise typer.Exit(code=0)

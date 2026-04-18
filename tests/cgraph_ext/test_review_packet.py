@@ -697,7 +697,7 @@ def test_review_packet_registered():
     assert "review-packet" in result.output.lower() or "reviewer" in result.output.lower()
 
 
-@patch("codegraphcontext_ext.commands.review_packet._get_kuzu_connection")
+@patch("codegraphcontext_ext.commands.review_packet.get_kuzu_connection")
 @patch("codegraphcontext_ext.commands.review_packet._run_git")
 def test_cli_basic_invocation(mock_git, mock_conn):
     """Basic CLI invocation produces valid JSON."""
@@ -714,7 +714,7 @@ def test_cli_basic_invocation(mock_git, mock_conn):
     assert "advisories" in payload
 
 
-@patch("codegraphcontext_ext.commands.review_packet._get_kuzu_connection")
+@patch("codegraphcontext_ext.commands.review_packet.get_kuzu_connection")
 @patch("codegraphcontext_ext.commands.review_packet._run_git")
 def test_cli_max_nodes_option(mock_git, mock_conn):
     """--max-nodes is accepted."""

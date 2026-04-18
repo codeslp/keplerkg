@@ -25,22 +25,13 @@ from ..embeddings.schema import (
     ensure_hnsw_indexes,
 )
 from ..io.json_stdout import emit_json
+from ..io.kuzu import get_kuzu_connection
 
 COMMAND_NAME = "embed"
 SUMMARY = "Vectorize code-entity nodes in KùzuDB for hybrid retrieval."
 
 # How many nodes to vectorize per batch round-trip.
 _BATCH_SIZE = 64
-
-
-def _get_kuzu_connection() -> Any:
-    """Obtain a raw kuzu.Connection from upstream's singleton manager."""
-    from codegraphcontext.core.database_kuzu import KuzuDBManager
-
-    manager = KuzuDBManager()
-    driver = manager.get_driver()
-    # KuzuDriverWrapper stores the connection as ._conn
-    return driver.conn
 
 
 def _build_embed_text(node: dict[str, Any]) -> str:
@@ -222,7 +213,7 @@ def embed_command(
 
     # --- Write path ---
     emb_provider = create_provider(config)
-    conn = _get_kuzu_connection()
+    conn = get_kuzu_connection()
 
     # Ensure schema has embedding columns
     col_results = ensure_embedding_columns(conn, config.dimensions)

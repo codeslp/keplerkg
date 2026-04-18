@@ -20,6 +20,7 @@ from pathspec import PathSpec
 from codegraphcontext.cli.config_manager import DEFAULT_CGCIGNORE_PATTERNS
 from codegraphcontext.core.cgcignore import find_cgcignore, parse_cgcignore_lines
 from ..io.json_stdout import emit_json
+from ..io.kuzu import get_kuzu_connection
 
 COMMAND_NAME = "review-packet"
 SCHEMA_FILE = "review-packet.json"
@@ -317,14 +318,6 @@ def _find_stale_index_paths(
 # ---------------------------------------------------------------------------
 # Graph helpers
 # ---------------------------------------------------------------------------
-
-def _get_kuzu_connection() -> Any:
-    """Obtain a raw kuzu.Connection from upstream's singleton manager."""
-    from codegraphcontext.core.database_kuzu import KuzuDBManager
-    manager = KuzuDBManager()
-    driver = manager.get_driver()
-    return driver.conn
-
 
 def _find_nodes_by_paths(
     conn: Any, file_paths: list[str], cwd: Path | None = None,
@@ -1022,7 +1015,7 @@ def review_packet_command(
     # Try to get a graph connection; proceed without if unavailable
     conn = None
     try:
-        conn = _get_kuzu_connection()
+        conn = get_kuzu_connection()
     except Exception as exc:
         print(f"Warning: KùzuDB unavailable ({exc}); graph data will be empty.", file=sys.stderr)
 

@@ -124,7 +124,7 @@ def test_embed_without_check_model_runs_write_path(monkeypatch):
     fake_conn.execute = lambda q, **kw: _FakeResult([])
 
     with patch(
-        "codegraphcontext_ext.commands.embed._get_kuzu_connection",
+        "codegraphcontext_ext.commands.embed.get_kuzu_connection",
         return_value=fake_conn,
     ), patch(
         "codegraphcontext_ext.commands.embed.ensure_embedding_columns",
@@ -464,7 +464,7 @@ def test_embed_write_path_emits_json(monkeypatch):
     mock_provider = _MockProvider(dims=768)
 
     with patch(
-        "codegraphcontext_ext.commands.embed._get_kuzu_connection",
+        "codegraphcontext_ext.commands.embed.get_kuzu_connection",
         return_value=fake_conn,
     ), patch(
         "codegraphcontext_ext.commands.embed.create_provider",
@@ -495,7 +495,7 @@ def test_embed_force_flag_passed_through(monkeypatch):
     fake_conn.execute = lambda q, **kw: _FakeResult([])
 
     with patch(
-        "codegraphcontext_ext.commands.embed._get_kuzu_connection",
+        "codegraphcontext_ext.commands.embed.get_kuzu_connection",
         return_value=fake_conn,
     ), patch(
         "codegraphcontext_ext.commands.embed.create_provider",

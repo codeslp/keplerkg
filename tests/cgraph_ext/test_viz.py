@@ -4,11 +4,8 @@ import json
 import os
 from unittest.mock import patch
 
-import typer
 from typer.testing import CliRunner
 
-from codegraphcontext_ext.cli import register_extensions
-from codegraphcontext_ext.embeddings import runtime
 from codegraphcontext_ext.commands.viz_embeddings import (
     _generate_html as gen_emb_html,
     _reduce_to_2d,
@@ -17,26 +14,15 @@ from codegraphcontext_ext.commands.viz_graph import (
     _generate_html as gen_graph_html,
 )
 
+from .conftest import (
+    FakeResult,
+    FunctionOnlyConn,
+    build_ext_app as _viz_app,
+    extract_last_json as _extract_json,
+    mark_kuzu_backend_available,
+)
+
 runner = CliRunner()
-
-
-def _extract_json(output: str) -> dict:
-    for line in reversed(output.strip().splitlines()):
-        line = line.strip()
-        if line.startswith("{"):
-            return json.loads(line)
-    raise ValueError(f"No JSON found in output: {output!r}")
-
-
-def _viz_app() -> typer.Typer:
-    app = typer.Typer()
-
-    @app.callback()
-    def _root() -> None:
-        return None
-
-    register_extensions(app)
-    return app
 
 
 # --- Embedding viz tests ---
@@ -101,9 +87,8 @@ def test_generate_graph_html_contains_data():
     assert "Code Graph" in html
     assert "2 nodes" in html
     assert "1 edges" in html
-    # Must be standalone — no external script tags
-    assert "d3.v7" not in html
-    assert "<script src=" not in html
+    # Must use Cytoscape.js (online requirement acknowledged in module docstring).
+    assert "cytoscape" in html.lower()
 
 
 def test_generate_graph_html_valid_json_data():
@@ -123,34 +108,14 @@ def test_generate_graph_html_valid_json_data():
 # --- CLI integration tests ---
 
 
-class _FakeResult:
-    def __init__(self, rows):
-        self._rows = list(rows)
-        self._idx = 0
-
-    def has_next(self):
-        return self._idx < len(self._rows)
-
-    def get_next(self):
-        row = self._rows[self._idx]
-        self._idx += 1
-        return row
-
-
 def test_viz_embeddings_no_embeddings(monkeypatch, tmp_path):
-    monkeypatch.setenv("DEFAULT_DATABASE", "kuzudb")
-    monkeypatch.setattr(runtime, "is_kuzudb_available", lambda: True)
-
-    class _EmptyConn:
-        def execute(self, q, **kw):
-            return _FakeResult([])
+    mark_kuzu_backend_available(monkeypatch)
 
     with patch(
-        "codegraphcontext_ext.commands.viz_embeddings._get_kuzu_connection",
-        return_value=_EmptyConn(),
+        "codegraphcontext_ext.commands.viz_embeddings.get_kuzu_connection",
+        return_value=FunctionOnlyConn([]),
     ):
-        app = _viz_app()
-        result = runner.invoke(app, ["viz-embeddings", "--no-open"])
+        result = runner.invoke(_viz_app(), ["viz-embeddings", "--no-open"])
 
     assert result.exit_code == 1
     payload = _extract_json(result.output)
@@ -158,34 +123,19 @@ def test_viz_embeddings_no_embeddings(monkeypatch, tmp_path):
 
 
 def test_viz_embeddings_generates_html(monkeypatch, tmp_path):
-    monkeypatch.setenv("DEFAULT_DATABASE", "kuzudb")
-    monkeypatch.setattr(runtime, "is_kuzudb_available", lambda: True)
+    mark_kuzu_backend_available(monkeypatch)
 
     emb_rows = [
         ("uid1", "foo", "a.py", 1, [0.1, 0.2, 0.3, 0.4]),
         ("uid2", "bar", "b.py", 2, [0.5, 0.6, 0.7, 0.8]),
     ]
 
-    class _EmbConn:
-        def __init__(self):
-            self._call_count = {}
-
-        def execute(self, q, **kw):
-            for table in ("Function", "Class"):
-                if f"`{table}`" in q:
-                    self._call_count.setdefault(table, 0)
-                    self._call_count[table] += 1
-                    if self._call_count[table] == 1:
-                        return _FakeResult(emb_rows)
-            return _FakeResult([])
-
     out_file = str(tmp_path / "emb.html")
     with patch(
-        "codegraphcontext_ext.commands.viz_embeddings._get_kuzu_connection",
-        return_value=_EmbConn(),
+        "codegraphcontext_ext.commands.viz_embeddings.get_kuzu_connection",
+        return_value=FunctionOnlyConn(emb_rows),
     ):
-        app = _viz_app()
-        result = runner.invoke(app, ["viz-embeddings", "--no-open", "-o", out_file])
+        result = runner.invoke(_viz_app(), ["viz-embeddings", "--no-open", "-o", out_file])
 
     assert result.exit_code == 0
     assert os.path.exists(out_file)
@@ -195,19 +145,13 @@ def test_viz_embeddings_generates_html(monkeypatch, tmp_path):
 
 
 def test_viz_graph_empty_graph(monkeypatch):
-    monkeypatch.setenv("DEFAULT_DATABASE", "kuzudb")
-    monkeypatch.setattr(runtime, "is_kuzudb_available", lambda: True)
-
-    class _EmptyConn:
-        def execute(self, q, **kw):
-            return _FakeResult([])
+    mark_kuzu_backend_available(monkeypatch)
 
     with patch(
-        "codegraphcontext_ext.commands.viz_graph._get_kuzu_connection",
-        return_value=_EmptyConn(),
+        "codegraphcontext_ext.commands.viz_graph.get_kuzu_connection",
+        return_value=FunctionOnlyConn([]),
     ):
-        app = _viz_app()
-        result = runner.invoke(app, ["viz-graph", "--no-open"])
+        result = runner.invoke(_viz_app(), ["viz-graph", "--no-open"])
 
     assert result.exit_code == 1
     payload = _extract_json(result.output)
@@ -215,8 +159,7 @@ def test_viz_graph_empty_graph(monkeypatch):
 
 
 def test_viz_graph_generates_html(monkeypatch, tmp_path):
-    monkeypatch.setenv("DEFAULT_DATABASE", "kuzudb")
-    monkeypatch.setattr(runtime, "is_kuzudb_available", lambda: True)
+    mark_kuzu_backend_available(monkeypatch)
 
     node_rows = [
         ("uid1", "foo", "a.py", 1),
@@ -224,24 +167,25 @@ def test_viz_graph_generates_html(monkeypatch, tmp_path):
     ]
 
     class _GraphConn:
-        def execute(self, q, **kw):
+        """viz_graph queries are per-table and don't match FunctionOnlyConn's shape."""
+
+        def execute(self, q, **_kw):
             if "Function" in q and "RETURN" in q:
-                return _FakeResult(node_rows)
-            return _FakeResult([])
+                return FakeResult(node_rows)
+            return FakeResult([])
 
     out_file = str(tmp_path / "graph.html")
     with patch(
-        "codegraphcontext_ext.commands.viz_graph._get_kuzu_connection",
+        "codegraphcontext_ext.commands.viz_graph.get_kuzu_connection",
         return_value=_GraphConn(),
     ):
-        app = _viz_app()
-        result = runner.invoke(app, ["viz-graph", "--no-open", "-o", out_file])
+        result = runner.invoke(_viz_app(), ["viz-graph", "--no-open", "-o", out_file])
 
     assert result.exit_code == 0
     assert os.path.exists(out_file)
     html = open(out_file).read()
     assert "Code Graph" in html
-    assert "<script src=" not in html  # standalone, no CDN
+    assert "cytoscape" in html.lower()
 
 
 def test_generate_graph_html_includes_module_nodes():
@@ -275,25 +219,24 @@ def test_viz_graph_file_to_function_contains_edge(monkeypatch, tmp_path):
     File->Function CONTAINS edge.  Fix is a COALESCE(.uid, .path, .name) in
     the edge query that mirrors the node-fetch precedence.
     """
-    monkeypatch.setenv("DEFAULT_DATABASE", "kuzudb")
-    monkeypatch.setattr(runtime, "is_kuzudb_available", lambda: True)
+    mark_kuzu_backend_available(monkeypatch)
 
     class _FileFuncConn:
         def execute(self, q, **kw):
             if "`File`" in q and "RETURN" in q and "uid" in q:
                 # File node fetch: `n.path AS uid`
-                return _FakeResult([("src/auth.py", "auth.py", "src/auth.py", 0)])
+                return FakeResult([("src/auth.py", "auth.py", "src/auth.py", 0)])
             if "`Function`" in q and "RETURN" in q and "uid" in q:
-                return _FakeResult([("fn-verify-token", "verify_token", "src/auth.py", 42)])
+                return FakeResult([("fn-verify-token", "verify_token", "src/auth.py", 42)])
             if "CONTAINS" in q:
                 # Simulate upstream emitting the File's identifier via COALESCE.
                 # A File->Function CONTAINS edge: source keyed by path, target by uid.
-                return _FakeResult([("src/auth.py", "fn-verify-token", "CONTAINS")])
-            return _FakeResult([])
+                return FakeResult([("src/auth.py", "fn-verify-token", "CONTAINS")])
+            return FakeResult([])
 
     out_file = str(tmp_path / "graph.html")
     with patch(
-        "codegraphcontext_ext.commands.viz_graph._get_kuzu_connection",
+        "codegraphcontext_ext.commands.viz_graph.get_kuzu_connection",
         return_value=_FileFuncConn(),
     ):
         app = _viz_app()
@@ -359,16 +302,15 @@ def test_graph_html_escapes_script_closing_tag():
     }
     html = gen_graph_html(graph)
 
-    # The JSON blob must be fully contained before the real closing </script>.
-    script_start = html.index("<script>") + len("<script>")
-    script_body = html[script_start:]
-    closing_idx = script_body.index("</script>")
-    assert "const GRAPH = " in script_body[:closing_idx]
+    # Extract the inline data-script (the one containing const GRAPH) and
+    # verify its opening <script> lands before its closing </script>.
+    data_script_start = html.index("const GRAPH = ")
+    closing_idx = html.index("</script>", data_script_start)
+    assert closing_idx > data_script_start, "closing </script> must follow the data block"
 
-    # Extract and parse — escaped <\/ must round-trip correctly via JSON.
-    json_start = script_body.index("const GRAPH = ") + len("const GRAPH = ")
-    json_end = script_body.index(";\n", json_start)
-    data = json.loads(script_body[json_start:json_end])
+    json_start = data_script_start + len("const GRAPH = ")
+    json_end = html.index(";\n", json_start)
+    data = json.loads(html[json_start:json_end])
     assert data["nodes"][0]["name"] == '</script><img src=x onerror=alert(1)>'
     assert data["nodes"][0]["path"] == "src/evil</script>.py"
 
@@ -401,8 +343,11 @@ def test_graph_html_no_innerhtml():
         "edges": [],
     }
     html = gen_graph_html(graph)
-    script_start = html.index("<script>")
-    assert "innerHTML" not in html[script_start:]
+    # Inspect the last inline <script> block (the one with our data + handlers);
+    # Cytoscape's own CDN-loaded source is not in this file.
+    data_script_start = html.index("const GRAPH = ")
+    data_script_end = html.index("</script>", data_script_start)
+    assert "innerHTML" not in html[data_script_start:data_script_end]
 
 
 def test_emb_html_no_innerhtml():
@@ -419,3 +364,189 @@ def test_viz_commands_registered():
     names = [cmd.name for cmd in app.registered_commands]
     assert "viz-embeddings" in names
     assert "viz-graph" in names
+
+
+# --- Layout flag (Cytoscape.js) ---
+
+
+def test_graph_html_uses_cytoscape_and_animate_false():
+    """Cytoscape.js + deterministic layouts: animate:false on every layout config."""
+    graph = {
+        "nodes": [{"id": "u1", "name": "f", "path": "a.py", "line": 1, "type": "Function"}],
+        "edges": [],
+    }
+    html = gen_graph_html(graph)
+    assert "cytoscape@" in html, "Cytoscape.js CDN include must be present"
+    assert "cytoscape-dagre" in html, "dagre plugin must be bundled so --layout dagre works"
+    # Every layout in LAYOUT_CONFIGS must disable animation; otherwise users hit
+    # the same jitter the hand-rolled force sim produced.
+    assert html.count("animate: false") >= 5
+
+
+def test_viz_graph_rejects_unknown_layout(monkeypatch):
+    mark_kuzu_backend_available(monkeypatch)
+    result = runner.invoke(_viz_app(), ["viz-graph", "--no-open", "--layout", "tree"])
+    assert result.exit_code != 0
+    assert "unknown layout" in result.output or "tree" in result.output
+
+
+def test_viz_graph_3d_mode_emits_force_graph_template(monkeypatch, tmp_path):
+    """--3d swaps in the 3d-force-graph template with a bounded cooldown."""
+    mark_kuzu_backend_available(monkeypatch)
+
+    node_rows = [("uid1", "foo", "a.py", 1)]
+
+    class _GraphConn:
+        def execute(self, q, **_kw):
+            if "Function" in q and "RETURN" in q:
+                return FakeResult(node_rows)
+            return FakeResult([])
+
+    out_file = str(tmp_path / "g3d.html")
+    with patch(
+        "codegraphcontext_ext.commands.viz_graph.get_kuzu_connection",
+        return_value=_GraphConn(),
+    ):
+        result = runner.invoke(
+            _viz_app(), ["viz-graph", "--no-open", "-o", out_file, "--3d"],
+        )
+
+    assert result.exit_code == 0, result.output
+    payload = _extract_json(result.output)
+    assert payload["mode"] == "3d"
+
+    html = open(out_file).read()
+    assert "3d-force-graph" in html, "3D template must pull in 3d-force-graph CDN"
+    assert "ForceGraph3D()" in html
+    # Hard-cap on the settle animation — prevents the never-converging pathology.
+    assert ".cooldownTicks(120)" in html
+    assert "cytoscape" not in html.lower(), "3D path must not emit the Cytoscape template"
+
+
+def test_viz_graph_reports_layout_in_json(monkeypatch, tmp_path):
+    mark_kuzu_backend_available(monkeypatch)
+
+    node_rows = [("uid1", "foo", "a.py", 1)]
+
+    class _GraphConn:
+        def execute(self, q, **_kw):
+            if "Function" in q and "RETURN" in q:
+                return FakeResult(node_rows)
+            return FakeResult([])
+
+    out_file = str(tmp_path / "g.html")
+    with patch(
+        "codegraphcontext_ext.commands.viz_graph.get_kuzu_connection",
+        return_value=_GraphConn(),
+    ):
+        result = runner.invoke(
+            _viz_app(),
+            ["viz-graph", "--no-open", "-o", out_file, "--layout", "dagre"],
+        )
+
+    assert result.exit_code == 0, result.output
+    payload = _extract_json(result.output)
+    assert payload["layout"] == "dagre"
+    html = open(out_file).read()
+    assert 'INITIAL_LAYOUT = "dagre"' in html
+
+
+# --- Reducer flag ---
+
+
+def test_reducer_registry_lists_both_backends():
+    from codegraphcontext_ext.commands.viz_embeddings import _REDUCERS
+
+    assert set(_REDUCERS) == {"pca", "umap"}
+
+
+def test_viz_embeddings_rejects_unknown_reducer(monkeypatch):
+    mark_kuzu_backend_available(monkeypatch)
+
+    app = _viz_app()
+    result = runner.invoke(app, ["viz-embeddings", "--no-open", "--reducer", "tsne"])
+
+    assert result.exit_code != 0
+    assert "unknown reducer" in result.output or "tsne" in result.output
+
+
+def test_viz_embeddings_pca_reducer_end_to_end(monkeypatch, tmp_path):
+    """The default PCA path still works after the --reducer refactor."""
+    mark_kuzu_backend_available(monkeypatch)
+
+    emb_rows = [
+        ("uid1", "foo", "a.py", 1, [0.1, 0.2, 0.3, 0.4]),
+        ("uid2", "bar", "b.py", 2, [0.5, 0.6, 0.7, 0.8]),
+    ]
+
+    class _EmbConn:
+        def __init__(self):
+            self._seen = set()
+
+        def execute(self, q, **kw):
+            for table in ("Function", "Class"):
+                if f"`{table}`" in q and table not in self._seen:
+                    self._seen.add(table)
+                    if table == "Function":
+                        return FakeResult(emb_rows)
+            return FakeResult([])
+
+    out_file = str(tmp_path / "emb.html")
+    with patch(
+        "codegraphcontext_ext.commands.viz_embeddings.get_kuzu_connection",
+        return_value=_EmbConn(),
+    ):
+        app = _viz_app()
+        result = runner.invoke(
+            app,
+            ["viz-embeddings", "--no-open", "--reducer", "pca", "-o", out_file],
+        )
+
+    assert result.exit_code == 0, result.output
+    payload = _extract_json(result.output)
+    assert payload["reducer"] == "pca"
+    html = open(out_file).read()
+    assert "(PCA 2D)" in html
+
+
+def test_viz_embeddings_reports_reducer_unavailable_when_umap_missing(monkeypatch, tmp_path):
+    """Missing umap-learn surfaces as a typed error, not a traceback."""
+    mark_kuzu_backend_available(monkeypatch)
+
+    emb_rows = [
+        ("uid1", "foo", "a.py", 1, [0.1, 0.2, 0.3, 0.4]),
+        ("uid2", "bar", "b.py", 2, [0.5, 0.6, 0.7, 0.8]),
+    ]
+
+    class _EmbConn:
+        def __init__(self):
+            self._seen = set()
+
+        def execute(self, q, **kw):
+            for table in ("Function", "Class"):
+                if f"`{table}`" in q and table not in self._seen:
+                    self._seen.add(table)
+                    if table == "Function":
+                        return FakeResult(emb_rows)
+            return FakeResult([])
+
+    def _fake_umap_reducer(_embeddings):
+        raise RuntimeError(
+            "UMAP requested but `umap-learn` is not installed. "
+            "Install it with `pip install umap-learn` or run without --reducer umap."
+        )
+
+    with patch(
+        "codegraphcontext_ext.commands.viz_embeddings.get_kuzu_connection",
+        return_value=_EmbConn(),
+    ), patch.dict(
+        "codegraphcontext_ext.commands.viz_embeddings._REDUCERS",
+        {"umap": _fake_umap_reducer},
+    ):
+        app = _viz_app()
+        result = runner.invoke(app, ["viz-embeddings", "--no-open", "--reducer", "umap"])
+
+    assert result.exit_code == 1
+    payload = _extract_json(result.output)
+    assert payload["kind"] == "reducer_unavailable"
+    assert "umap-learn" in payload["detail"]

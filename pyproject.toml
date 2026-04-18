@@ -64,6 +64,7 @@ include-package-data = true
 
 [tool.setuptools.package-data]
 codegraphcontext = ["viz/dist/**/*"]
+codegraphcontext_ext = ["viz_assets/**/*"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

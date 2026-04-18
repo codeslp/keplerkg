@@ -16,47 +16,14 @@ from typing import Any, Optional
 
 import typer
 
-from ..embeddings.schema import EMBEDDABLE_TABLES, EMBEDDING_COLUMN
+from ..embeddings.fetch import fetch_embedded_nodes
 from ..embeddings.runtime import probe_backend_support
 from ..io.json_stdout import emit_json
+from ..io.kuzu import get_kuzu_connection
 
 COMMAND_NAME = "viz-embeddings"
 SCHEMA_FILE = "context.json"  # reuse context schema stub for metadata
 SUMMARY = "Interactive 2D scatter plot of code embedding vectors."
-
-
-def _get_kuzu_connection() -> Any:
-    from codegraphcontext.core.database_kuzu import KuzuDBManager
-    manager = KuzuDBManager()
-    driver = manager.get_driver()
-    return driver.conn
-
-
-def _fetch_embedded_nodes(conn: Any) -> list[dict[str, Any]]:
-    """Fetch all nodes that have embedding vectors."""
-    nodes: list[dict[str, Any]] = []
-    for table in EMBEDDABLE_TABLES:
-        query = (
-            f"MATCH (n:`{table}`) "
-            f"WHERE n.`{EMBEDDING_COLUMN}` IS NOT NULL "
-            f"RETURN n.uid AS uid, n.name AS name, n.path AS path, "
-            f"n.line_number AS line, n.`{EMBEDDING_COLUMN}` AS embedding"
-        )
-        try:
-            result = conn.execute(query)
-            while result.has_next():
-                row = result.get_next()
-                nodes.append({
-                    "uid": row[0],
-                    "name": row[1] or "(anonymous)",
-                    "path": row[2] or "",
-                    "line": row[3],
-                    "embedding": list(row[4]),
-                    "type": table,
-                })
-        except Exception:
-            pass
-    return nodes
 
 
 def _reduce_to_2d(embeddings: list[list[float]]) -> list[list[float]]:
@@ -76,6 +43,35 @@ def _reduce_to_2d(embeddings: list[list[float]]) -> list[list[float]]:
     _, _, vt = np.linalg.svd(centered, full_matrices=False)
     reduced = centered @ vt[:2].T
     return reduced.tolist()
+
+
+def _reduce_to_2d_umap(embeddings: list[list[float]]) -> list[list[float]]:
+    """UMAP reduction to 2D, opt-in via `--reducer umap`.
+
+    Lazy-imports `umap-learn` (~200MB numba/LLVM dep chain) so the default
+    PCA path stays dep-free.
+    """
+    import numpy as np
+
+    arr = np.asarray(embeddings, dtype=np.float64)
+    if arr.ndim != 2 or arr.shape[0] < 2 or arr.shape[1] < 2:
+        return [[0.0, 0.0] for _ in embeddings]
+
+    try:
+        import umap  # type: ignore[import-not-found]
+    except ImportError as exc:  # pragma: no cover - environment-dependent
+        raise RuntimeError(
+            "UMAP requested but `umap-learn` is not installed. "
+            "Install it with `pip install umap-learn` or run without --reducer umap."
+        ) from exc
+
+    # UMAP's default n_neighbors=15 errors on samples < 16; clamp.
+    n_neighbors = min(15, max(2, arr.shape[0] - 1))
+    reducer = umap.UMAP(n_components=2, n_neighbors=n_neighbors, min_dist=0.1, random_state=42)
+    return reducer.fit_transform(arr).tolist()
+
+
+_REDUCERS = {"pca": _reduce_to_2d, "umap": _reduce_to_2d_umap}
 
 
 _HTML_TEMPLATE = """<!DOCTYPE html>
@@ -110,7 +106,7 @@ _HTML_TEMPLATE = """<!DOCTYPE html>
 </head>
 <body>
 <div id="header">
-  <h1>cgraph — Embedding Space (PCA 2D)</h1>
+  <h1>cgraph — Embedding Space (__REDUCER_LABEL__ 2D)</h1>
   <div class="stats">__NODE_COUNT__ nodes</div>
 </div>
 <div id="chart"></div>
@@ -187,7 +183,12 @@ Object.entries(COLORS).forEach(([type, color]) => {
 </html>"""
 
 
-def _generate_html(nodes: list[dict[str, Any]], points_2d: list[list[float]]) -> str:
+def _generate_html(
+    nodes: list[dict[str, Any]],
+    points_2d: list[list[float]],
+    *,
+    reducer: str = "pca",
+) -> str:
     data = []
     for node, pt in zip(nodes, points_2d):
         data.append({
@@ -201,6 +202,7 @@ def _generate_html(nodes: list[dict[str, Any]], points_2d: list[list[float]]) ->
     safe_json = json.dumps(data).replace("</", "<\\/")
     html = _HTML_TEMPLATE.replace("__DATA_JSON__", safe_json)
     html = html.replace("__NODE_COUNT__", str(len(data)))
+    html = html.replace("__REDUCER_LABEL__", reducer.upper())
     return html
 
 
@@ -215,16 +217,26 @@ def viz_embeddings_command(
         "--no-open",
         help="Write file but don't open in browser.",
     ),
+    reducer: str = typer.Option(
+        "pca",
+        "--reducer",
+        help="Dimensionality reducer: `pca` (default, zero extra deps) or `umap` (requires `pip install umap-learn`).",
+    ),
 ) -> None:
     """Visualize code embeddings as an interactive 2D scatter plot."""
+
+    if reducer not in _REDUCERS:
+        raise typer.BadParameter(
+            f"unknown reducer {reducer!r}; expected one of {sorted(_REDUCERS)}"
+        )
 
     backend_payload = probe_backend_support()
     if not backend_payload["ok"]:
         typer.echo(emit_json(backend_payload))
         raise typer.Exit(code=1)
 
-    conn = _get_kuzu_connection()
-    nodes = _fetch_embedded_nodes(conn)
+    conn = get_kuzu_connection()
+    nodes = fetch_embedded_nodes(conn)
 
     if not nodes:
         typer.echo(emit_json({
@@ -234,11 +246,19 @@ def viz_embeddings_command(
         }))
         raise typer.Exit(code=1)
 
-    print(f"Reducing {len(nodes)} embeddings to 2D...", file=sys.stderr)
+    print(f"Reducing {len(nodes)} embeddings to 2D ({reducer})...", file=sys.stderr)
     embeddings = [n["embedding"] for n in nodes]
-    points_2d = _reduce_to_2d(embeddings)
+    try:
+        points_2d = _REDUCERS[reducer](embeddings)
+    except RuntimeError as exc:
+        typer.echo(emit_json({
+            "ok": False,
+            "kind": "reducer_unavailable",
+            "detail": str(exc),
+        }))
+        raise typer.Exit(code=1)
 
-    html = _generate_html(nodes, points_2d)
+    html = _generate_html(nodes, points_2d, reducer=reducer)
 
     if output:
         out_path = output
@@ -258,6 +278,7 @@ def viz_embeddings_command(
         "ok": True,
         "kind": "viz_embeddings",
         "nodes": len(nodes),
+        "reducer": reducer,
         "output": os.path.abspath(out_path),
     }))
     raise typer.Exit(code=0)
