@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://codeslp.dev/cgraph/schemas/audit.json",
+  "title": "kkg audit response",
+  "type": "object",
+  "required": ["kind", "standards_evaluated", "advisories", "counts", "hard_zero"],
+  "properties": {
+    "ok": { "type": "boolean" },
+    "kind": { "type": "string", "enum": ["audit", "audit_list", "audit_explain"] },
+    "scope": { "type": "string" },
+    "standards_evaluated": { "type": "integer" },
+    "advisories": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/advisory" }
+    },
+    "counts": {
+      "type": "object",
+      "properties": {
+        "warn": { "type": "integer" },
+        "hard": { "type": "integer" }
+      }
+    },
+    "hard_zero": { "type": "boolean" },
+    "error": { "type": ["string", "null"] }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "advisory": {
+      "type": "object",
+      "required": ["kind", "severity", "standard_id", "offenders"],
+      "properties": {
+        "kind": { "type": "string" },
+        "severity": { "type": "string", "enum": ["warn", "hard"] },
+        "standard_id": { "type": "string" },
+        "threshold_applied": { "type": "object" },
+        "offenders": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["uid", "name", "path"],
+            "properties": {
+              "uid": { "type": "string" },
+              "name": { "type": ["string", "null"] },
+              "path": { "type": ["string", "null"] },
+              "line_number": { "type": ["integer", "null"] },
+              "metric_value": {}
+            }
+          }
+        },
+        "suggestion": { "type": "string" },
+        "evidence": { "type": "string" }
+      }
+    }
+  }
+}

@@ -5,6 +5,7 @@ from __future__ import annotations
 import typer
 
 from .commands.advise import SUMMARY as ADVISE_SUMMARY, advise_command
+from .commands.audit import SUMMARY as AUDIT_SUMMARY, audit_command
 from .commands.blast_radius import SUMMARY as BLAST_RADIUS_SUMMARY, blast_radius_command
 from .commands.context import SUMMARY as CONTEXT_SUMMARY, context_command
 from .commands.drift_check import SUMMARY as DRIFT_CHECK_SUMMARY, drift_check_command
@@ -26,6 +27,7 @@ def register_extensions(app: typer.Typer) -> None:
     """Register cgraph extension commands on the upstream Typer app."""
 
     app.command(name="advise", help=ADVISE_SUMMARY)(advise_command)
+    app.command(name="audit", help=AUDIT_SUMMARY)(audit_command)
     app.command(name="blast-radius", help=BLAST_RADIUS_SUMMARY)(blast_radius_command)
     app.command(name="drift-check", help=DRIFT_CHECK_SUMMARY)(drift_check_command)
     app.command(name="sync-check", help=SYNC_CHECK_SUMMARY)(sync_check_command)

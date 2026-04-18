@@ -3,6 +3,7 @@ from codegraphcontext_ext.io.schema_check import schema_path
 
 EXPECTED_METADATA = {
     "advise": ("advise", "advise.json"),
+    "audit": ("audit", "audit.json"),
     "blast_radius": ("blast-radius", "blast-radius.json"),
     "context": ("search", "context.json"),
     "drift_check": ("drift-check", "drift-check.json"),
