@@ -127,10 +127,13 @@ def build_exemption_where(exemptions: Exemptions, node_var: str = "f") -> str:
     """
     clauses: list[str] = []
     for path_pattern in exemptions.paths:
-        # Convert glob to CONTAINS check (simplified)
-        clean = path_pattern.replace("**", "").replace("*", "").strip("/")
+        # Convert glob patterns to Cypher CONTAINS checks.
+        # "**/tests/**"    → CONTAINS '/tests/'
+        # "**/*_test.*"    → CONTAINS '_test.'
+        # "**/__pycache__/**" → CONTAINS '/__pycache__/'
+        clean = path_pattern.replace("**/", "").replace("/**", "").replace("*", "")
         if clean:
-            clauses.append(f"NOT {node_var}.path CONTAINS '/{clean}/'")
+            clauses.append(f"NOT {node_var}.path CONTAINS '{clean}'")
 
     # Python decorators — check if node has any exempt decorator
     python_decorators = exemptions.decorators.get("python", [])

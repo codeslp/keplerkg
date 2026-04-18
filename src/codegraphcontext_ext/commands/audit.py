@@ -17,6 +17,7 @@ from typing import Any, Optional
 
 import typer
 
+from ..config import resolve_cgraph_config, StandardsConfig, STANDARDS_PRESETS
 from ..io.json_stdout import emit_json
 from ..io.kuzu import get_kuzu_connection
 from ..standards.loader import (
@@ -54,10 +55,12 @@ def build_audit_payload(
     scope: str = "all",
     category: str | None = None,
     require_hard_zero: bool = False,
+    profile: str | None = None,
 ) -> dict[str, Any]:
     """Build the audit response payload.
 
-    Returns a JSON-serializable dict per §6.6 output schema.
+    Respects config from ``[cgraph.standards]``: profile presets,
+    category filtering, per-rule severity overrides, and disabled rules.
     """
     std_dir = standards_dir or _find_standards_dir()
     advisories: list[dict[str, Any]] = []
@@ -65,9 +68,35 @@ def build_audit_payload(
     rules_evaluated = 0
     error_msg: str | None = None
 
+    # Load config (profile, overrides, categories)
+    cfg = resolve_cgraph_config()
+    std_cfg = cfg.standards
+    if profile:
+        std_cfg.profile = profile
+        from ..config import _apply_preset
+        _apply_preset(std_cfg)
+
     rules = load_rules(std_dir)
-    if category:
-        rules = [r for r in rules if r.category == category]
+
+    # Apply category filter (from config or CLI)
+    active_categories = [category] if category else std_cfg.categories
+    if "all" not in active_categories:
+        rules = [r for r in rules if r.category in active_categories]
+
+    # Apply per-rule overrides (severity changes + "off" disables)
+    filtered_rules = []
+    for rule in rules:
+        override = std_cfg.overrides.get(rule.id)
+        if override == "off":
+            continue  # Rule disabled
+        if override and override != "off":
+            rule.severity = "hard" if override in ("blocker", "critical", "hard") else "warn"
+        # Check hard_stop list — promote to hard if listed
+        if rule.id in std_cfg.hard_stop and rule.severity != "hard":
+            rule.severity = "hard"
+        filtered_rules.append(rule)
+
+    rules = filtered_rules
     rules_evaluated = len(rules)
 
     try:
@@ -81,7 +110,7 @@ def build_audit_payload(
             "standards_evaluated": rules_evaluated,
             "advisories": [],
             "counts": {"warn": 0, "hard": 0},
-            "hard_zero": True,
+            "hard_zero": False,  # Fail closed — can't verify, so assume not clean
             "error": error_msg,
         }
 
@@ -169,7 +198,12 @@ def audit_command(
     category: Optional[str] = typer.Option(
         None,
         "--category",
-        help="Filter to a specific rule category (e.g. coupling, complexity).",
+        help="Filter to a specific rule category (e.g. coupling, complexity, compliance).",
+    ),
+    profile: Optional[str] = typer.Option(
+        None,
+        "--profile",
+        help="Standards preset: default, strict, soc2, minimal.",
     ),
     list_standards: bool = typer.Option(
         False,
@@ -207,6 +241,7 @@ def audit_command(
         scope=scope,
         category=category,
         require_hard_zero=require_hard_zero,
+        profile=profile,
     )
 
     if fmt == "summary":

@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "command": "bash scripts/hooks/post-tool-audit.sh",
+        "timeout": 5000
+      }
+    ],
+    "Stop": [
+      {
+        "command": "bash scripts/hooks/stop-audit.sh",
+        "timeout": 10000
+      }
+    ]
+  }
+}
