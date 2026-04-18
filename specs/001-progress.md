@@ -47,24 +47,24 @@
 - [x] `test_upstream_coupling.py` (61 lines) — upstream helper coupling tests
 - [x] Additional test files: `test_command_metadata.py`, `test_json_stdout.py`, `test_scaffold.py`, `test_viz.py` — 1,623 total test lines across 12 files in `tests/cgraph_ext/`
 
-## Phase 1.5 — Storage migration to `/Volumes/zombie` — IN PROGRESS
+## Phase 1.5 — Storage migration to `/Volumes/zombie` — COMPLETE
 
-Operational stage wedged between Phase 1 (KùzuDB + embeddings live but on internal drive) and Phase 2 (review-packet starting to read heavily from the graph). The storage move itself has now been executed on this host: KùzuDB lives on zombie, `~/.codegraphcontext/.env` sets `KUZUDB_PATH`, and `scripts/cgraph-env.sh` is the source-once wrapper for `HF_HOME` plus the interim mount preflight. Remaining work is the end-to-end smoke capture and the Phase 3 fail-closed helper in Step 7. Full reality snapshot and path-resolution details in §Storage below.
+Operational stage wedged between Phase 1 (KùzuDB + embeddings live but on internal drive) and Phase 2 (review-packet starting to read heavily from the graph). All 7 steps done: storage moved, env set, shell wrapper shipped, Python preflight wired into `get_kuzu_connection()`, and smoke test passed on 2026-04-18.
 
 - [x] **Step 1 — Writer check.** Migration lane completed without leaving Kùzu files on the internal drive; `~/.codegraphcontext/global/db/` now contains only the unused falkordb files.
 - [x] **Step 2 — Target dir.** `/Volumes/zombie/cgraph/db` exists and contains the live Kùzu store.
 - [x] **Step 3 — Move store.** `kuzudb` and `kuzudb.wal` live at `/Volumes/zombie/cgraph/db/`; no Kùzu files remain under `~/.codegraphcontext/global/db/`.
 - [x] **Step 4 — Update upstream `.env`.** `~/.codegraphcontext/.env` contains `KUZUDB_PATH=/Volumes/zombie/cgraph/db/kuzudb`.
 - [x] **Step 5 — Export `HF_HOME`.** `scripts/cgraph-env.sh` is the canonical wrapper; it exports `HF_HOME`/`SENTENCE_TRANSFORMERS_HOME` to `/Volumes/zombie/cgraph/hf-cache` and fails closed when zombie is not mounted.
-- [ ] **Step 6 — End-to-end smoke test.** The migration and wrapper/path-resolution checks are done, but this progress doc still owes one explicit recorded `cgc embed --check-model` + `cgc context <query>` pass after the storage move.
-- [ ] **Step 7 — Fail-closed preflight.** Ship a tiny preflight helper (shared by Phase 3 adapter, Phase 6 hooks) that errors with `kind: "storage_offline"` if `/Volumes/zombie` is not mounted and any cgraph path config points at it. This stops Phase 3+ from silently regenerating artifacts on internal when the drive is unmounted.
+- [x] **Step 6 — End-to-end smoke test.** 2026-04-18: `kkg search "authentication token validation"` ran successfully — Jina v2 model loaded from `/Volumes/zombie/cgraph/hf-cache`, KùzuDB connected at `/Volumes/zombie/cgraph/db/kuzudb`, query embedded and ANN search executed. Preflight also verified: `check_storage()` correctly returns `storage_offline` when pointed at an unmounted `/Volumes/fakemount`.
+- [x] **Step 7 — Fail-closed preflight.** `src/codegraphcontext_ext/preflight.py` — `check_storage()` inspects `KUZUDB_PATH` (env → upstream config) and `HF_HOME`; if either path lives under an unmounted `/Volumes/*` mount-point, returns `{"ok": false, "kind": "storage_offline", ...}`. `require_storage()` exits with that JSON. Wired into `io/kuzu.py:get_kuzu_connection()` so every DB-touching command fails closed. 13 tests in `test_preflight.py`.
 
 Cross-cuts into other phases — see annotations in Phase 3, Phase 4, and Phase 6 below.
 
 ## Phase 2 — Review Packet + Blast Radius — IN PROGRESS
 
 - [x] `cgc review-packet` — `commands/review_packet.py` (21.8K) with `schemas/review-packet.json`; lane d is currently back in-progress after codex review findings on missing advisory coverage
-- [ ] `cgc blast-radius` — still a ~6-line scaffold at `commands/blast_radius.py` (173 bytes)
+- [x] `cgc blast-radius` — `commands/blast_radius.py` (611 lines). Transitive caller/callee graph expansion, cross-module impact, lane lock overlap detection, truncation by in-degree ranking. 629 lines of tests in `test_blast_radius.py`; schema at `schemas/blast-radius.json` (124 lines)
 - [ ] Replay harness (Node script for §11 metrics)
 - [ ] Measure tokens-per-review vs. raw-diff baseline on 10 recent handoffs
 
@@ -147,12 +147,12 @@ Spec 001 §5 names `[cgraph].db_path` and `[cgraph].model_cache` as cgraph-level
 |-------|--------|---------------|
 | 0 — Scaffolding | **Complete** | ext skeleton, CI, sync-check, schema stubs |
 | 1 — Hybrid Retrieval | **Complete** | embed, context, ANN search, graph traversal, 1,623 test lines, 149 MB live KùzuDB |
-| **1.5 — Storage migration** | **In progress** | Kùzu moved to zombie, `KUZUDB_PATH` set in `~/.codegraphcontext/.env`, wrapper shipped; full embed/context smoke capture + Step 7 preflight helper remain |
-| 2 — Review + Blast Radius | **In progress** | review-packet (21.8K) back in-progress as lane d after advisory-contract review findings; blast-radius still a stub; viz-embeddings + viz-graph shipped ahead of plan and lane a is resolved |
+| **1.5 — Storage migration** | **Complete** | All 7 steps done: Kùzu on zombie, preflight wired into DB accessor, smoke test passed 2026-04-18 |
+| 2 — Review + Blast Radius | **In progress** | review-packet (21.8K), blast-radius (611 lines + 629 test lines + schema); replay harness + baseline metrics remain |
 | **Spec 004 — Multi-repo targeting** | Planned | [specs/004-multi-repo-targeting.md](004-multi-repo-targeting.md). Per-project KùzuDB stores, `--project` flag, Flask smoke. Unblocks "point cgraph at any codebase." |
 | 3 — Adapter + Advisories | Not started | 6-line scaffold for advise; adapter lives in btrain; Phase 3 also delivers cgraph's config layer (replaces Phase 1.5's upstream-`KUZUDB_PATH` reliance) |
 | 4 — Drift + Polish | Not started | 6-line scaffold for drift-check; README adds Phase 1.5 storage conventions |
 | 5 — Standards | Not started | No standards/ dir, no audit command |
 | 6 — Enforcement | Not started | Depends on phases 2-5; hooks gain Phase 1.5 Step 7 preflight; CI uses tmpfs kuzudb exception |
 
-**Overall: Phase 1 is complete, and the storage move from Phase 1.5 has now happened on this host. The remaining operational follow-up is the explicit embed/context smoke capture plus the Phase 3 fail-closed helper, while Phase 2 review-packet work is still in progress.**
+**Overall: Phases 0-1 complete. Phase 1.5 nearly complete (preflight shipped, Step 6 smoke remains). Phase 2 blast-radius and review-packet implemented; replay harness and baseline metrics remain before Phase 3 (btrain adapter) can start.**
