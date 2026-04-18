@@ -76,14 +76,16 @@ Cross-cuts into other phases — see annotations in Phase 3, Phase 4, and Phase 
 - [x] **Spec 003 — KeplerKG Rename + Viz Polish** — [specs/003-kepler-viz-polish.md](003-kepler-viz-polish.md). **COMPLETE.** All six items shipped: KeplerKG rename, edge visibility (thicker lines + green Contains), collapsible help ribbons on 2D/3D/Embeddings, redundant banner strip removed, color-mapper clobber fix, and About modal with credits.
 - [ ] **Spec 004 — Multi-Repository Targeting** — [specs/004-multi-repo-targeting.md](004-multi-repo-targeting.md). **PLANNED.** Per-project KùzuDB stores under `/Volumes/zombie/cgraph/db/<slug>/` so cgraph can be pointed at arbitrary codebases (Flask first) without ANN leakage or embedding-dimension collisions. Phase A resolver + `--project` flag on all 10 ext commands; Phase B migrate cgraph's own store to `db/cgraph/`; Phase C Flask smoke. Spec 005 (insight heuristics) hands off from here.
 
-## Phase 3 — btrain Adapter + Advisories + Warm Daemon — NOT STARTED
+## Phase 3 — btrain Adapter + Advisories + Warm Daemon — IN PROGRESS (cgraph side done)
+This should be optional, cgraph/kkg should be usable for someone not using btrain
 
 - [ ] `cgraph_adapter.mjs` in btrain repo (timeout budgets, parallel fanout, advisory-file-lock)
-- [ ] `[cgraph]` config section in `.btrain/project.toml`
-- [ ] **cgraph config layer owning `db_path` + `model_cache`.** Per spec 001 §5, these are cgraph-level keys. Today cgraph has no config plumbing — it calls upstream's `KuzuDBManager()` directly and inherits upstream's `KUZUDB_PATH` resolution. Phase 3 ships a small `src/codegraphcontext_ext/config.py` that reads `.btrain/project.toml [cgraph]` and (a) exports `KUZUDB_PATH` + `HF_HOME` into the subprocess env before every command, and (b) fails closed via the Phase 1.5 Step 7 preflight helper when the configured paths are on an unmounted volume.
-- [ ] `cgc advise` implementation — currently a 6-line scaffold
-- [ ] `cgc serve` warm daemon + launchd/systemd templates
-- [ ] Advisory state file + telemetry log wired end-to-end
+- [x] `[cgraph]` config section in `.btrain/project.toml` — `src/codegraphcontext_ext/config.py` parses `[cgraph]` and `[cgraph.lanes.*]` with typed `CgraphConfig`/`LaneConfig` dataclasses. Falls back to defaults when no btrain project exists.
+- [x] **cgraph config layer owning `db_path` + `model_cache`.** `config.py` reads `db_path`, `model_cache`, `advise_on`, per-lane overrides. Standalone-safe — kkg works without btrain.
+- [x] `kkg advise` — `commands/advise.py` (180 lines). Situational tip lookup with 5 built-in situations, advisory_id generation, per-lane config filtering. 16 tests + full schema at `schemas/advise.json`.
+- [x] `kkg serve` — `daemon/serve.py` (165 lines). Async Unix socket server at `~/.cache/cgraph/ipc.sock`, line-based JSON protocol, dispatches to advise and blast-radius in-process. 5 tests.
+- [ ] `cgc serve` launchd/systemd templates (deferred — ship with btrain adapter)
+- [ ] Advisory state file + telemetry log wired end-to-end (btrain-side, lands with adapter)
 
 ## Phase 4 — Drift + Polish — NOT STARTED
 
@@ -150,9 +152,9 @@ Spec 001 §5 names `[cgraph].db_path` and `[cgraph].model_cache` as cgraph-level
 | **1.5 — Storage migration** | **Complete** | All 7 steps done: Kùzu on zombie, preflight wired into DB accessor, smoke test passed 2026-04-18 |
 | 2 — Review + Blast Radius | **In progress** | review-packet (21.8K), blast-radius (611 lines + 629 test lines + schema); replay harness + baseline metrics remain |
 | **Spec 004 — Multi-repo targeting** | Planned | [specs/004-multi-repo-targeting.md](004-multi-repo-targeting.md). Per-project KùzuDB stores, `--project` flag, Flask smoke. Unblocks "point cgraph at any codebase." |
-| 3 — Adapter + Advisories | Not started | 6-line scaffold for advise; adapter lives in btrain; Phase 3 also delivers cgraph's config layer (replaces Phase 1.5's upstream-`KUZUDB_PATH` reliance) |
+| 3 — Adapter + Advisories | **In progress** (cgraph side done) | Config layer, advise command (5 situations + per-lane filtering), serve daemon (Unix socket). Adapter + telemetry remain (btrain-side) |
 | 4 — Drift + Polish | Not started | 6-line scaffold for drift-check; README adds Phase 1.5 storage conventions |
 | 5 — Standards | Not started | No standards/ dir, no audit command |
 | 6 — Enforcement | Not started | Depends on phases 2-5; hooks gain Phase 1.5 Step 7 preflight; CI uses tmpfs kuzudb exception |
 
-**Overall: Phases 0-1 complete. Phase 1.5 nearly complete (preflight shipped, Step 6 smoke remains). Phase 2 blast-radius and review-packet implemented; replay harness and baseline metrics remain before Phase 3 (btrain adapter) can start.**
+**Overall: Phases 0-1 complete. Phase 1.5 complete. Phase 2 blast-radius and review-packet implemented; replay harness and baseline metrics remain. Phase 3 cgraph-side done (config, advise, serve); btrain adapter + telemetry remain. Phase 4 (drift-check) is next.**
