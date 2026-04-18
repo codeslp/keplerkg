@@ -10,6 +10,7 @@ import NotFound from "./pages/NotFound";
 import Explore from "./pages/Explore";
 import MoveToTop from "./components/MoveToTop";
 import Navbar from "./components/Navbar";
+import BackgroundTree from "./components/BackgroundTree";
 
 // ✅ Import AOS library and CSS
 import AOS from "aos";
@@ -40,15 +41,18 @@ const App: React.FC = () => {
           <TooltipProvider>
             <Toaster />
             <Sonner />
-            <Navbar />
-            <Routes>
-              <Route path="/" element={<Index />} />
-              <Route path="/explore" element={<Explore />} />
-              {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-              <Route path="*" element={<NotFound />} />
-            </Routes>
-            {/* Move to Top button */}
-            <MoveToTop />
+            <BackgroundTree />
+            <div className="site-shell">
+              <Navbar />
+              <Routes>
+                <Route path="/" element={<Index />} />
+                <Route path="/explore" element={<Explore />} />
+                {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+              {/* Move to Top button */}
+              <MoveToTop />
+            </div>
           </TooltipProvider>
         </ThemeProvider>
       </QueryClientProvider>

@@ -6,6 +6,8 @@ body {
 #root {
   width: 100%;
   overflow-x: hidden;
+  position: relative;
+  isolation: isolate;
 }
 @tailwind base;
 @tailwind components;
@@ -128,6 +130,27 @@ body {
     background-image: 
       radial-gradient(circle at 20% 20%, hsl(263 70% 65% / 0.05) 0%, transparent 50%),
       radial-gradient(circle at 80% 80%, hsl(180 100% 70% / 0.05) 0%, transparent 50%);
+  }
+
+  .ambient-graph-bg {
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100vh;
+    pointer-events: none;
+    z-index: 0;
+    opacity: 0.68;
+  }
+
+  .site-shell {
+    position: relative;
+    z-index: 1;
+  }
+
+  @media (max-width: 768px) {
+    .ambient-graph-bg {
+      opacity: 0.5;
+    }
   }
 
   /* Smooth scrolling */

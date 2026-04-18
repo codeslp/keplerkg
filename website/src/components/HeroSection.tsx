@@ -1,7 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Github, ExternalLink, Copy, Check, Sparkles, FolderUp } from "lucide-react";
-import heroGraph from "@/assets/hero-graph.jpg";
 import { useState, useEffect } from "react";
 import ShowDownloads from "@/components/ShowDownloads";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -76,14 +75,16 @@ const HeroSection = () => {
           </div>
         </div>
 
-        {/* Background Image */}
+        {/* Color wash that lets the animated site background stay visible */}
         <div
-          className="absolute inset-0 bg-cover bg-center bg-no-repeat opacity-20 brightness-110 saturate-110 dark:opacity-30 dark:brightness-100 dark:saturate-100"
-          style={{ backgroundImage: `url(${heroGraph})` }}
+          className="absolute inset-0"
+          style={{
+            background:
+              "radial-gradient(circle at 18% 22%, hsl(var(--graph-node-1) / 0.18), transparent 24%), radial-gradient(circle at 82% 18%, hsl(var(--graph-node-2) / 0.16), transparent 26%), radial-gradient(circle at 50% 78%, hsl(var(--graph-node-3) / 0.14), transparent 28%)",
+          }}
         />
 
-        {/* Gradient Overlay */}
-        <div className="absolute inset-0 bg-gradient-to-b from-white/60 via-white/40 to-white/80 dark:from-background/90 dark:via-background/80 dark:to-background/90" />
+        <div className="absolute inset-0 bg-gradient-to-b from-background/30 via-background/12 to-background/84 dark:from-background/34 dark:via-background/14 dark:to-background/88" />
 
         {/* Content (2-Column Grid) */}
         <div className="relative z-10 w-full h-full max-w-7xl mx-auto px-6 pt-32 pb-20 flex flex-col justify-center">
@@ -180,12 +181,6 @@ const HeroSection = () => {
 
           </div>
         </div>
-
-        {/* Floating Graph Nodes Background Decoration */}
-        <div className="absolute top-20 left-10 w-8 h-8 graph-node animate-graph-pulse" style={{ animationDelay: '0.2s' }} />
-        <div className="absolute top-40 right-20 w-6 h-6 graph-node animate-graph-pulse" style={{ animationDelay: '0.8s' }} />
-        <div className="absolute bottom-32 left-20 w-10 h-10 graph-node animate-graph-pulse" style={{ animationDelay: '1.2s' }} />
-        <div className="absolute bottom-20 right-10 w-7 h-7 graph-node animate-graph-pulse" style={{ animationDelay: '0.6s' }} />
       </motion.div>
     </section>
   );

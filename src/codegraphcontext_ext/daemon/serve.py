@@ -84,7 +84,6 @@ async def _handle_client(
     writer: asyncio.StreamWriter,
 ) -> None:
     """Handle one client connection — read JSON lines, dispatch, reply."""
-    peer = writer.get_extra_info("peername") or "unix-client"
     try:
         while True:
             raw = await reader.readline()
@@ -134,7 +133,7 @@ async def _run_server(socket_path: Path) -> None:
     print(f"cgraph daemon listening on {socket_path}", file=sys.stderr)
 
     # Graceful shutdown on SIGTERM/SIGINT
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     stop = loop.create_future()
 
     def _signal_handler() -> None:
