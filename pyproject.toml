@@ -51,8 +51,8 @@ dev = [
 ]
 
 [project.urls]
-"Homepage" = "https://github.com/Shashankss1205/CodeGraphContext"
-"Bug Tracker" = "https://github.com/Shashankss1205/CodeGraphContext/issues"
+"Homepage" = "https://github.com/codeslp/keplerkg"
+"Bug Tracker" = "https://github.com/codeslp/keplerkg/issues"
 
 [project.scripts]
 kkg = "codegraphcontext.cli.main:app"

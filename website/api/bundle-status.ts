@@ -14,7 +14,7 @@ export default async function handler(req: any, res: any) {
         // If run_id is provided, check specific workflow run
         if (run_id) {
             const runResponse = await fetch(
-                `https://api.github.com/repos/${process.env.GITHUB_REPOSITORY || 'CodeGraphContext/CodeGraphContext'}/actions/runs/${run_id}`,
+                `https://api.github.com/repos/${process.env.GITHUB_REPOSITORY || 'codeslp/keplerkg'}/actions/runs/${run_id}`,
                 {
                     headers: {
                         'Authorization': `token ${process.env.GITHUB_TOKEN}`,
@@ -42,7 +42,7 @@ export default async function handler(req: any, res: any) {
         // If repo is provided, check manifest for bundle
         if (repo) {
             const manifestResponse = await fetch(
-                `https://github.com/${process.env.GITHUB_REPOSITORY || 'CodeGraphContext/CodeGraphContext'}/releases/download/on-demand-bundles/manifest.json`
+                `https://github.com/${process.env.GITHUB_REPOSITORY || 'codeslp/keplerkg'}/releases/download/on-demand-bundles/manifest.json`
             );
 
             if (!manifestResponse.ok) {

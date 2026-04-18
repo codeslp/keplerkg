@@ -123,7 +123,7 @@ export default async function handler(req: any, res: any) {
         // Check if bundle already exists in manifest
         try {
             const manifestResponse = await fetch(
-                `https://github.com/${process.env.GITHUB_REPOSITORY || 'CodeGraphContext/CodeGraphContext'}/releases/download/on-demand-bundles/manifest.json`
+                `https://github.com/${process.env.GITHUB_REPOSITORY || 'codeslp/keplerkg'}/releases/download/on-demand-bundles/manifest.json`
             );
 
             if (manifestResponse.ok) {
@@ -149,7 +149,7 @@ export default async function handler(req: any, res: any) {
 
         // Trigger GitHub Actions workflow
         const workflowResponse = await fetch(
-            `https://api.github.com/repos/${process.env.GITHUB_REPOSITORY || 'CodeGraphContext/CodeGraphContext'}/actions/workflows/generate-bundle-on-demand.yml/dispatches`,
+            `https://api.github.com/repos/${process.env.GITHUB_REPOSITORY || 'codeslp/keplerkg'}/actions/workflows/generate-bundle-on-demand.yml/dispatches`,
             {
                 method: 'POST',
                 headers: {
@@ -183,7 +183,7 @@ export default async function handler(req: any, res: any) {
         await new Promise(resolve => setTimeout(resolve, 2000));
 
         const runsResponse = await fetch(
-            `https://api.github.com/repos/${process.env.GITHUB_REPOSITORY || 'CodeGraphContext/CodeGraphContext'}/actions/workflows/generate-bundle-on-demand.yml/runs?per_page=1`,
+            `https://api.github.com/repos/${process.env.GITHUB_REPOSITORY || 'codeslp/keplerkg'}/actions/workflows/generate-bundle-on-demand.yml/runs?per_page=1`,
             {
                 headers: {
                     'Authorization': `token ${process.env.GITHUB_TOKEN}`,

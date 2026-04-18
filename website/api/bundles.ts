@@ -3,8 +3,8 @@
 
 export default async function handler(req: any, res: any) {
     try {
-        const org = process.env.GITHUB_REPOSITORY?.split('/')[0] || 'CodeGraphContext';
-        const repo = process.env.GITHUB_REPOSITORY?.split('/')[1] || 'CodeGraphContext';
+        const org = process.env.GITHUB_REPOSITORY?.split('/')[0] || 'codeslp';
+        const repo = process.env.GITHUB_REPOSITORY?.split('/')[1] || 'keplerkg';
 
         const allBundles: any[] = [];
 
