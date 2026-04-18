@@ -1,6 +1,6 @@
 """Phase 1 embed command: vectorize Function/Class nodes in KùzuDB.
 
-Spec §6.3: cgc embed walks existing nodes, generates vectors via the
+Spec §6.3: kkg embed walks existing nodes, generates vectors via the
 configured provider, writes them back via ALTER TABLE ... ADD embedding
 FLOAT[N].  Idempotent.  --force triggers full re-vectorization.
 """

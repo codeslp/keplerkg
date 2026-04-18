@@ -1,6 +1,6 @@
 """Phase 1 context command: hybrid retrieval via ANN + graph traversal.
 
-Spec §4.2: cgc context <query> runs ANN vector search for top-k
+Spec §4.2: kkg context <query> runs ANN vector search for top-k
 semantically relevant Function/Class nodes, then traverses depth hops
 of CALLS/IMPORTS edges.  Emits JSON with seeds, neighborhood, and
 token estimate.

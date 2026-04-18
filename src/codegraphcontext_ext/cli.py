@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import typer
 
+from .commands.blast_radius import SUMMARY as BLAST_RADIUS_SUMMARY, blast_radius_command
 from .commands.context import SUMMARY as CONTEXT_SUMMARY, context_command
 from .commands.embed import SUMMARY as EMBED_SUMMARY, embed_command
 from .commands.export_embeddings import (
@@ -21,6 +22,7 @@ from .commands.viz_projector import SUMMARY as VIZ_PROJECTOR_SUMMARY, viz_projec
 def register_extensions(app: typer.Typer) -> None:
     """Register cgraph extension commands on the upstream Typer app."""
 
+    app.command(name="blast-radius", help=BLAST_RADIUS_SUMMARY)(blast_radius_command)
     app.command(name="sync-check", help=SYNC_CHECK_SUMMARY)(sync_check_command)
     app.command(name="embed", help=EMBED_SUMMARY)(embed_command)
     app.command(name="context", help=CONTEXT_SUMMARY)(context_command)

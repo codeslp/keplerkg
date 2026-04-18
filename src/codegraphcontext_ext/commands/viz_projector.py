@@ -1,4 +1,4 @@
-"""cgc viz-projector: serve the vendored TF Embedding Projector against our embeddings.
+"""kkg viz-projector: serve the vendored TF Embedding Projector against our embeddings.
 
 Runs a local HTTP server with the Projector pre-loaded against the current
 kuzu store's Function/Class embeddings.  Blocks until Ctrl-C; cleans up the
@@ -71,7 +71,7 @@ def viz_projector_command(
         typer.echo(emit_json({
             "ok": False,
             "kind": "no_embeddings",
-            "detail": "No embedded nodes found. Run `cgc embed` first.",
+            "detail": "No embedded nodes found. Run `kkg embed` first.",
         }))
         raise typer.Exit(code=1)
 

@@ -1,4 +1,4 @@
-"""cgc export-embeddings: dump embedding vectors as TSVs for projector.tensorflow.org."""
+"""kkg export-embeddings: dump embedding vectors as TSVs for projector.tensorflow.org."""
 
 from __future__ import annotations
 
@@ -73,7 +73,7 @@ def export_embeddings_command(
         typer.echo(emit_json({
             "ok": False,
             "kind": "no_embeddings",
-            "detail": "No embedded nodes found. Run `cgc embed` first.",
+            "detail": "No embedded nodes found. Run `kkg embed` first.",
         }))
         raise typer.Exit(code=1)
 

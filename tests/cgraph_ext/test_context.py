@@ -1,4 +1,4 @@
-"""Tests for the cgc context hybrid retrieval command."""
+"""Tests for the kkg context hybrid retrieval command."""
 
 import json
 from unittest.mock import patch

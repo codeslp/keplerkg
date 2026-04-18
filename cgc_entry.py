@@ -1,4 +1,4 @@
-# cgc_entry.py
+# kkg_entry.py (formerly cgc_entry.py)
 # PyInstaller entrypoint — absolute imports only (no relative imports)
 import sys
 import os

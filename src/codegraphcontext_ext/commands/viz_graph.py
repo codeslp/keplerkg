@@ -1,4 +1,4 @@
-"""cgc viz-graph: interactive graph of code structure via Cytoscape.js.
+"""kkg viz-graph: interactive graph of code structure via Cytoscape.js.
 
 Standalone HTML output; Cytoscape.js + cytoscape-dagre are loaded from unpkg
 so opening the file requires a live internet connection.  The earlier vanilla
@@ -98,51 +98,122 @@ _HTML_TEMPLATE = """<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>cgraph — Code Graph</title>
+<title>KeplerKG — Code Graph</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='4' fill='%230d1117'/%3E%3Ccircle cx='10' cy='11' r='2.5' fill='%237ee787'/%3E%3Ccircle cx='22' cy='8' r='2' fill='%23f778ba'/%3E%3Ccircle cx='16' cy='20' r='3' fill='%2358a6ff'/%3E%3Ccircle cx='25' cy='22' r='2' fill='%23d2a8ff'/%3E%3Ccircle cx='7' cy='24' r='1.8' fill='%238b949e'/%3E%3Cline x1='10' y1='11' x2='16' y2='20' stroke='%232ea043' stroke-width='0.8' opacity='0.7'/%3E%3Cline x1='22' y1='8' x2='16' y2='20' stroke='%2358a6ff' stroke-width='0.8' opacity='0.7'/%3E%3Cline x1='16' y1='20' x2='25' y2='22' stroke='%23f0883e' stroke-width='0.8' opacity='0.7'/%3E%3Cline x1='16' y1='20' x2='7' y2='24' stroke='%23d2a8ff' stroke-width='0.8' opacity='0.7'/%3E%3Cline x1='10' y1='11' x2='22' y2='8' stroke='%2358a6ff' stroke-width='0.6' opacity='0.4'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Antic&family=Antic+Didone&family=Antic+Slab&display=swap" rel="stylesheet">
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-         background: #0d1117; color: #c9d1d9; overflow: hidden; }
-  #header { padding: 16px 24px; border-bottom: 1px solid #30363d; display: flex;
-            justify-content: space-between; align-items: center; gap: 16px; }
-  #header h1 { font-size: 18px; font-weight: 600; white-space: nowrap; }
-  #header .stats { font-size: 13px; color: #8b949e; white-space: nowrap; }
-  #header .controls { display: flex; align-items: center; gap: 12px; margin-left: auto; }
-  #header select, #header input { background: #0d1117; color: #c9d1d9; border: 1px solid #30363d;
-                                   border-radius: 6px; padding: 6px 10px; font-size: 12px; }
-  #header input { width: 220px; }
-  #cy { width: 100vw; height: calc(100vh - 57px); background: #0d1117; }
+  /* Antic type system:
+       Antic Didone → section titles + explainer headings
+       Antic Slab   → body / default / controls (workhorse)
+       Antic        → tooltips, legend-section, search placeholder, kbd */
+  html, body { height: 100vh; }
+  body { font-family: "Antic Slab", Georgia, "Times New Roman", serif;
+         background: #0d1117; color: #c9d1d9; overflow: hidden;
+         display: flex; flex-direction: column; }
+  button, input, select, textarea { font-family: inherit; border-radius: 0 !important; }
+
+  /* Help-ribbon chrome — mirrors Embeddings tab .emb-explainer so all three
+     tabs share one collapsible-help pattern.  Collapsed → thin bar with
+     chevron only; expanded → lede + 3-col tips + inline graph controls. */
+  .kg-explainer { flex-shrink: 0; background: linear-gradient(180deg, #161b22 0%, #1c2128 100%);
+                  border-bottom: 1px solid #30363d; transition: padding 0.18s ease-out; }
+  .kg-explainer__bar { display: flex; align-items: center; gap: 12px; padding: 8px 16px;
+                       transition: padding 0.18s ease-out; }
+  .kg-explainer__lede { flex: 1; font-size: 12px; color: #e6edf3; line-height: 1.45; max-width: 80ch; }
+  .kg-explainer__lede strong { color: #58a6ff; font-weight: 600; }
+  .kg-explainer__lede em { color: #f0883e; font-style: normal; }
+  .kg-explainer__controls { display: flex; gap: 6px; flex-shrink: 0; align-items: center; }
+  .kg-explainer__controls select, .kg-explainer__controls input {
+    background: #0d1117; color: #c9d1d9; border: 1px solid #30363d;
+    padding: 4px 8px; font-size: 11px; font-family: "Antic", "Antic Slab", sans-serif;
+  }
+  .kg-explainer__controls input { width: 180px; }
+  .kg-explainer__chevron {
+    width: 22px; height: 22px; padding: 0 !important;
+    background: transparent; color: #9ba6b3; border: 1px solid #30363d;
+    cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
+    line-height: 1; transition: color 0.12s, border-color 0.12s;
+  }
+  .kg-explainer__chevron:hover { color: #e6edf3; border-color: #58a6ff; }
+  .kg-explainer__chevron .chev { display: inline-block; font-size: 10px; transition: transform 0.18s ease-out; }
+  .kg-explainer.collapsed .kg-explainer__chevron .chev { transform: rotate(-90deg); }
+  .kg-explainer__body { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px;
+                         padding: 2px 16px 10px 16px; border-top: 1px solid #21262d;
+                         font-size: 11px; line-height: 1.45; color: #9ba6b3; }
+  .kg-explainer__body h3 { font-family: "Antic Didone", "Antic Slab", serif;
+                            color: #f0883e; font-size: 9px; font-weight: 700;
+                            letter-spacing: 0.1em; text-transform: uppercase; margin: 8px 0 3px 0; }
+  .kg-explainer__body p { margin: 0 0 3px 0; }
+  .kg-explainer__body strong { color: #e6edf3; font-weight: 600; }
+  .kg-explainer.collapsed .kg-explainer__body { display: none; }
+  .kg-explainer.collapsed .kg-explainer__lede { display: none; }
+  .kg-explainer.collapsed .kg-explainer__controls > select,
+  .kg-explainer.collapsed .kg-explainer__controls > input,
+  .kg-explainer.collapsed .kg-explainer__stats { display: none; }
+  .kg-explainer.collapsed .kg-explainer__bar { padding: 3px 10px; justify-content: flex-end; }
+  .kg-explainer__stats { font-size: 11px; color: #8b949e; white-space: nowrap; }
+
+  #cy { position: relative; flex: 1; min-height: 0; width: 100%; background: #0d1117; }
   .tooltip { position: absolute; background: #161b22; border: 1px solid #30363d;
-             border-radius: 6px; padding: 10px 14px; font-size: 12px; pointer-events: none;
-             max-width: 360px; box-shadow: 0 4px 12px rgba(0,0,0,0.4); display: none; z-index: 20; }
+             padding: 10px 14px; font-size: 12px; pointer-events: none;
+             max-width: 360px; box-shadow: 0 4px 12px rgba(0,0,0,0.4); display: none; z-index: 20;
+             font-family: "Antic Slab", Georgia, serif; }
   .tooltip .name { font-weight: 600; color: #58a6ff; margin-bottom: 4px; }
-  .tooltip .path { color: #8b949e; }
-  .legend { position: absolute; top: 72px; right: 24px; background: #161b22;
-            border: 1px solid #30363d; border-radius: 6px; padding: 12px 16px; z-index: 10; }
+  .tooltip .path { color: #8b949e; font-family: "Antic", "Antic Slab", sans-serif; font-size: 11px; }
+  .legend { position: absolute; top: 24px; right: 24px; background: #161b22;
+            border: 1px solid #30363d; padding: 12px 16px; z-index: 10; }
   .legend-item { display: flex; align-items: center; gap: 8px; margin: 4px 0; font-size: 12px; }
   .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
   .legend-line { width: 20px; height: 2px; }
-  .legend-section { font-size: 10px; color: #8b949e; margin-top: 8px;
-                    text-transform: uppercase; letter-spacing: 0.5px; }
+  .legend-section { font-family: "Antic Didone", "Antic Slab", Georgia, serif;
+                    font-size: 11px; color: #8b949e; margin-top: 8px;
+                    text-transform: uppercase; letter-spacing: 0.12em; }
 </style>
 </head>
 <body>
-<div id="header">
-  <h1>cgraph — Code Graph</h1>
-  <div class="stats">__NODE_COUNT__ nodes &middot; __EDGE_COUNT__ edges &middot; layout: <span id="layout-label">__LAYOUT_NAME__</span></div>
-  <div class="controls">
-    <select id="layout-select">
-      <option value="cose">cose</option>
-      <option value="dagre">dagre</option>
-      <option value="concentric">concentric</option>
-      <option value="grid">grid</option>
-      <option value="breadthfirst">breadthfirst</option>
-      <option value="circle">circle</option>
-    </select>
-    <input id="search" type="text" placeholder="Search node name...">
+<section class="kg-explainer" id="kg-explainer" aria-label="Code graph guide">
+  <div class="kg-explainer__bar">
+    <div class="kg-explainer__lede">
+      <strong>Each dot is a symbol.</strong> Lines show <em>structural</em> relationships &mdash; what contains, calls, imports, or inherits from what. Search a function, then tap a node to isolate its neighbourhood.
+    </div>
+    <div class="kg-explainer__controls">
+      <span class="kg-explainer__stats">__NODE_COUNT__ nodes &middot; __EDGE_COUNT__ edges</span>
+      <select id="layout-select" title="Layout">
+        <option value="cose">cose</option>
+        <option value="dagre">dagre</option>
+        <option value="concentric">concentric</option>
+        <option value="grid">grid</option>
+        <option value="breadthfirst">breadthfirst</option>
+        <option value="circle">circle</option>
+      </select>
+      <input id="search" type="text" placeholder="Search node name...">
+      <button type="button" id="kg-explainer-toggle" class="kg-explainer__chevron" aria-expanded="true" title="Hide tips"><span class="chev">&#9662;</span></button>
+    </div>
   </div>
-</div>
-<div id="cy"></div>
+  <div class="kg-explainer__body">
+    <div>
+      <h3>What you&rsquo;re looking at</h3>
+      <p>Every dot is a <strong>File</strong>, <strong>Module</strong>, <strong>Class</strong>, <strong>Function</strong>, or <strong>Variable</strong> from this repo.</p>
+      <p>Lines are <strong>edges</strong>: green = contains, orange = calls, blue = imports, purple = inherits.</p>
+    </div>
+    <div>
+      <h3>How to interact</h3>
+      <p><strong>Tap a node</strong> &rarr; only its direct neighbourhood stays bright.</p>
+      <p><strong>Scroll</strong> to zoom, <strong>drag</strong> to pan.</p>
+      <p><strong>Search</strong> &mdash; try a substring; matches pulse blue.</p>
+    </div>
+    <div>
+      <h3>Layouts</h3>
+      <p><strong>cose</strong> &mdash; force-directed; clusters emerge naturally.</p>
+      <p><strong>dagre</strong> &mdash; tidy top-down hierarchy for containment.</p>
+      <p><strong>concentric</strong> &mdash; rings by type (Files outer, Variables inner).</p>
+    </div>
+  </div>
+</section>
+<div id="cy">
 <div class="legend">
   <div class="legend-section">Nodes</div>
   <div class="legend-item"><div class="legend-dot" style="background:#8b949e"></div>File</div>
@@ -151,13 +222,14 @@ _HTML_TEMPLATE = """<!DOCTYPE html>
   <div class="legend-item"><div class="legend-dot" style="background:#7ee787"></div>Function</div>
   <div class="legend-item"><div class="legend-dot" style="background:#79c0ff"></div>Variable</div>
   <div class="legend-section" style="margin-top:12px">Edges</div>
-  <div class="legend-item"><div class="legend-line" style="background:#30363d"></div>Contains</div>
+  <div class="legend-item"><div class="legend-line" style="background:#2ea043"></div>Contains</div>
   <div class="legend-item"><div class="legend-line" style="background:#f0883e"></div>Calls</div>
   <div class="legend-item"><div class="legend-line" style="background:#58a6ff"></div>Imports</div>
   <div class="legend-item"><div class="legend-line" style="background:#d2a8ff"></div>Inherits</div>
   <div class="legend-section" style="margin-top:12px">Interactions</div>
   <div class="legend-item" style="color:#8b949e">Tap: highlight neighborhood</div>
   <div class="legend-item" style="color:#8b949e">Scroll: zoom &middot; Drag: pan</div>
+</div>
 </div>
 <div class="tooltip" id="tooltip"></div>
 <script src="https://unpkg.com/cytoscape@3.28.1/dist/cytoscape.min.js"></script>
@@ -167,7 +239,7 @@ _HTML_TEMPLATE = """<!DOCTYPE html>
 const GRAPH = __GRAPH_JSON__;
 const INITIAL_LAYOUT = "__LAYOUT_NAME__";
 const COLORS = { File: "#8b949e", Module: "#f778ba", Class: "#d2a8ff", Function: "#7ee787", Variable: "#79c0ff" };
-const EDGE_COLORS = { CONTAINS: "#30363d", CALLS: "#f0883e", IMPORTS: "#58a6ff", INHERITS: "#d2a8ff" };
+const EDGE_COLORS = { CONTAINS: "#2ea043", CALLS: "#f0883e", IMPORTS: "#58a6ff", INHERITS: "#d2a8ff" };
 const SIZES = { File: 18, Module: 14, Class: 16, Function: 10, Variable: 8 };
 const TYPE_RANK = { File: 5, Module: 4, Class: 3, Function: 2, Variable: 1 };
 
@@ -211,13 +283,13 @@ const cy = cytoscape({
         "opacity": 0.9,
     }},
     { selector: "edge", style: {
-        "line-color": ele => EDGE_COLORS[ele.data("type")] || "#30363d",
-        "width": 1,
+        "line-color": ele => EDGE_COLORS[ele.data("type")] || "#7ee787",
+        "width": 2.5,
         "curve-style": "straight",
         "target-arrow-shape": "triangle",
-        "target-arrow-color": ele => EDGE_COLORS[ele.data("type")] || "#30363d",
-        "arrow-scale": 0.5,
-        "opacity": 0.35,
+        "target-arrow-color": ele => EDGE_COLORS[ele.data("type")] || "#7ee787",
+        "arrow-scale": 0.7,
+        "opacity": 0.55,
     }},
     { selector: ".faded", style: { "opacity": 0.08 } },
     { selector: ".hit",   style: { "opacity": 1, "z-index": 10 } },
@@ -267,12 +339,20 @@ cy.on("tap", e => { if (e.target === cy) clearHighlight(); });
 
 // Layout switcher
 const layoutSelect = document.getElementById("layout-select");
-const layoutLabel = document.getElementById("layout-label");
 layoutSelect.value = INITIAL_LAYOUT;
 layoutSelect.addEventListener("change", () => {
   const name = layoutSelect.value;
-  layoutLabel.textContent = name;
   cy.layout(LAYOUT_CONFIGS[name] || LAYOUT_CONFIGS.cose).run();
+});
+
+// Help-ribbon chevron toggle — collapse hides lede + tips + graph controls,
+// so the ribbon shrinks to just a thin chevron strip.  Re-open restores all.
+const kgExplainer = document.getElementById("kg-explainer");
+const kgToggle = document.getElementById("kg-explainer-toggle");
+kgToggle.addEventListener("click", () => {
+  const collapsed = kgExplainer.classList.toggle("collapsed");
+  kgToggle.setAttribute("aria-expanded", String(!collapsed));
+  kgToggle.setAttribute("title", collapsed ? "Show tips" : "Hide tips");
 });
 
 // Search: exact-prefix highlight, Enter fits to matches.
@@ -301,66 +381,136 @@ _HTML_TEMPLATE_3D = """<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>cgraph — Code Graph (3D)</title>
+<title>KeplerKG — Code Graph (3D)</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='4' fill='%230d1117'/%3E%3Ccircle cx='10' cy='11' r='2.5' fill='%237ee787'/%3E%3Ccircle cx='22' cy='8' r='2' fill='%23f778ba'/%3E%3Ccircle cx='16' cy='20' r='3' fill='%2358a6ff'/%3E%3Ccircle cx='25' cy='22' r='2' fill='%23d2a8ff'/%3E%3Ccircle cx='7' cy='24' r='1.8' fill='%238b949e'/%3E%3Cline x1='10' y1='11' x2='16' y2='20' stroke='%232ea043' stroke-width='0.8' opacity='0.7'/%3E%3Cline x1='22' y1='8' x2='16' y2='20' stroke='%2358a6ff' stroke-width='0.8' opacity='0.7'/%3E%3Cline x1='16' y1='20' x2='25' y2='22' stroke='%23f0883e' stroke-width='0.8' opacity='0.7'/%3E%3Cline x1='16' y1='20' x2='7' y2='24' stroke='%23d2a8ff' stroke-width='0.8' opacity='0.7'/%3E%3Cline x1='10' y1='11' x2='22' y2='8' stroke='%2358a6ff' stroke-width='0.6' opacity='0.4'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Antic&family=Antic+Didone&family=Antic+Slab&display=swap" rel="stylesheet">
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-         background: #0d1117; color: #c9d1d9; overflow: hidden; }
-  #header { position: absolute; top: 0; left: 0; right: 0; z-index: 20;
-            padding: 16px 24px; border-bottom: 1px solid #30363d;
-            background: rgba(13,17,23,0.85); backdrop-filter: blur(6px);
-            display: flex; justify-content: space-between; align-items: center; gap: 16px; }
-  #header h1 { font-size: 18px; font-weight: 600; }
-  #header .stats { font-size: 13px; color: #8b949e; }
-  #header .controls { display: flex; align-items: center; gap: 12px; margin-left: auto; }
-  #header input { background: #0d1117; color: #c9d1d9; border: 1px solid #30363d;
-                   border-radius: 6px; padding: 6px 10px; font-size: 12px; width: 220px; }
-  #graph { width: 100vw; height: 100vh; }
-  .tooltip { position: absolute; background: #161b22; border: 1px solid #30363d;
-             border-radius: 6px; padding: 10px 14px; font-size: 12px; pointer-events: none;
-             max-width: 360px; box-shadow: 0 4px 12px rgba(0,0,0,0.4); display: none; z-index: 30; }
+  /* Antic type system:
+       Antic Didone → h1 title, legend section headings
+       Antic Slab   → body / tooltip name (workhorse)
+       Antic        → stats, tooltip path, search input, legend items */
+  html, body { height: 100vh; }
+  body { font-family: "Antic Slab", Georgia, "Times New Roman", serif;
+         background: #0d1117; color: #c9d1d9; overflow: hidden;
+         display: flex; flex-direction: column; }
+  button, input, select, textarea { font-family: inherit; border-radius: 0 !important; }
+
+  .kg-explainer { flex-shrink: 0; background: linear-gradient(180deg, #161b22 0%, #1c2128 100%);
+                  border-bottom: 1px solid #30363d; transition: padding 0.18s ease-out; }
+  .kg-explainer__bar { display: flex; align-items: center; gap: 12px; padding: 8px 16px;
+                       transition: padding 0.18s ease-out; }
+  .kg-explainer__lede { flex: 1; font-size: 12px; color: #e6edf3; line-height: 1.45; max-width: 80ch; }
+  .kg-explainer__lede strong { color: #58a6ff; font-weight: 600; }
+  .kg-explainer__lede em { color: #f0883e; font-style: normal; }
+  .kg-explainer__controls { display: flex; gap: 6px; flex-shrink: 0; align-items: center; }
+  .kg-explainer__controls input {
+    background: #0d1117; color: #c9d1d9; border: 1px solid #30363d;
+    padding: 4px 8px; font-size: 11px; font-family: "Antic", "Antic Slab", sans-serif;
+    width: 180px;
+  }
+  .kg-explainer__stats { font-size: 11px; color: #8b949e; white-space: nowrap; }
+  .kg-explainer__chevron {
+    width: 22px; height: 22px; padding: 0 !important;
+    background: transparent; color: #9ba6b3; border: 1px solid #30363d;
+    cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
+    line-height: 1; transition: color 0.12s, border-color 0.12s;
+  }
+  .kg-explainer__chevron:hover { color: #e6edf3; border-color: #58a6ff; }
+  .kg-explainer__chevron .chev { display: inline-block; font-size: 10px; transition: transform 0.18s ease-out; }
+  .kg-explainer.collapsed .kg-explainer__chevron .chev { transform: rotate(-90deg); }
+  .kg-explainer__body { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px;
+                         padding: 2px 16px 10px 16px; border-top: 1px solid #21262d;
+                         font-size: 11px; line-height: 1.45; color: #9ba6b3; }
+  .kg-explainer__body h3 { font-family: "Antic Didone", "Antic Slab", serif;
+                            color: #f0883e; font-size: 9px; font-weight: 700;
+                            letter-spacing: 0.1em; text-transform: uppercase; margin: 8px 0 3px 0; }
+  .kg-explainer__body p { margin: 0 0 3px 0; }
+  .kg-explainer__body strong { color: #e6edf3; font-weight: 600; }
+  .kg-explainer.collapsed .kg-explainer__body { display: none; }
+  .kg-explainer.collapsed .kg-explainer__lede { display: none; }
+  .kg-explainer.collapsed .kg-explainer__controls > input,
+  .kg-explainer.collapsed .kg-explainer__stats { display: none; }
+  .kg-explainer.collapsed .kg-explainer__bar { padding: 3px 10px; justify-content: flex-end; }
+
+  #graph { position: relative; flex: 1; min-height: 0; width: 100%; }
+  #graph-scene { position: absolute; inset: 0; }
+  .tooltip { position: fixed; background: #161b22; border: 1px solid #30363d;
+             padding: 10px 14px; font-size: 12px; pointer-events: none;
+             max-width: 360px; box-shadow: 0 4px 12px rgba(0,0,0,0.4); display: none; z-index: 9999;
+             font-family: "Antic Slab", Georgia, serif; }
   .tooltip .name { font-weight: 600; color: #58a6ff; margin-bottom: 4px; }
-  .tooltip .path { color: #8b949e; }
-  .legend { position: absolute; top: 72px; right: 24px; background: #161b22;
-            border: 1px solid #30363d; border-radius: 6px; padding: 12px 16px; z-index: 10; }
+  .tooltip .path { color: #8b949e; font-family: "Antic", "Antic Slab", sans-serif; font-size: 11px; }
+  .legend { position: fixed; bottom: 24px; right: 24px; background: #161b22;
+            border: 1px solid #30363d; padding: 12px 16px; z-index: 9999;
+            pointer-events: auto; }
   .legend-item { display: flex; align-items: center; gap: 8px; margin: 4px 0; font-size: 12px; }
   .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
   .legend-line { width: 20px; height: 2px; }
-  .legend-section { font-size: 10px; color: #8b949e; margin-top: 8px;
-                    text-transform: uppercase; letter-spacing: 0.5px; }
+  .legend-section { font-family: "Antic Didone", "Antic Slab", Georgia, serif;
+                    font-size: 11px; color: #8b949e; margin-top: 8px;
+                    text-transform: uppercase; letter-spacing: 0.12em; }
 </style>
 </head>
 <body>
-<div id="header">
-  <h1>cgraph — Code Graph (3D)</h1>
-  <div class="stats">__NODE_COUNT__ nodes &middot; __EDGE_COUNT__ edges &middot; drag to rotate</div>
-  <div class="controls">
-    <input id="search" type="text" placeholder="Search node name...">
+<section class="kg-explainer" id="kg-explainer" aria-label="3D code graph guide">
+  <div class="kg-explainer__bar">
+    <div class="kg-explainer__lede">
+      <strong>3D force layout.</strong> Drag to rotate, scroll to zoom, right-drag to pan. Click a node to fly the camera to it.
+    </div>
+    <div class="kg-explainer__controls">
+      <input id="search" type="text" placeholder="Search node name...">
+      <button type="button" id="kg-explainer-toggle" class="kg-explainer__chevron" aria-expanded="true" title="Hide tips"><span class="chev">&#9662;</span></button>
+    </div>
   </div>
+  <div class="kg-explainer__body">
+    <div>
+      <h3>What you&rsquo;re looking at</h3>
+      <p>Every sphere is a <strong>File</strong>, <strong>Module</strong>, <strong>Class</strong>, <strong>Function</strong>, or <strong>Variable</strong>.</p>
+      <p>Lines are <strong>edges</strong>: green = contains, orange = calls, blue = imports, purple = inherits.</p>
+      <p>The force simulation settles in ~1.5 s, then freezes.</p>
+    </div>
+    <div>
+      <h3>How to interact</h3>
+      <p><strong>Click a node</strong> &rarr; camera flies to it.</p>
+      <p><strong>Drag</strong> to rotate, <strong>scroll</strong> to zoom, <strong>right-drag</strong> to pan.</p>
+      <p><strong>Search</strong> dims non-matching nodes while you type.</p>
+    </div>
+    <div>
+      <h3>3D vs 2D</h3>
+      <p>3D spreads dense clusters that stack in 2D. Try both to find the better view for your graph.</p>
+      <p>Edges are thicker here so they read against the depth fog.</p>
+    </div>
+  </div>
+</section>
+<div id="graph">
+  <div id="graph-scene"></div>
+  <div class="legend">
+    <div class="legend-section">Nodes</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#8b949e"></div>File</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#f778ba"></div>Module</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#d2a8ff"></div>Class</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#7ee787"></div>Function</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#79c0ff"></div>Variable</div>
+    <div class="legend-section" style="margin-top:12px">Edges</div>
+    <div class="legend-item"><div class="legend-line" style="background:#2ea043"></div>Contains</div>
+    <div class="legend-item"><div class="legend-line" style="background:#f0883e"></div>Calls</div>
+    <div class="legend-item"><div class="legend-line" style="background:#58a6ff"></div>Imports</div>
+    <div class="legend-item"><div class="legend-line" style="background:#d2a8ff"></div>Inherits</div>
+    <div class="legend-section" style="margin-top:12px">Interactions</div>
+    <div class="legend-item" style="color:#8b949e">Drag: rotate &middot; Scroll: zoom</div>
+    <div class="legend-item" style="color:#8b949e">Right-drag: pan &middot; Click: focus</div>
+    <div class="legend-item" style="color:#8b949e">Hover edge: show type</div>
+  </div>
+  <div class="tooltip" id="tooltip"></div>
 </div>
-<div id="graph"></div>
-<div class="legend">
-  <div class="legend-section">Nodes</div>
-  <div class="legend-item"><div class="legend-dot" style="background:#8b949e"></div>File</div>
-  <div class="legend-item"><div class="legend-dot" style="background:#f778ba"></div>Module</div>
-  <div class="legend-item"><div class="legend-dot" style="background:#d2a8ff"></div>Class</div>
-  <div class="legend-item"><div class="legend-dot" style="background:#7ee787"></div>Function</div>
-  <div class="legend-item"><div class="legend-dot" style="background:#79c0ff"></div>Variable</div>
-  <div class="legend-section" style="margin-top:12px">Edges</div>
-  <div class="legend-item"><div class="legend-line" style="background:#30363d"></div>Contains</div>
-  <div class="legend-item"><div class="legend-line" style="background:#f0883e"></div>Calls</div>
-  <div class="legend-item"><div class="legend-line" style="background:#58a6ff"></div>Imports</div>
-  <div class="legend-item"><div class="legend-line" style="background:#d2a8ff"></div>Inherits</div>
-  <div class="legend-section" style="margin-top:12px">Interactions</div>
-  <div class="legend-item" style="color:#8b949e">Drag: rotate &middot; Scroll: zoom</div>
-  <div class="legend-item" style="color:#8b949e">Right-drag: pan &middot; Click: focus</div>
-</div>
-<div class="tooltip" id="tooltip"></div>
 <script src="https://unpkg.com/3d-force-graph@1.73.4/dist/3d-force-graph.min.js"></script>
 <script>
 const GRAPH = __GRAPH_JSON__;
 const COLORS = { File: "#8b949e", Module: "#f778ba", Class: "#d2a8ff", Function: "#7ee787", Variable: "#79c0ff" };
-const EDGE_COLORS = { CONTAINS: "#30363d", CALLS: "#f0883e", IMPORTS: "#58a6ff", INHERITS: "#d2a8ff" };
+const EDGE_COLORS = { CONTAINS: "#2ea043", CALLS: "#f0883e", IMPORTS: "#58a6ff", INHERITS: "#d2a8ff" };
 const SIZES = { File: 6, Module: 5, Class: 5, Function: 3.5, Variable: 2.5 };
 
 const graphData = {
@@ -370,6 +520,8 @@ const graphData = {
   links: GRAPH.edges.map(e => ({ source: e.source, target: e.target, type: e.type })),
 };
 
+const graphEl = document.getElementById("graph");
+const graphSceneEl = document.getElementById("graph-scene");
 const tooltip = document.getElementById("tooltip");
 function showTooltip(n, event) {
   tooltip.textContent = "";
@@ -391,7 +543,7 @@ function showTooltip(n, event) {
   tooltip.style.top = (event.pageY - 12) + "px";
   tooltip.style.display = "block";
 }
-document.getElementById("graph").addEventListener("mousemove", e => {
+graphEl.addEventListener("mousemove", e => {
   if (tooltip.style.display === "block") {
     tooltip.style.left = (e.pageX + 12) + "px";
     tooltip.style.top = (e.pageY - 12) + "px";
@@ -400,22 +552,24 @@ document.getElementById("graph").addEventListener("mousemove", e => {
 
 // cooldownTicks=120 / d3AlphaDecay=0.05 — sim settles in ~1.5s then hard-stops.
 // Not the never-converging pathology the old vanilla sim had.
-const Graph = ForceGraph3D()(document.getElementById("graph"))
+const Graph = ForceGraph3D()(graphSceneEl)
   .graphData(graphData)
   .backgroundColor("#0d1117")
   .nodeRelSize(4)
   .nodeVal(n => SIZES[n.type] || 3)
   .nodeColor(n => COLORS[n.type] || "#8b949e")
   .nodeLabel(n => n.name + " (" + n.type + ")")
-  .linkColor(l => EDGE_COLORS[l.type] || "#30363d")
-  .linkOpacity(0.35)
-  .linkDirectionalArrowLength(3)
+  .linkColor(l => EDGE_COLORS[l.type] || "#2ea043")
+  .linkLabel(l => l.type)
+  .linkWidth(3)
+  .linkOpacity(0.55)
+  .linkDirectionalArrowLength(4)
   .linkDirectionalArrowRelPos(1)
   .cooldownTicks(120)
   .d3AlphaDecay(0.05)
   .warmupTicks(0)
   .onNodeHover(n => {
-    document.getElementById("graph").style.cursor = n ? "pointer" : null;
+    graphSceneEl.style.cursor = n ? "pointer" : null;
     if (!n) { tooltip.style.display = "none"; return; }
     // 3d-force-graph doesn't pass the pointer event — synthesize from last mousemove.
     const evt = window._lastMove || { pageX: window.innerWidth / 2, pageY: window.innerHeight / 2 };
@@ -441,6 +595,15 @@ search.addEventListener("input", () => {
   Graph
     .nodeOpacity(q ? (n => (n.name || "").toLowerCase().includes(q) ? 1 : 0.1) : 0.85)
     .linkOpacity(q ? 0.05 : 0.35);
+});
+
+// Help-ribbon chevron toggle
+const kgExplainer = document.getElementById("kg-explainer");
+const kgToggle = document.getElementById("kg-explainer-toggle");
+kgToggle.addEventListener("click", () => {
+  const collapsed = kgExplainer.classList.toggle("collapsed");
+  kgToggle.setAttribute("aria-expanded", String(!collapsed));
+  kgToggle.setAttribute("title", collapsed ? "Show tips" : "Hide tips");
 });
 </script>
 </body>
@@ -504,7 +667,7 @@ def viz_graph_command(
         typer.echo(emit_json({
             "ok": False,
             "kind": "empty_graph",
-            "detail": "No nodes found. Run `cgc index` first.",
+            "detail": "No nodes found. Run `kkg index` first.",
         }))
         raise typer.Exit(code=1)
 

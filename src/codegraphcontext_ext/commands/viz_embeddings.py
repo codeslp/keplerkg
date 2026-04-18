@@ -1,4 +1,4 @@
-"""cgc viz-embeddings: interactive 2D scatter plot of code embeddings.
+"""kkg viz-embeddings: interactive 2D scatter plot of code embeddings.
 
 Reads embedding vectors from KùzuDB Function/Class nodes, reduces to 2D
 via a numpy-only SVD-based PCA, and generates a standalone HTML file with
@@ -242,7 +242,7 @@ def viz_embeddings_command(
         typer.echo(emit_json({
             "ok": False,
             "kind": "no_embeddings",
-            "detail": "No embedded nodes found. Run `cgc embed` first.",
+            "detail": "No embedded nodes found. Run `kkg embed` first.",
         }))
         raise typer.Exit(code=1)
 

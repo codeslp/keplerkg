@@ -1,4 +1,4 @@
-"""Tests for cgc export-embeddings — TSV export for TF Embedding Projector."""
+"""Tests for kkg export-embeddings — TSV export for TF Embedding Projector."""
 
 from unittest.mock import patch
 

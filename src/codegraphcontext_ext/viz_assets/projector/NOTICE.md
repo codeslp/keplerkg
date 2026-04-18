@@ -15,7 +15,7 @@ work (not derived from upstream):
 
 1. The attribute `projector-config-json-path`, changed from
    `"oss_data/oss_demo_projector_config.json"` to
-   `"cgraph_data/projector_config.json"`, so that `cgc viz-projector` can
+   `"cgraph_data/projector_config.json"`, so that `kkg viz-projector` can
    write its tensor + metadata next to the served app without shipping any
    of the upstream demo datasets (word2vec, MNIST, iris, GNMT) — those
    totaled ~145 MB and are not included.

@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KeplerKG — Knowledge Graphs for Institutional Knowledge</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Antic&family=Antic+Didone&family=Antic+Slab&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg:          #0d1117;
+    --bg-panel:    #161b22;
+    --bg-raised:   #1c2128;
+    --border:      #30363d;
+    --border-soft: #21262d;
+    --text:        #e6edf3;
+    --text-body:   #c9d1d9;
+    --muted:       #8b949e;
+    --accent:      #58a6ff;
+    --accent-warm: #f0883e;
+    --green:       #7ee787;
+    --pink:        #f778ba;
+    --purple:      #d2a8ff;
+  }
+
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: "Antic Slab", Georgia, "Times New Roman", serif;
+    background: var(--bg);
+    color: var(--text-body);
+    line-height: 1.6;
+  }
+  button, input, select, textarea { font-family: inherit; border-radius: 0 !important; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  /* --- NAV --- */
+  nav {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+    background: var(--bg-panel);
+    border-bottom: 1px solid var(--border);
+    padding: 14px 32px;
+    display: flex; align-items: center; gap: 24px;
+  }
+  nav h1 {
+    font-family: "Antic Didone", "Antic Slab", Georgia, serif;
+    font-size: 18px; font-weight: 600; color: var(--text);
+    letter-spacing: 0.02em;
+  }
+  nav .nav-links { margin-left: auto; display: flex; gap: 24px; }
+  nav .nav-links a {
+    font-family: "Antic", "Antic Slab", sans-serif;
+    font-size: 13px; color: var(--muted); text-decoration: none;
+    transition: color 0.12s;
+  }
+  nav .nav-links a:hover { color: var(--text); }
+
+  /* --- HERO --- */
+  .hero {
+    padding: 140px 32px 80px;
+    max-width: 960px; margin: 0 auto;
+    text-align: center;
+  }
+  .hero h2 {
+    font-family: "Antic Didone", "Antic Slab", Georgia, serif;
+    font-size: 42px; font-weight: 400; color: var(--text);
+    line-height: 1.2; margin-bottom: 20px;
+  }
+  .hero h2 em { color: var(--accent); font-style: normal; }
+  .hero p {
+    font-size: 16px; color: var(--muted); max-width: 640px;
+    margin: 0 auto 32px;
+  }
+  .hero-cta {
+    display: inline-block; padding: 12px 28px;
+    background: var(--accent); color: var(--bg); font-size: 14px;
+    font-family: "Antic", "Antic Slab", sans-serif;
+    font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
+    border: none; cursor: pointer; text-decoration: none;
+    transition: background 0.12s;
+  }
+  .hero-cta:hover { background: #79c0ff; text-decoration: none; }
+
+  /* --- SECTIONS --- */
+  section { padding: 80px 32px; max-width: 1100px; margin: 0 auto; }
+  .section-label {
+    font-family: "Antic Didone", "Antic Slab", Georgia, serif;
+    font-size: 10px; color: var(--accent-warm); text-transform: uppercase;
+    letter-spacing: 0.14em; margin-bottom: 8px;
+  }
+  section h3 {
+    font-family: "Antic Didone", "Antic Slab", Georgia, serif;
+    font-size: 28px; font-weight: 400; color: var(--text);
+    margin-bottom: 16px;
+  }
+  section p { color: var(--text-body); margin-bottom: 12px; }
+  section p.muted { color: var(--muted); font-size: 14px; }
+
+  /* --- SHOWCASE --- */
+  .showcase {
+    padding: 60px 32px;
+    max-width: 1200px; margin: 0 auto;
+  }
+  .showcase-panel { display: none; position: relative; }
+  .showcase-panel.active { display: block; }
+  .showcase-panel img {
+    width: 100%; border: 1px solid var(--border);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+    display: block;
+  }
+  /* Invisible clickable hotspots over the tab buttons in the screenshot */
+  .showcase-hotspot {
+    position: absolute; top: 0.5%; height: 5.5%;
+    cursor: pointer; z-index: 2;
+    /* background: rgba(255,0,0,0.15); */ /* uncomment to debug positions */
+  }
+  .showcase-hotspot:hover { background: rgba(88, 166, 255, 0.08); }
+  .hotspot-2d    { left: 61.5%; width: 9%; }
+  .hotspot-3d    { left: 70.5%; width: 9%; }
+  .hotspot-emb   { left: 79.5%; width: 12%; }
+  .hotspot-about { left: 92.5%; width: 7%; }
+
+  /* --- FEATURES GRID --- */
+  .features {
+    display: grid; grid-template-columns: repeat(3, 1fr);
+    gap: 24px; margin-top: 40px;
+  }
+  @media (max-width: 768px) { .features { grid-template-columns: 1fr; } }
+  .feature {
+    background: var(--bg-panel); border: 1px solid var(--border);
+    padding: 24px;
+  }
+  .feature h4 {
+    font-family: "Antic Didone", "Antic Slab", Georgia, serif;
+    font-size: 9px; color: var(--accent-warm); text-transform: uppercase;
+    letter-spacing: 0.12em; margin-bottom: 8px;
+  }
+  .feature p { font-size: 14px; color: var(--text-body); margin: 0; }
+  .feature code {
+    font-family: "Antic", ui-monospace, SFMono-Regular, monospace;
+    font-size: 13px; color: var(--accent); background: var(--bg);
+    padding: 1px 5px; border: 1px solid var(--border-soft);
+  }
+
+  /* --- COMMANDS TABLE --- */
+  table {
+    width: 100%; border-collapse: collapse; margin-top: 24px;
+    font-size: 14px;
+  }
+  th {
+    font-family: "Antic Didone", "Antic Slab", Georgia, serif;
+    text-align: left; color: var(--muted); font-size: 10px;
+    text-transform: uppercase; letter-spacing: 0.1em;
+    padding: 8px 12px; border-bottom: 1px solid var(--border);
+  }
+  td {
+    padding: 10px 12px; border-bottom: 1px solid var(--border-soft);
+    color: var(--text-body);
+  }
+  td:first-child {
+    font-family: "Antic", ui-monospace, SFMono-Regular, monospace;
+    color: var(--accent); white-space: nowrap;
+  }
+
+  /* --- QUICKSTART --- */
+  .code-block {
+    background: var(--bg-panel); border: 1px solid var(--border);
+    padding: 20px 24px; overflow-x: auto; margin-top: 20px;
+    font-family: "Antic", ui-monospace, SFMono-Regular, monospace;
+    font-size: 13px; line-height: 1.7; color: var(--text-body);
+  }
+  .code-block .comment { color: var(--muted); }
+  .code-block .cmd { color: var(--green); }
+
+  /* --- CREDITS --- */
+  .credits-grid {
+    display: grid; grid-template-columns: repeat(4, 1fr);
+    gap: 16px; margin-top: 24px;
+  }
+  @media (max-width: 768px) { .credits-grid { grid-template-columns: repeat(2, 1fr); } }
+  .credit {
+    background: var(--bg-panel); border: 1px solid var(--border);
+    padding: 16px; text-align: center;
+  }
+  .credit .credit-name {
+    font-size: 14px; color: var(--text); margin-bottom: 4px;
+  }
+  .credit .credit-license {
+    font-family: "Antic", "Antic Slab", sans-serif;
+    font-size: 11px; color: var(--muted);
+  }
+
+  /* --- FOOTER --- */
+  footer {
+    border-top: 1px solid var(--border);
+    padding: 32px;
+    text-align: center;
+    font-family: "Antic", "Antic Slab", sans-serif;
+    font-size: 12px; color: var(--muted);
+  }
+
+  /* --- DIVIDER --- */
+  hr {
+    border: none; border-top: 1px solid var(--border-soft);
+    margin: 0 32px;
+  }
+
+  /* --- BACKGROUND CONSTELLATION --- */
+  #bg-canvas {
+    position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+    z-index: 0; pointer-events: none;
+  }
+  nav { position: relative; z-index: 2; }
+  .hero, section, hr, footer { position: relative; z-index: 1; }
+  /* Panels, feature cards, and table get opaque bg so text is readable */
+  .feature, table, .code-block, .credit, .showcase-panel img {
+    position: relative; z-index: 1;
+  }
+</style>
+</head>
+<body>
+<canvas id="bg-canvas" aria-hidden="true"></canvas>
+
+<nav>
+  <h1>KeplerKG</h1>
+  <div class="nav-links">
+    <a href="#features">Features</a>
+    <a href="#showcase">Showcase</a>
+    <a href="#commands">Commands</a>
+    <a href="#quickstart">Quick Start</a>
+    <a href="#credits">Credits</a>
+    <a href="https://github.com/codeslp/keplerkg">GitHub</a>
+  </div>
+</nav>
+
+<div class="hero">
+  <h2>Fast, token-efficient context<br>for <em>AI agents</em></h2>
+  <p>KeplerKG turns codebases into structured graphs and embedding spaces that AI agents can query in hundreds of tokens instead of tens of thousands. Every command outputs machine-readable JSON &mdash; agents get precise, pre-computed context without reading entire files.</p>
+  <a href="#quickstart" class="hero-cta">Get Started</a>
+</div>
+
+<hr>
+
+<section id="features">
+  <div class="section-label">What it does</div>
+  <h3>Index. Embed. Query. Ship context to agents.</h3>
+  <p>Pre-computed structural and semantic context so AI agents get exactly what they need &mdash; no file scraping, no heuristics, just structured JSON.</p>
+
+  <div class="features">
+    <div class="feature">
+      <h4>Graph Indexing</h4>
+      <p>Parse any repo into a KuzuDB graph: files, modules, classes, functions, variables as nodes; contains, calls, imports, inherits as edges. 18 node tables, 7 relationship groups.</p>
+    </div>
+    <div class="feature">
+      <h4>Embedding Pipeline</h4>
+      <p>Batch-embed every function and class with a local code model (<code>jina-embeddings-v2-base-code</code>, 768-dim). HNSW indexes for fast ANN search. Swap to Voyage or OpenAI API providers if needed.</p>
+    </div>
+    <div class="feature">
+      <h4>Semantic Search</h4>
+      <p><code>kkg context &lt;query&gt;</code> returns the most relevant symbols in ~200 tokens. An agent reading raw files would burn 10-50x more context for the same answer.</p>
+    </div>
+    <div class="feature">
+      <h4>Review Packets</h4>
+      <p><code>kkg review-packet</code> gives a reviewer (human or agent) the full blast radius in ~2KB of JSON &mdash; touched nodes, external callers, cross-module impact &mdash; without opening a single file.</p>
+    </div>
+    <div class="feature">
+      <h4>Blast Radius</h4>
+      <p><code>kkg blast-radius</code> expands a file set through the graph with transitive BFS to surface callers and callees outside your scope, plus overlap with other active work.</p>
+    </div>
+    <div class="feature">
+      <h4>Agent-Readable Output</h4>
+      <p>Every command emits structured JSON with a <code>kind</code> discriminator and stable schema under <code>schemas/</code>. Agents pipe output directly into their context &mdash; no parsing needed.</p>
+    </div>
+  </div>
+</section>
+
+<hr>
+
+<section id="showcase" style="max-width: 1200px;">
+  <div class="section-label">Showcase</div>
+  <h3>See your codebase from every angle</h3>
+
+  <div class="showcase-panel active" id="panel-2d">
+    <img src="img/2d.png" alt="KeplerKG 2D Graph">
+    <div class="showcase-hotspot hotspot-2d" data-panel="panel-2d"></div>
+    <div class="showcase-hotspot hotspot-3d" data-panel="panel-3d"></div>
+    <div class="showcase-hotspot hotspot-emb" data-panel="panel-emb"></div>
+    <div class="showcase-hotspot hotspot-about" data-panel="panel-about"></div>
+  </div>
+  <div class="showcase-panel" id="panel-3d">
+    <img src="img/3d.png" alt="KeplerKG 3D Graph">
+    <div class="showcase-hotspot hotspot-2d" data-panel="panel-2d"></div>
+    <div class="showcase-hotspot hotspot-3d" data-panel="panel-3d"></div>
+    <div class="showcase-hotspot hotspot-emb" data-panel="panel-emb"></div>
+    <div class="showcase-hotspot hotspot-about" data-panel="panel-about"></div>
+  </div>
+  <div class="showcase-panel" id="panel-emb">
+    <img src="img/embedding.png" alt="KeplerKG Embeddings">
+    <div class="showcase-hotspot hotspot-2d" data-panel="panel-2d"></div>
+    <div class="showcase-hotspot hotspot-3d" data-panel="panel-3d"></div>
+    <div class="showcase-hotspot hotspot-emb" data-panel="panel-emb"></div>
+    <div class="showcase-hotspot hotspot-about" data-panel="panel-about"></div>
+  </div>
+  <div class="showcase-panel" id="panel-about">
+    <img src="img/about.png" alt="KeplerKG About">
+    <div class="showcase-hotspot hotspot-2d" data-panel="panel-2d"></div>
+    <div class="showcase-hotspot hotspot-3d" data-panel="panel-3d"></div>
+    <div class="showcase-hotspot hotspot-emb" data-panel="panel-emb"></div>
+    <div class="showcase-hotspot hotspot-about" data-panel="panel-about"></div>
+  </div>
+</section>
+
+<hr>
+
+<section id="commands">
+  <div class="section-label">CLI Reference</div>
+  <h3>Ten commands, one graph</h3>
+
+  <table>
+    <tr><th>Command</th><th>What it does</th></tr>
+    <tr><td>kkg index</td><td>Parse and index the repo into the KuzuDB graph</td></tr>
+    <tr><td>kkg embed</td><td>Batch-embed functions and classes (local Jina v2 or API providers)</td></tr>
+    <tr><td>kkg context &lt;query&gt;</td><td>Semantic search + graph neighborhood expansion</td></tr>
+    <tr><td>kkg review-packet</td><td>Reviewer JSON with blast radius and advisories</td></tr>
+    <tr><td>kkg blast-radius</td><td>Pre-lock collision check via transitive graph expansion</td></tr>
+    <tr><td>kkg sync-check</td><td>Report upstream commits not yet merged</td></tr>
+    <tr><td>kkg viz-dashboard</td><td>Three-tab browser dashboard (2D, 3D, Embeddings)</td></tr>
+    <tr><td>kkg viz-graph</td><td>Standalone 2D or 3D graph visualization</td></tr>
+    <tr><td>kkg viz-embeddings</td><td>Standalone embedding scatter plot</td></tr>
+    <tr><td>kkg export-embeddings</td><td>Export embeddings as TSV for external tools</td></tr>
+  </table>
+</section>
+
+<hr>
+
+<section id="quickstart">
+  <div class="section-label">Quick Start</div>
+  <h3>Up and running in four commands</h3>
+
+  <div class="code-block">
+    <span class="comment"># Clone and install</span><br>
+    <span class="cmd">git clone</span> https://github.com/codeslp/keplerkg.git<br>
+    <span class="cmd">cd</span> cgraph<br>
+    <span class="cmd">python -m venv</span> .venv && <span class="cmd">source</span> .venv/bin/activate<br>
+    <span class="cmd">pip install</span> -e ".[dev]"<br>
+    <br>
+    <span class="comment"># Index a repo (creates KuzuDB graph + schema)</span><br>
+    <span class="cmd">kkg index</span><br>
+    <br>
+    <span class="comment"># Embed all functions and classes</span><br>
+    <span class="cmd">kkg embed</span><br>
+    <br>
+    <span class="comment"># Semantic search</span><br>
+    <span class="cmd">kkg context</span> "authentication token validation"<br>
+    <br>
+    <span class="comment"># Open the interactive dashboard</span><br>
+    <span class="cmd">kkg viz-dashboard</span>
+  </div>
+</section>
+
+<hr>
+
+<section id="credits">
+  <div class="section-label">Built with</div>
+  <h3>Credits</h3>
+
+  <div class="credits-grid">
+    <div class="credit">
+      <div class="credit-name"><a href="https://github.com/Vi-Sri/CodeGraphContext">CodeGraphContext</a></div>
+      <div class="credit-license">Apache 2.0</div>
+    </div>
+    <div class="credit">
+      <div class="credit-name"><a href="https://github.com/tensorflow/embedding-projector-standalone">TF Embedding Projector</a></div>
+      <div class="credit-license">Apache 2.0</div>
+    </div>
+    <div class="credit">
+      <div class="credit-name"><a href="https://js.cytoscape.org/">Cytoscape.js</a></div>
+      <div class="credit-license">MIT</div>
+    </div>
+    <div class="credit">
+      <div class="credit-name"><a href="https://github.com/vasturiano/3d-force-graph">3d-force-graph</a></div>
+      <div class="credit-license">MIT</div>
+    </div>
+    <div class="credit">
+      <div class="credit-name"><a href="https://kuzudb.com/">KuzuDB</a></div>
+      <div class="credit-license">MIT</div>
+    </div>
+    <div class="credit">
+      <div class="credit-name"><a href="https://sbert.net/">sentence-transformers</a></div>
+      <div class="credit-license">Apache 2.0</div>
+    </div>
+    <div class="credit">
+      <div class="credit-name"><a href="https://huggingface.co/jinaai/jina-embeddings-v2-base-code">Jina Embeddings v2</a></div>
+      <div class="credit-license">Apache 2.0</div>
+    </div>
+    <div class="credit">
+      <div class="credit-name"><a href="https://huggingface.co/">HuggingFace Hub</a></div>
+      <div class="credit-license">Apache 2.0</div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  KeplerKG &mdash; MIT License &mdash; <a href="https://github.com/codeslp/keplerkg">github.com/codeslp/keplerkg</a>
+</footer>
+
+<script>
+// Showcase hotspots — click the tab area in the screenshot to switch views
+document.querySelectorAll('.showcase-hotspot').forEach(hotspot => {
+  hotspot.addEventListener('click', () => {
+    document.querySelectorAll('.showcase-panel').forEach(p => p.classList.remove('active'));
+    document.getElementById(hotspot.dataset.panel).classList.add('active');
+  });
+});
+
+// --- Background constellation (ported from MechAI BackgroundTree.tsx) ---
+(function () {
+  const canvas = document.getElementById('bg-canvas');
+  const ctx = canvas.getContext('2d');
+
+  // Deterministic pseudo-random
+  function seededRand(seed) {
+    let state = seed;
+    return () => { state = (state * 1103515245 + 12345) & 0x7fffffff; return state / 0x7fffffff; };
+  }
+
+  function sqDist(a, b) {
+    const dx = a.x - b.x, dy = a.y - b.y, dz = a.z - b.z;
+    return dx * dx + dy * dy + dz * dz;
+  }
+
+  function buildConstellation(seed) {
+    const rand = seededRand(seed);
+    const nodes = [];
+    const clusterOf = [];
+    const anchors = [];
+
+    for (let i = 0; i < 10; i++) {
+      const theta = rand() * Math.PI * 2;
+      const phi = Math.acos(2 * rand() - 1);
+      const r = 0.6 + rand() * 0.9;
+      anchors.push({ x: r * Math.sin(phi) * Math.cos(theta), y: r * Math.sin(phi) * Math.sin(theta), z: r * Math.cos(phi), inner: false });
+    }
+    for (let i = 0; i < 3; i++) {
+      const theta = rand() * Math.PI * 2;
+      const phi = Math.acos(2 * rand() - 1);
+      const r = 0.12 + rand() * 0.22;
+      anchors.push({ x: r * Math.sin(phi) * Math.cos(theta), y: r * Math.sin(phi) * Math.sin(theta), z: r * Math.cos(phi), inner: true });
+    }
+
+    const hubIndices = [];
+    for (let c = 0; c < anchors.length; c++) {
+      const a = anchors[c];
+      hubIndices.push(nodes.length);
+      nodes.push({ x: a.x, y: a.y, z: a.z, r: a.inner ? 2.0 + rand() * 0.9 : 2.6 + rand() * 1.2, links: [] });
+      clusterOf.push(c);
+      const members = a.inner ? 7 + Math.floor(rand() * 5) : 10 + Math.floor(rand() * 7);
+      for (let m = 0; m < members; m++) {
+        const s = a.inner ? 0.1 + rand() * 0.08 : 0.12 + rand() * 0.14;
+        nodes.push({ x: a.x + (rand() - 0.5) * s, y: a.y + (rand() - 0.5) * s, z: a.z + (rand() - 0.5) * s, r: 1.1 + rand() * 1.0, links: [] });
+        clusterOf.push(c);
+      }
+    }
+    for (let i = 0; i < 40; i++) {
+      const theta = rand() * Math.PI * 2;
+      const phi = Math.acos(2 * rand() - 1);
+      const r = 0.4 + rand() * 1.2;
+      nodes.push({ x: r * Math.sin(phi) * Math.cos(theta), y: r * Math.sin(phi) * Math.sin(theta), z: r * Math.cos(phi), r: 1.2 + rand() * 1.1, links: [] });
+      clusterOf.push(-1);
+    }
+
+    // Linking
+    for (let i = 0; i < nodes.length; i++) {
+      const c = clusterOf[i];
+      if (c >= 0 && i !== hubIndices[c]) { nodes[i].links.push(hubIndices[c]); continue; }
+      if (c >= 0 && i === hubIndices[c]) {
+        const otherHubs = hubIndices.filter(h => h !== i).map(h => ({ h, d: sqDist(nodes[i], nodes[h]) })).sort((a, b) => a.d - b.d);
+        nodes[i].links.push(otherHubs[0].h, otherHubs[1].h);
+        if (rand() < 0.5 && otherHubs[2]) nodes[i].links.push(otherHubs[2].h);
+        const freeNear = nodes.map((_, j) => j).filter(j => clusterOf[j] === -1).map(j => ({ j, d: sqDist(nodes[i], nodes[j]) })).sort((a, b) => a.d - b.d);
+        if (freeNear[0]) nodes[i].links.push(freeNear[0].j);
+        if (freeNear[1]) nodes[i].links.push(freeNear[1].j);
+        continue;
+      }
+      const dists = [];
+      for (let j = 0; j < nodes.length; j++) { if (i !== j) dists.push({ j, d: sqDist(nodes[i], nodes[j]) }); }
+      dists.sort((a, b) => a.d - b.d);
+      nodes[i].links.push(dists[0].j);
+    }
+
+    // Deduplicate
+    const seen = new Set();
+    const deduped = nodes.map(() => []);
+    for (let i = 0; i < nodes.length; i++) {
+      for (const j of nodes[i].links) {
+        if (i === j) continue;
+        const key = Math.min(i, j) + '-' + Math.max(i, j);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        deduped[Math.min(i, j)].push(Math.max(i, j));
+      }
+    }
+    for (let i = 0; i < nodes.length; i++) nodes[i].links = deduped[i];
+    return nodes;
+  }
+
+  // Rodrigues' rotation around a tilted axis
+  function rotateTilted(n, angle) {
+    const tilt = 25 * Math.PI / 180;
+    const ax = Math.sin(tilt), ay = Math.cos(tilt), az = 0;
+    const cos = Math.cos(angle), sin = Math.sin(angle);
+    const dot = n.x * ax + n.y * ay + n.z * az;
+    return {
+      x: n.x * cos + (ay * n.z - az * n.y) * sin + ax * dot * (1 - cos),
+      y: n.y * cos + (az * n.x - ax * n.z) * sin + ay * dot * (1 - cos),
+      z: n.z * cos + (ax * n.y - ay * n.x) * sin + az * dot * (1 - cos),
+    };
+  }
+
+  const nodes = buildConstellation(42);
+  let start = 0;
+
+  function animate(now) {
+    if (!start) start = now;
+    const elapsed = now - start;
+    const angle = (elapsed / 240000) * Math.PI * 2;
+
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.getBoundingClientRect();
+    if (canvas.width !== rect.width * dpr || canvas.height !== rect.height * dpr) {
+      canvas.width = rect.width * dpr;
+      canvas.height = rect.height * dpr;
+    }
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, rect.width, rect.height);
+
+    const cx = rect.width / 2, cy = rect.height / 2;
+    const scale = Math.max(rect.width, rect.height) * 0.75;
+
+    const projected = nodes.map(n => {
+      const r = rotateTilted(n, angle);
+      return { sx: cx + r.x * scale, sy: cy + r.y * scale, z: r.z, baseR: n.r, links: n.links };
+    });
+
+    // Links — cgraph accent tint
+    ctx.lineCap = 'round';
+    for (let i = 0; i < projected.length; i++) {
+      const a = projected[i];
+      for (const j of a.links) {
+        const b = projected[j];
+        const depth = ((a.z + b.z) / 2 + 1) / 2;
+        ctx.strokeStyle = 'rgba(88, 166, 255, ' + (0.06 + depth * 0.08) + ')';
+        ctx.lineWidth = 0.35 + depth * 0.2;
+        ctx.beginPath();
+        ctx.moveTo(a.sx, a.sy);
+        ctx.lineTo(b.sx, b.sy);
+        ctx.stroke();
+      }
+    }
+
+    // Nodes — subtle cgraph-accent dots
+    for (const p of projected) {
+      const depth = (p.z + 1) / 2;
+      const alpha = 0.15 + depth * 0.2;
+      const radius = p.baseR * (0.3 + depth * 0.25);
+      ctx.fillStyle = 'rgba(88, 166, 255, ' + alpha + ')';
+      ctx.beginPath();
+      ctx.arc(p.sx, p.sy, radius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(88, 166, 255, ' + (alpha * 0.6) + ')';
+      ctx.lineWidth = 0.5;
+      ctx.stroke();
+    }
+
+    requestAnimationFrame(animate);
+  }
+  requestAnimationFrame(animate);
+})();
+</script>
+
+</body>
+</html>

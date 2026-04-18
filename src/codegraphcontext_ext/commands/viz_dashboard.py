@@ -1,4 +1,4 @@
-"""cgc viz-dashboard: server-backed 3-tab viz dashboard.
+"""kkg viz-dashboard: server-backed 3-tab viz dashboard.
 
 Three tabs in one browser window:
   1. 2D Graph   — Cytoscape.js (srcdoc iframe)
@@ -50,11 +50,28 @@ _DASHBOARD_TEMPLATE = """<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>cgraph — Dashboard</title>
+<title>KeplerKG — Dashboard</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='4' fill='%230d1117'/%3E%3Ccircle cx='10' cy='11' r='2.5' fill='%237ee787'/%3E%3Ccircle cx='22' cy='8' r='2' fill='%23f778ba'/%3E%3Ccircle cx='16' cy='20' r='3' fill='%2358a6ff'/%3E%3Ccircle cx='25' cy='22' r='2' fill='%23d2a8ff'/%3E%3Ccircle cx='7' cy='24' r='1.8' fill='%238b949e'/%3E%3Cline x1='10' y1='11' x2='16' y2='20' stroke='%232ea043' stroke-width='0.8' opacity='0.7'/%3E%3Cline x1='22' y1='8' x2='16' y2='20' stroke='%2358a6ff' stroke-width='0.8' opacity='0.7'/%3E%3Cline x1='16' y1='20' x2='25' y2='22' stroke='%23f0883e' stroke-width='0.8' opacity='0.7'/%3E%3Cline x1='16' y1='20' x2='7' y2='24' stroke='%23d2a8ff' stroke-width='0.8' opacity='0.7'/%3E%3Cline x1='10' y1='11' x2='22' y2='8' stroke='%2358a6ff' stroke-width='0.6' opacity='0.4'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Antic&family=Antic+Didone&family=Antic+Slab&display=swap" rel="stylesheet">
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  /* Antic type system:
+     - Antic Didone  → display headings, banner, section titles (high contrast serif)
+     - Antic Slab    → body copy, buttons, labels (readable slab workhorse — default)
+     - Antic         → chrome/numerics/stats/kbd/placeholders (clean humanist sans) */
+  body { font-family: "Antic Slab", Georgia, "Times New Roman", serif;
          background: #0d1117; color: #c9d1d9; overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
+  button, input, select, textarea { font-family: inherit; }
+  #nav h1 { font-family: "Antic Didone", "Antic Slab", Georgia, serif; }
+  #nav .stats { font-family: "Antic", "Antic Slab", Georgia, sans-serif; letter-spacing: 0.02em; }
+  .emb-explainer__body h3 { font-family: "Antic Didone", "Antic Slab", Georgia, serif;
+                            letter-spacing: 0.12em; }
+  .emb-explainer__body kbd { font-family: "Antic", "Antic Slab", Georgia, sans-serif; }
+  /* Square every control: no rounded corners anywhere in the dashboard chrome. */
+  .tab, .emb-explainer__controls button, .emb-explainer__chevron,
+  .emb-explainer__body kbd { border-radius: 0 !important; }
   #nav { padding: 12px 24px; border-bottom: 1px solid #30363d; display: flex; align-items: center; gap: 24px; flex-shrink: 0; }
   #nav h1 { font-size: 16px; font-weight: 600; color: #c9d1d9; }
   #nav .stats { font-size: 12px; color: #8b949e; margin-right: auto; }
@@ -72,32 +89,93 @@ _DASHBOARD_TEMPLATE = """<!DOCTYPE html>
   .pane.active { opacity: 1; pointer-events: auto; }
   .pane iframe { width: 100%; height: 100%; border: 0; background: #0d1117; }
 
-  /* Embeddings pane: cgraph-styled explainer bar above the Projector iframe. */
+  /* Embeddings pane: cgraph-styled explainer panel above the Projector iframe.
+     Expanded by default; "Hide tips" collapses the body to just the lede. */
   .embeddings-wrap { display: flex; flex-direction: column; width: 100%; height: 100%; }
-  .embeddings-header { flex-shrink: 0; padding: 12px 24px; background: #161b22;
-                       border-bottom: 1px solid #30363d; display: flex; align-items: center; gap: 16px; }
-  .embeddings-header .lede { flex: 1; font-size: 13px; color: #c9d1d9; line-height: 1.5; }
-  .embeddings-header .lede strong { color: #58a6ff; }
-  .embeddings-header .lede .hint { color: #8b949e; }
-  .embeddings-header .mode-toggle { display: flex; gap: 4px; flex-shrink: 0; }
-  .embeddings-header .mode-toggle button {
-    padding: 6px 12px; font-size: 12px; color: #8b949e; background: transparent;
-    border: 1px solid #30363d; border-radius: 6px; cursor: pointer; font-family: inherit;
+  /* Explainer ribbon — compact by default so it takes as little vertical
+     space as possible while still carrying a lede + the 3-col tip grid.  The
+     ribbon auto-shrinks when any column is empty (grid auto-rows). */
+  .emb-explainer { flex-shrink: 0; background: linear-gradient(180deg, #161b22 0%, #1c2128 100%);
+                   border-bottom: 1px solid #30363d; transition: padding 0.18s ease-out; }
+  .emb-explainer__bar { display: flex; align-items: center; gap: 12px; padding: 8px 16px;
+                        transition: padding 0.18s ease-out; }
+  .emb-explainer__lede { flex: 1; font-size: 12px; color: #e6edf3; line-height: 1.45; max-width: 80ch; }
+  .emb-explainer__lede strong { color: #58a6ff; font-weight: 600; }
+  .emb-explainer__lede em { color: #f0883e; font-style: normal; }
+  .emb-explainer__controls { display: flex; gap: 6px; flex-shrink: 0; align-items: center; }
+  .emb-explainer__controls button {
+    padding: 4px 10px; font-size: 11px; color: #9ba6b3; background: transparent;
+    border: 1px solid #30363d; cursor: pointer; font-family: inherit;
+    transition: color 0.12s, border-color 0.12s, background 0.12s;
   }
-  .embeddings-header .mode-toggle button:hover { color: #c9d1d9; background: #1c2029; }
-  .embeddings-header .mode-toggle button.active { color: #58a6ff; border-color: #58a6ff; background: #1c2029; }
+  .emb-explainer__controls button:hover { color: #e6edf3; border-color: #58a6ff; background: #1f242d; }
+  .emb-explainer__controls button.active { color: #58a6ff; border-color: #58a6ff; background: #1f242d; }
+  .emb-explainer__chevron {
+    width: 22px; height: 22px; padding: 0 !important;
+    display: inline-flex; align-items: center; justify-content: center;
+    line-height: 1;
+  }
+  .emb-explainer__chevron .chev { display: inline-block; font-size: 10px; transition: transform 0.18s ease-out; }
+  .emb-explainer.collapsed .emb-explainer__chevron .chev { transform: rotate(-90deg); }
+  .emb-explainer__body { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px;
+                          padding: 2px 16px 10px 16px; border-top: 1px solid #21262d;
+                          font-size: 11px; line-height: 1.45; color: #9ba6b3; }
+  .emb-explainer__body h3 { color: #f0883e; font-size: 9px; font-weight: 700;
+                             letter-spacing: 0.1em; text-transform: uppercase;
+                             margin: 8px 0 3px 0; }
+  .emb-explainer__body p { margin: 0 0 3px 0; }
+  .emb-explainer__body strong { color: #e6edf3; font-weight: 600; }
+  .emb-explainer__body kbd { display: inline-block; padding: 0 5px; font-size: 10px;
+                              background: #0d1117; border: 1px solid #30363d;
+                              color: #e6edf3; font-family: ui-monospace, SFMono-Regular, monospace; }
+  /* Collapsed ribbon: hide tips + lede, tighten the bar to just the button row. */
+  .emb-explainer.collapsed .emb-explainer__body { display: none; }
+  .emb-explainer.collapsed .emb-explainer__lede { display: none; }
+  .emb-explainer.collapsed .emb-explainer__bar { padding: 3px 10px; justify-content: flex-end; }
   .embeddings-wrap iframe { flex: 1; min-height: 0; }
+
+  /* About button — visible, not muted, right side of nav */
+  #about-btn { color: #c9d1d9; background: transparent; border: none; cursor: pointer;
+               font-family: inherit; font-size: 13px; padding: 8px 16px;
+               transition: color 0.12s; }
+  #about-btn:hover { color: #58a6ff; }
+  /* Modal overlay + card */
+  .modal-overlay { position: fixed; inset: 0; z-index: 100; background: rgba(0,0,0,0.6);
+                   display: flex; align-items: center; justify-content: center; }
+  .modal { background: #161b22; border: 1px solid #30363d; width: 640px; max-height: 80vh;
+           overflow-y: auto; padding: 32px; color: #c9d1d9; position: relative;
+           display: flex; flex-direction: column; }
+  .modal h2 { font-family: "Antic Didone", "Antic Slab", Georgia, serif;
+              font-size: 22px; margin-bottom: 16px; color: #e6edf3; }
+  .modal h3 { font-family: "Antic Didone", "Antic Slab", Georgia, serif;
+              font-size: 11px; color: #f0883e; text-transform: uppercase;
+              letter-spacing: 0.12em; margin: 16px 0 6px 0; }
+  .modal p { font-size: 13px; line-height: 1.6; margin: 0 0 8px 0; }
+  .modal ul { font-size: 13px; line-height: 1.6; margin: 0 0 8px 16px; }
+  .modal-close { position: absolute; top: 12px; right: 12px; background: transparent;
+                 border: 1px solid #30363d; color: #8b949e; width: 28px; height: 28px;
+                 cursor: pointer; font-size: 16px; display: flex; align-items: center;
+                 justify-content: center; border-radius: 0 !important; }
+  .modal-close:hover { color: #e6edf3; border-color: #58a6ff; }
+  .modal .credits { margin-top: auto; padding-top: 16px; border-top: 1px solid #21262d; }
+  .modal table { font-size: 12px; width: 100%; border-collapse: collapse; }
+  .modal th { text-align: left; color: #8b949e; font-size: 10px; text-transform: uppercase;
+              letter-spacing: 0.1em; padding: 4px 8px; border-bottom: 1px solid #30363d; }
+  .modal td { padding: 4px 8px; border-bottom: 1px solid #21262d; }
+  .modal a { color: #58a6ff; text-decoration: none; }
+  .modal a:hover { text-decoration: underline; }
 </style>
 </head>
 <body>
 <div id="nav">
-  <h1>cgraph</h1>
+  <h1>KeplerKG</h1>
   <div class="stats">__NODE_COUNT__ nodes &middot; __EDGE_COUNT__ edges &middot; __EMB_COUNT__ embeddings</div>
   <div class="tab-bar" id="tab-bar">
     <button class="tab active" data-pane="pane-2d">2D Graph</button>
     <button class="tab" data-pane="pane-3d">3D Graph</button>
     <button class="tab" data-pane="pane-embeddings">Embeddings</button>
   </div>
+  <button type="button" id="about-btn">About</button>
 </div>
 <div id="panes">
   <!-- 2D pane is visible on load; srcdoc set immediately.  3D pane is
@@ -112,16 +190,39 @@ _DASHBOARD_TEMPLATE = """<!DOCTYPE html>
   </div>
   <div class="pane" id="pane-embeddings">
     <div class="embeddings-wrap">
-      <div class="embeddings-header">
-        <div class="lede">
-          <strong>Each dot is a function.</strong> Functions that do similar things cluster together — even when the names don&rsquo;t match.
-          <span class="hint">Click a dot to see its semantic neighbors on the right. Use the <em>UMAP</em> tab (bottom-left) for the clearest clusters.</span>
+      <section class="emb-explainer" id="emb-explainer" aria-label="Embedding projector guide">
+        <div class="emb-explainer__bar">
+          <div class="emb-explainer__lede">
+            <strong>Each dot is a function.</strong> Points are placed by what a routine <em>does</em>, not by what it&rsquo;s called &mdash; so two functions that solve the same problem cluster together even when their names disagree.
+          </div>
+          <div class="emb-explainer__controls">
+            <button type="button" id="emb-simple-btn" class="active">Clean</button>
+            <button type="button" id="emb-advanced-btn">Advanced</button>
+            <button type="button" id="emb-explainer-toggle" class="emb-explainer__chevron" aria-expanded="true" aria-controls="emb-explainer-body" title="Hide tips"><span class="chev">&#9662;</span></button>
+          </div>
         </div>
-        <div class="mode-toggle">
-          <button type="button" id="emb-simple-btn" class="active">Simple</button>
-          <button type="button" id="emb-advanced-btn">Advanced</button>
+        <div class="emb-explainer__body" id="emb-explainer-body">
+          <div>
+            <h3>What you&rsquo;re looking at</h3>
+            <p>Every dot is one function, method, or class pulled from your repo&rsquo;s graph.</p>
+            <p><strong>Nearby dots</strong> do semantically similar work &mdash; similar inputs, similar shape, similar intent.</p>
+            <p><strong>Distance matters; the axes don&rsquo;t.</strong> Projections rotate the cloud freely, so &ldquo;up&rdquo; and &ldquo;right&rdquo; carry no meaning on their own.</p>
+          </div>
+          <div>
+            <h3>How to interact</h3>
+            <p><strong>Click a dot</strong> &rarr; its nearest semantic neighbours appear in the right rail.</p>
+            <p><strong>Drag / scroll</strong> to orbit and zoom in 3D.</p>
+            <p><strong>Search</strong> (top-right) jumps to a named function &mdash; try a substring like <kbd>validate</kbd>.</p>
+            <p><strong>Isolate selection</strong> (inspector panel) zooms the view to just the points you&rsquo;ve picked.</p>
+          </div>
+          <div>
+            <h3>Projection modes <span style="color:#9ba6b3;font-weight:400;text-transform:none;letter-spacing:0">(tabs at bottom-left)</span></h3>
+            <p><strong>UMAP</strong> &mdash; the clearest clusters. Start here when hunting duplicates or refactor candidates.</p>
+            <p><strong>t-SNE</strong> &mdash; sharp local groups, but the <em>distance between</em> clusters is not meaningful.</p>
+            <p><strong>PCA</strong> &mdash; linear; useful to see overall spread and which directions carry the most variance.</p>
+          </div>
         </div>
-      </div>
+      </section>
       <!-- src set lazily on first Embeddings-tab click (see bottom of page).
            Reason: the pane starts at opacity:0, and Chrome refuses to hand a
            WebGL context to an invisible iframe.  If we set src up front, the
@@ -130,6 +231,34 @@ _DASHBOARD_TEMPLATE = """<!DOCTYPE html>
            forever.  Setting src on first click = WebGL init happens while
            the iframe is visible. -->
       <iframe id="emb-iframe"></iframe>
+    </div>
+  </div>
+</div>
+<div class="modal-overlay" id="about-overlay" style="display:none">
+  <div class="modal">
+    <button type="button" class="modal-close" id="about-close">&times;</button>
+    <h2>KeplerKG</h2>
+    <h3>Purpose</h3>
+    <p>KeplerKG exists to make the creation of knowledge graphs and embeddings for institutional knowledge of all kinds &mdash; code is the pilot domain, not the ceiling. The code-graph work is a beachhead; the generalised goal is turning any corpus (documentation, meeting transcripts, ticket histories, process wikis) into a navigable graph and embedding space that surfaces structure, similarity, and drift automatically.</p>
+    <h3>Future Plans</h3>
+    <ul>
+      <li>Generalise beyond source code to institutional corpora (docs, meeting notes, ticket histories, process wikis)</li>
+      <li>MCP server mode for agentic retrieval against a KeplerKG graph</li>
+      <li>Drift detection + advisories on stale or contradicted knowledge</li>
+      <li>Scale to larger repos / multi-corpus federation</li>
+    </ul>
+    <div class="credits">
+      <h3>Credits</h3>
+      <table>
+        <tr><th>Tool</th><th>License</th></tr>
+        <tr><td>KeplerKG</td><td>MIT</td></tr>
+        <tr><td><a href="https://github.com/Vi-Sri/CodeGraphContext">codegraphcontext</a></td><td>Apache 2.0</td></tr>
+        <tr><td><a href="https://github.com/tensorflow/embedding-projector-standalone">TensorFlow Embedding Projector</a></td><td>Apache 2.0 &copy; Google</td></tr>
+        <tr><td><a href="https://js.cytoscape.org/">Cytoscape.js</a></td><td>MIT</td></tr>
+        <tr><td><a href="https://github.com/vasturiano/3d-force-graph">3d-force-graph</a></td><td>MIT</td></tr>
+        <tr><td><a href="https://kuzudb.com/">K&ugrave;zuDB</a></td><td>MIT</td></tr>
+        <tr><td><a href="https://sbert.net/">sentence-transformers</a></td><td>Apache 2.0</td></tr>
+      </table>
     </div>
   </div>
 </div>
@@ -153,14 +282,9 @@ function setEmbMode(advanced) {
   embAdvanced = advanced;
   simpleBtn.classList.toggle("active", !advanced);
   advancedBtn.classList.toggle("active", advanced);
-  // Re-set src so the Projector re-runs its init with/without ?advanced=1.
   if (embLoaded) loadEmbIframe();
 }
 
-// Lazy-load any iframe whose content is stashed in data-srcdoc — the same
-// opacity:0 ≠ WebGL problem that affects the Projector also affects
-// 3d-force-graph.  Promote data-srcdoc → srcdoc on first tab activation,
-// after which the iframe stays loaded for the rest of the session.
 function promoteDataSrcdoc(paneEl) {
   const iframe = paneEl.querySelector("iframe[data-srcdoc]");
   if (!iframe) return;
@@ -175,8 +299,6 @@ tabs.forEach(tab => {
     tab.classList.add("active");
     const paneEl = document.getElementById(tab.dataset.pane);
     paneEl.classList.add("active");
-
-    // Lazy content loads on first activation.
     promoteDataSrcdoc(paneEl);
     if (tab.dataset.pane === "pane-embeddings" && !embLoaded) {
       loadEmbIframe();
@@ -186,6 +308,25 @@ tabs.forEach(tab => {
 
 simpleBtn.addEventListener("click", () => setEmbMode(false));
 advancedBtn.addEventListener("click", () => setEmbMode(true));
+
+// Collapse / expand the explainer body.
+const explainer = document.getElementById("emb-explainer");
+const explainerToggle = document.getElementById("emb-explainer-toggle");
+explainerToggle.addEventListener("click", () => {
+  const collapsed = explainer.classList.toggle("collapsed");
+  explainerToggle.setAttribute("aria-expanded", String(!collapsed));
+  explainerToggle.setAttribute("title", collapsed ? "Show tips" : "Hide tips");
+});
+
+// About modal — DOM is above this script so elements are guaranteed non-null.
+const aboutBtn = document.getElementById("about-btn");
+const aboutOverlay = document.getElementById("about-overlay");
+const aboutClose = document.getElementById("about-close");
+aboutBtn.addEventListener("click", () => { aboutOverlay.style.display = "flex"; });
+aboutClose.addEventListener("click", () => { aboutOverlay.style.display = "none"; });
+aboutOverlay.addEventListener("click", (e) => {
+  if (e.target === aboutOverlay) aboutOverlay.style.display = "none";
+});
 </script>
 </body>
 </html>"""
@@ -285,7 +426,7 @@ def viz_dashboard_command(
         typer.echo(emit_json({
             "ok": False,
             "kind": "empty_graph",
-            "detail": "No nodes found. Run `cgc index` first.",
+            "detail": "No nodes found. Run `kkg index` first.",
         }))
         raise typer.Exit(code=1)
 

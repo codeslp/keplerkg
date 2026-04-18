@@ -12,6 +12,7 @@ def test_register_extensions_registers_sync_check_embed_and_context():
     register_extensions(app)
 
     assert [command.name for command in app.registered_commands] == [
+        "blast-radius",
         "sync-check",
         "embed",
         "context",

@@ -1,4 +1,4 @@
-"""Tests for cgc viz-dashboard — server-backed 4-tab dashboard.
+"""Tests for kkg viz-dashboard — server-backed 4-tab dashboard.
 
 The blocking serve_forever is not exercised here; tests verify the
 deterministic pre-serve setup: dashboard HTML shape, srcdoc iframe
@@ -112,6 +112,13 @@ def test_dashboard_html_wires_three_tabs_including_embeddings():
     # Advanced mode re-loads the Projector with ?advanced=1 (opt-out signal
     # that cgraph-patch.js reads to skip the simple-mode body class).
     assert "?advanced=1" in html
+
+    # About button (visible, not muted) and modal with purpose + credits.
+    assert 'id="about-btn"' in html
+    assert 'id="about-overlay"' in html
+    assert "institutional knowledge" in html
+    assert "Credits" in html
+    assert "Cytoscape.js" in html
 
 
 def test_dashboard_html_srcdoc_escapes_inner_html():

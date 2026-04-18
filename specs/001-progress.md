@@ -73,6 +73,8 @@ Cross-cuts into other phases — see annotations in Phase 3, Phase 4, and Phase 
 - [x] `cgc viz-embeddings` — `commands/viz_embeddings.py` (8.2K) — HTML visualization over KùzuDB embeddings. Lane a is resolved.
 - [x] `cgc viz-graph` — `commands/viz_graph.py` (10K) — HTML visualization over the graph itself. Same lane.
 - Spec 001 does not plan these; they arrived ahead of Phase 4 polish. Worth a small spec amendment if they stay.
+- [x] **Spec 003 — KeplerKG Rename + Viz Polish** — [specs/003-kepler-viz-polish.md](003-kepler-viz-polish.md). **COMPLETE.** All six items shipped: KeplerKG rename, edge visibility (thicker lines + green Contains), collapsible help ribbons on 2D/3D/Embeddings, redundant banner strip removed, color-mapper clobber fix, and About modal with credits.
+- [ ] **Spec 004 — Multi-Repository Targeting** — [specs/004-multi-repo-targeting.md](004-multi-repo-targeting.md). **PLANNED.** Per-project KùzuDB stores under `/Volumes/zombie/cgraph/db/<slug>/` so cgraph can be pointed at arbitrary codebases (Flask first) without ANN leakage or embedding-dimension collisions. Phase A resolver + `--project` flag on all 10 ext commands; Phase B migrate cgraph's own store to `db/cgraph/`; Phase C Flask smoke. Spec 005 (insight heuristics) hands off from here.
 
 ## Phase 3 — btrain Adapter + Advisories + Warm Daemon — NOT STARTED
 
@@ -147,6 +149,7 @@ Spec 001 §5 names `[cgraph].db_path` and `[cgraph].model_cache` as cgraph-level
 | 1 — Hybrid Retrieval | **Complete** | embed, context, ANN search, graph traversal, 1,623 test lines, 149 MB live KùzuDB |
 | **1.5 — Storage migration** | **In progress** | Kùzu moved to zombie, `KUZUDB_PATH` set in `~/.codegraphcontext/.env`, wrapper shipped; full embed/context smoke capture + Step 7 preflight helper remain |
 | 2 — Review + Blast Radius | **In progress** | review-packet (21.8K) back in-progress as lane d after advisory-contract review findings; blast-radius still a stub; viz-embeddings + viz-graph shipped ahead of plan and lane a is resolved |
+| **Spec 004 — Multi-repo targeting** | Planned | [specs/004-multi-repo-targeting.md](004-multi-repo-targeting.md). Per-project KùzuDB stores, `--project` flag, Flask smoke. Unblocks "point cgraph at any codebase." |
 | 3 — Adapter + Advisories | Not started | 6-line scaffold for advise; adapter lives in btrain; Phase 3 also delivers cgraph's config layer (replaces Phase 1.5's upstream-`KUZUDB_PATH` reliance) |
 | 4 — Drift + Polish | Not started | 6-line scaffold for drift-check; README adds Phase 1.5 storage conventions |
 | 5 — Standards | Not started | No standards/ dir, no audit command |

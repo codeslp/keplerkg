@@ -1,4 +1,4 @@
-"""Tests for cgc viz-embeddings and cgc viz-graph commands."""
+"""Tests for kkg viz-embeddings and kkg viz-graph commands."""
 
 import json
 import os
@@ -418,6 +418,12 @@ def test_viz_graph_3d_mode_emits_force_graph_template(monkeypatch, tmp_path):
     html = open(out_file).read()
     assert "3d-force-graph" in html, "3D template must pull in 3d-force-graph CDN"
     assert "ForceGraph3D()" in html
+    assert 'id="graph-scene"' in html, "3D template must reserve a dedicated mount node"
+    assert 'const graphSceneEl = document.getElementById("graph-scene");' in html
+    assert "ForceGraph3D()(graphSceneEl)" in html
+    assert '<div id="graph">\n  <div id="graph-scene"></div>' in html
+    assert '<div class="legend">' in html
+    assert '<div class="tooltip" id="tooltip"></div>' in html
     # Hard-cap on the settle animation — prevents the never-converging pathology.
     assert ".cooldownTicks(120)" in html
     assert "cytoscape" not in html.lower(), "3D path must not emit the Cytoscape template"

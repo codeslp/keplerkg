@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# cgraph-env.sh — source this BEFORE running cgc/cgraph commands in a new shell.
+# cgraph-env.sh — source this BEFORE running kkg/cgraph commands in a new shell.
 #
 # Sets HF_HOME so embedding model downloads use the migrated zombie cache, and
 # verifies /Volumes/zombie is mounted so upstream's KuzuDBManager() (which reads

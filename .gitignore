@@ -71,25 +71,14 @@ docs/BUNDLES.md
 docs/DOCUMENTATION_AUDIT_2026-01-29.md
 GRANT_KNOWLEDGE_GRAPH.md
 cgc_btc/
-# Claude
-.claude/*
-# cgraph-specific TLA+ process skills are tracked — they encode repo governance,
-# not harness defaults. Other skills under .claude/skills/ remain local.
-!.claude/skills/
-.claude/skills/*
-!.claude/skills/tla-pin-sync/
-!.claude/skills/tla-run-tlc/
-!.claude/skills/tla-author/
-!.claude/skills/tla-trace-explain/
-!.claude/skills/speckit-formal/
+# Agent workflow files are local-only and should not be tracked.
+.agents/
+.btrain/
+.claude/
+.codex/
 *.spec
 todo.md
 .codegraphcontext
-
-# btrain operational state (not source code — do not track)
-.btrain/*
-!.btrain/project.toml
-.claude/collab/
 
 # agentchattr runtime data (chat logs, uploads, tokens — not source)
 agentchattr/data/
@@ -97,3 +86,6 @@ agentchattr/.venv/
 agentchattr/uploads/
 viz-embeddings.html
 viz-graph.html
+
+# Private strategy + research notes — local-only, not for the public repo.
+/research/

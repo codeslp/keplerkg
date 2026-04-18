@@ -1,4 +1,4 @@
-"""Tests for the cgc review-packet command.
+"""Tests for the kkg review-packet command.
 
 Covers: fallback chain (diff→staged→workdir→untracked→locked_files),
 graph node lookup, callers/callees not in diff, cross-module impact,

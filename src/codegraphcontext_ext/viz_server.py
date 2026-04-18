@@ -1,6 +1,6 @@
 """Shared bits for commands that run a local HTTP server for viz assets.
 
-`cgc viz-projector` and `cgc viz-dashboard` both need to:
+`kkg viz-projector` and `kkg viz-dashboard` both need to:
   - copy the vendored Projector build into a tempdir
   - write our vectors.tsv + metadata.tsv + projector_config.json
   - pick a free port

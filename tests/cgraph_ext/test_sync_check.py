@@ -51,7 +51,7 @@ def test_sync_check_uses_btrain_source_checkout_config(tmp_path: Path):
 
     payload = build_sync_check_payload(
         btrain_project_dir=project_dir,
-        executable_path=tmp_path / "standalone-cgc",
+        executable_path=tmp_path / "standalone-kkg",
     )
 
     validate_payload("sync-check.json", payload)
@@ -72,7 +72,7 @@ def test_sync_check_falls_back_to_cwd_when_btrain_project_dir_not_supplied(
     project_dir.mkdir()
     monkeypatch.chdir(project_dir)
 
-    payload = build_sync_check_payload(executable_path=tmp_path / "standalone-cgc")
+    payload = build_sync_check_payload(executable_path=tmp_path / "standalone-kkg")
 
     validate_payload("sync-check.json", payload)
     assert payload["source_dir"] == str(repo)
@@ -85,7 +85,7 @@ def test_sync_check_skips_without_source_checkout(tmp_path: Path):
 
     payload = build_sync_check_payload(
         btrain_project_dir=project_dir,
-        executable_path=tmp_path / "standalone-cgc",
+        executable_path=tmp_path / "standalone-kkg",
     )
 
     validate_payload("sync-check.json", payload)
@@ -165,7 +165,7 @@ def test_sync_check_reports_missing_remote_ref_when_branches_unfetched(tmp_path:
 
 def test_sync_check_falls_back_to_install_location_when_no_config(tmp_path: Path):
     repo = _init_sync_check_repo(tmp_path)
-    pretend_bin = repo / "bin" / "cgc"
+    pretend_bin = repo / "bin" / "kkg"
     pretend_bin.parent.mkdir(parents=True)
     pretend_bin.write_text("", encoding="utf-8")
 

@@ -1,4 +1,4 @@
-"""Tests for cgc viz-projector — TF Embedding Projector served locally.
+"""Tests for kkg viz-projector — TF Embedding Projector served locally.
 
 The blocking `serve_forever` loop is not exercised here; this covers the
 deterministic pieces (vendor copy, TSV/config generation, free-port helper,
@@ -72,10 +72,9 @@ def test_vendored_projector_files_present():
     assert "--cgraph-bg" in css
     assert ".cgraph-simple" in css
 
-    # Patch JS drives the auto-tweaks (night mode, Z axis, simple class).
+    # Patch JS drives the auto-tweaks (3D Z axis, simple class, banner).
     js = pkg.joinpath("cgraph-patch.js").read_text(encoding="utf-8")
     assert "cgraph-simple" in js
-    assert "brightness-2" in js  # night-mode toggle selector
     assert "advanced=1" in js or "advanced" in js  # URL opt-out recognized
 
 
@@ -205,6 +204,26 @@ def test_build_server_starts_and_serves_index(tmp_path):
     finally:
         server.shutdown()
         server.server_close()
+
+
+def test_patch_js_uses_default_white_mode():
+    """Projector keeps its stock white background — no night mode, no
+    clearColor hacks.  The default palette is readable on white."""
+    from importlib import resources
+    pkg = resources.files("codegraphcontext_ext.viz_assets.projector")
+    js = pkg.joinpath("cgraph-patch.js").read_text(encoding="utf-8")
+
+    # Must NOT click night-mode (makes default points invisible on dark)
+    assert 'brightness-2' not in js, (
+        "Must not click the night-mode button"
+    )
+    # Must NOT override clearColor or pointColors
+    assert 'setClearColor' not in js, (
+        "Must not override Three.js clearColor — use stock white"
+    )
+    assert 'pointColors' not in js, (
+        "Must not hack pointColors — let Projector handle its own colours"
+    )
 
 
 def test_viz_projector_no_embeddings_returns_typed_error(monkeypatch):

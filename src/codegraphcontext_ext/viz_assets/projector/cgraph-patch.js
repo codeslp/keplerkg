@@ -1,10 +1,11 @@
 /* cgraph-patch.js — simplified Projector for cgraph.
  *
- *   - Force night mode on load so the scene matches cgraph dark.
  *   - Flip into 3D (Z axis) once PCA finishes.
  *   - Inject cgraph-patch.css into every Polymer shadow root we know about
  *     (document-level styles don't pierce shadow DOM on their own).
  *   - Toggle .cgraph-simple on <body> unless the URL has ?advanced=1.
+ *   - Rebrand banner title.
+ *   - Side-rail collapse toggles.
  *
  * Loaded from a <script defer> tag appended by the Python patcher to the
  * vendored Projector's index.html.  Fail-safe: if any selector is missing
@@ -16,14 +17,12 @@
 
   const CSS_HREF = 'cgraph-patch.css';
   const SIMPLE_DEFAULT = !(new URLSearchParams(location.search).get('advanced'));
+  const BANNER_TITLE = 'Embedding Projector: Which Functions Are Similar to Each Other?';
 
   function log(...args) { console.log('[cgraph-patch]', ...args); }
   function warn(...args) { console.warn('[cgraph-patch]', ...args); }
 
   // --- shadow-root style injection ------------------------------------------
-  // Each Polymer component under vz-projector-app has its own shadowRoot and
-  // ignores styles from the outer document.  Fetch our CSS once and clone it
-  // into every shadow root we care about.
 
   let cssText = '';
   async function loadCss() {
@@ -74,7 +73,6 @@
   }
 
   function deepQuery(root, selector) {
-    // Walk into shadow roots looking for selector.
     if (!root) return null;
     const here = root.querySelector ? root.querySelector(selector) : null;
     if (here) return here;
@@ -102,34 +100,12 @@
 
   // --- the actual UI tweaks -------------------------------------------------
 
-  async function forceNightMode() {
-    // Night-mode toggle is a paper-icon-button with icon="image:brightness-2"
-    // inside the projector's toolbar.  The iconset string is stable in the
-    // bundled Polymer 2 build we vendor.
-    try {
-      const btn = await waitFor(
-        () => deepQuery(document, 'paper-icon-button[icon="image:brightness-2"]'),
-        5000,
-      );
-      // The Projector tracks night-mode state internally; a click flips it.
-      // It starts "day" so one click = dark.
-      btn.click();
-      log('night mode: on');
-    } catch {
-      warn('night-mode toggle not found (UI unchanged)');
-    }
-  }
-
   async function forceThreeD() {
-    // In the PCA projections panel there's a checkbox for the Z component.
-    // Its id inside vz-projector-projections-panel is commonly #z-dropdown
-    // area; simpler to hunt for the Component #3 checkbox.
     try {
       const panel = await waitFor(
         () => deepQuery(document, 'vz-projector-projections-panel'),
         8000,
       );
-      // Checkbox is a paper-checkbox toggling z-axis enablement.
       const zBox = deepQuery(panel, 'paper-checkbox');
       if (zBox && !zBox.checked) {
         zBox.click();
@@ -139,6 +115,74 @@
       }
     } catch {
       warn('z-axis checkbox not found (remaining 2D)');
+    }
+  }
+
+  async function rebrandBanner() {
+    try {
+      const appbar = await waitFor(
+        () => deepQuery(document, '#appbar'),
+        5000,
+      );
+      const titleEl = appbar.querySelector(':scope > div:first-child');
+      if (titleEl && titleEl.textContent.trim() === 'Embedding Projector') {
+        titleEl.textContent = BANNER_TITLE;
+        log('banner title rebranded');
+      } else {
+        warn('banner title element not in expected shape (unchanged)');
+      }
+    } catch {
+      warn('banner not found (title unchanged)');
+    }
+  }
+
+  // --- side-rail collapse toggles -----------------------------------------
+
+  function injectRailToggle(pane, side) {
+    if (!pane) return;
+    if (pane.querySelector(':scope > .cgraph-rail-toggle')) return;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'cgraph-rail-toggle';
+    btn.dataset.side = side;
+    const EXPANDED = side === 'left' ? '\u25C0' : '\u25B6';
+    const COLLAPSED = side === 'left' ? '\u25B6' : '\u25C0';
+    btn.textContent = EXPANDED;
+    btn.setAttribute(
+      'title',
+      side === 'left' ? 'Collapse data panel' : 'Collapse inspector panel',
+    );
+    btn.addEventListener('click', () => {
+      const collapsed = pane.classList.toggle('cgraph-rail-collapsed');
+      btn.textContent = collapsed ? COLLAPSED : EXPANDED;
+      btn.setAttribute(
+        'title',
+        collapsed
+          ? (side === 'left' ? 'Expand data panel' : 'Expand inspector panel')
+          : (side === 'left' ? 'Collapse data panel' : 'Collapse inspector panel'),
+      );
+    });
+    pane.appendChild(btn);
+  }
+
+  async function installRailToggles() {
+    try {
+      const leftPane = await waitFor(
+        () => deepQuery(document, '#left-pane'),
+        5000,
+      );
+      injectRailToggle(leftPane, 'left');
+    } catch {
+      warn('#left-pane not found; left-rail toggle skipped');
+    }
+    try {
+      const rightPane = await waitFor(
+        () => deepQuery(document, '#right-pane'),
+        5000,
+      );
+      injectRailToggle(rightPane, 'right');
+    } catch {
+      warn('#right-pane not found; right-rail toggle skipped');
     }
   }
 
@@ -157,15 +201,14 @@
     await loadCss();
     applySimpleClass();
 
-    // First injection pass immediately; retry at 500ms, 1.5s, 3s to catch
-    // components that mount late.
     walkAndInject(document);
     for (const ms of [500, 1500, 3000]) {
       setTimeout(() => walkAndInject(document), ms);
     }
 
-    await forceNightMode();
     await forceThreeD();
+    await rebrandBanner();
+    await installRailToggles();
   }
 
   if (document.readyState === 'loading') {

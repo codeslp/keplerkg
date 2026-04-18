@@ -2,6 +2,122 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://codeslp.dev/cgraph/schemas/blast-radius.json",
   "title": "cgraph blast-radius response",
+  "description": "Pre-lock collision check: transitive callers/callees expansion + lane lock overlap detection.",
   "type": "object",
-  "additionalProperties": true
+  "required": ["ok", "kind", "files", "nodes_in_scope", "transitive_callers", "transitive_callees", "cross_module_impact", "lock_overlaps", "advisories", "summary"],
+  "properties": {
+    "ok": { "type": "boolean" },
+    "kind": { "const": "blast_radius" },
+    "files": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "File paths that were expanded through the graph."
+    },
+    "nodes_in_scope": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/node" },
+      "description": "Code-entity nodes found in the requested file paths."
+    },
+    "transitive_callers": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/node" },
+      "description": "Nodes that CALL into scope but are not themselves in scope."
+    },
+    "transitive_callees": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/node" },
+      "description": "Nodes that scope CALLS but are not themselves in scope."
+    },
+    "cross_module_impact": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Top-level module names imported by the file set."
+    },
+    "lock_overlaps": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/lock_overlap" },
+      "description": "Overlap with other active btrain lanes."
+    },
+    "advisories": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/advisory" }
+    },
+    "summary": {
+      "type": "object",
+      "required": ["files_requested", "nodes_in_scope", "transitive_callers", "transitive_callees", "lock_overlaps"],
+      "properties": {
+        "files_requested": { "type": "integer", "minimum": 0 },
+        "nodes_in_scope": { "type": "integer", "minimum": 0 },
+        "transitive_callers": { "type": "integer", "minimum": 0 },
+        "transitive_callees": { "type": "integer", "minimum": 0 },
+        "lock_overlaps": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "truncated": { "type": "boolean" },
+    "total_nodes": {
+      "type": "object",
+      "properties": {
+        "in_scope": { "type": "integer", "minimum": 0 },
+        "callers": { "type": "integer", "minimum": 0 },
+        "callees": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "node": {
+      "type": "object",
+      "required": ["uid", "name", "kind"],
+      "properties": {
+        "uid": { "type": "string" },
+        "name": { "type": ["string", "null"] },
+        "file": { "type": ["string", "null"] },
+        "kind": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "lock_overlap": {
+      "type": "object",
+      "required": ["lane", "overlapping_files", "overlapping_nodes", "level"],
+      "properties": {
+        "lane": { "type": "string" },
+        "overlapping_files": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "overlapping_nodes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["uid", "name", "kind", "role"],
+            "properties": {
+              "uid": { "type": "string" },
+              "name": { "type": ["string", "null"] },
+              "file": { "type": ["string", "null"] },
+              "kind": { "type": "string" },
+              "role": { "enum": ["caller", "callee"] }
+            },
+            "additionalProperties": false
+          }
+        },
+        "level": { "enum": ["warn", "info"] }
+      },
+      "additionalProperties": false
+    },
+    "advisory": {
+      "type": "object",
+      "required": ["level", "kind", "detail"],
+      "properties": {
+        "level": { "enum": ["warn", "info"] },
+        "kind": {
+          "type": "string",
+          "enum": ["lock_overlap", "truncated", "no_graph", "invalid_locks_json"]
+        },
+        "detail": { "type": "string" }
+      },
+      "additionalProperties": false
+    }
+  }
 }

@@ -1,6 +1,6 @@
 """Phase 2 review-packet command: reviewer JSON with fallback chain.
 
-Spec §4.2-4.3: cgc review-packet walks a fallback chain
+Spec §4.2-4.3: kkg review-packet walks a fallback chain
 (diff→staged→workdir→untracked→locked_files) to produce a JSON packet
 with touched nodes, callers/callees not in the diff, cross-module
 impact, and advisories.  50-node cap per bucket (§4.4).
@@ -657,7 +657,7 @@ def _truncation_suggestion(source: str, advisories: list[dict[str, str]]) -> str
     if source == "locked_files":
         return (
             "Narrow with --files <subpath>, or query by intent: "
-            "cgc context '<topic>'."
+            "kkg context '<topic>'."
         )
     # workdir / staged / untracked with huge change set
     return "Commit in smaller logical chunks, or narrow with --files <subpath>."
@@ -890,7 +890,7 @@ def build_review_packet_payload(
                 "Working-tree content differs from the indexed graph for: "
                 + ", ".join(stale_index_paths[:5])
                 + ("..." if len(stale_index_paths) > 5 else "")
-                + ". Run cgc index <path> or restart cgc watch."
+                + ". Run kkg index <path> or restart kkg watch."
             ),
         })
 

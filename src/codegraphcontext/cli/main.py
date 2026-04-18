@@ -80,8 +80,8 @@ from .visualizer import (
 
 # Initialize the Typer app and Rich console for formatted output.
 app = typer.Typer(
-    name="cgc",
-    help="CodeGraphContext: An MCP server for AI-powered code analysis.\n\n[DEPRECATED] 'cgc start' is deprecated. Use 'cgc mcp start' instead.",
+    name="kkg",
+    help="KeplerKG: Knowledge graphs and embeddings for institutional knowledge.\n\n[DEPRECATED] 'kkg start' is deprecated. Use 'kkg mcp start' instead.",
     add_completion=True,
 )
 if register_cgraph_extensions is not None:

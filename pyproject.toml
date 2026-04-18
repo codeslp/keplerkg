@@ -55,7 +55,7 @@ dev = [
 "Bug Tracker" = "https://github.com/Shashankss1205/CodeGraphContext/issues"
 
 [project.scripts]
-cgc = "codegraphcontext.cli.main:app"
+kkg = "codegraphcontext.cli.main:app"
 codegraphcontext = "codegraphcontext.cli.main:app"
 
 [tool.setuptools]

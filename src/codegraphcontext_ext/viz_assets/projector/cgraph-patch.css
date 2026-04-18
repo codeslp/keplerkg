@@ -1,147 +1,513 @@
-/* cgraph-patch.css — simplified dark theme + hidden advanced controls.
+@import url("https://fonts.googleapis.com/css2?family=Antic&family=Antic+Didone&family=Antic+Slab&display=swap");
+
+/* cgraph-patch.css — cgraph-palette overrides for the vendored Projector.
  *
  * Loaded by the vendored Projector's index.html via <link rel="stylesheet">.
- * Relies on the patch JS cloning this into each Polymer shadow root; the
- * Polymer components keep their own internal styles isolated from the light
- * DOM, so a document-level <link> alone can't reach them.
+ * The Polymer components keep their own internal styles isolated inside
+ * shadow roots, so cgraph-patch.js walks every shadow root at load time
+ * and clones this same sheet into each one — that's what makes these
+ * selectors actually bind against `#metadata-card`, `.button`, etc.
  *
- * Palette mirrors the cgraph dashboard (GitHub dark).
- *   bg main:   #0d1117
- *   bg panel:  #161b22
- *   bg hover:  #1c2029
- *   border:    #30363d
- *   text:      #c9d1d9
- *   muted:     #8b949e
- *   accent:    #58a6ff
+ * Palette is tuned for contrast — labels, dropdown values, and section
+ * titles all sit on `--cgraph-bg-panel` (#161b22), and the only near-black
+ * surface is the scatter canvas itself where the coloured points need to
+ * sing.
+ *
+ *   bg page:    #0d1117   — scatter canvas + outer page
+ *   bg panel:   #161b22   — left / right rails, metadata cards, buttons
+ *   bg hover:   #1f242d   — hover state for buttons + dropdown items
+ *   border:     #30363d   — panel edges
+ *   text:       #e6edf3   — body + label text (WCAG AA on bg-panel)
+ *   muted:      #9ba6b3   — secondary text (WCAG AA on bg-panel)
+ *   accent:     #58a6ff   — cgraph blue (links, active tabs, focus)
+ *   accent-warm:#f0883e   — secondary accent (banner, selected-point chrome)
  */
 
 :root {
-  --cgraph-bg:        #0d1117;
-  --cgraph-bg-panel:  #161b22;
-  --cgraph-bg-hover:  #1c2029;
-  --cgraph-border:    #30363d;
-  --cgraph-text:      #c9d1d9;
-  --cgraph-muted:     #8b949e;
-  --cgraph-accent:    #58a6ff;
+  --cgraph-bg:          #0d1117;
+  --cgraph-bg-panel:    #161b22;
+  --cgraph-bg-raised:   #1c2128;
+  --cgraph-bg-hover:    #1f242d;
+  --cgraph-border:      #30363d;
+  --cgraph-border-soft: #21262d;
+  --cgraph-text:        #e6edf3;
+  --cgraph-muted:       #9ba6b3;
+  --cgraph-accent:      #58a6ff;
+  --cgraph-accent-warm: #f0883e;
 }
 
-/* --- top-level body + Polymer chrome --- */
+/* --- outer page -------------------------------------------------------- */
+
 html, body {
   background: var(--cgraph-bg) !important;
   color: var(--cgraph-text) !important;
+  font-family: "Antic Slab", Georgia, "Times New Roman", serif !important;
 }
 
-/* The dark maroon header band at the top of the Projector — drop it.
- * We already have a cgraph nav bar above the iframe. */
-vz-projector-app > app-header,
-vz-projector-app app-toolbar,
-[class*="app-header"][class*="toolbar"] {
-  display: none !important;
+/* Force the Space Mono family on every Projector widget, including Polymer
+ * inputs/labels/buttons — they each set their own font-family internally and
+ * won't otherwise inherit. */
+body, button, input, select, textarea, label, span, div, p, h1, h2, h3, h4, h5, h6,
+paper-input, paper-button, paper-icon-button, paper-dropdown-menu, paper-listbox,
+paper-item, paper-checkbox, paper-dialog, paper-toast, paper-card,
+.ink-panel, .ink-tab, .projection-tab, .title, .button, .ink-button,
+#appbar, #metadata-card, .metadata-card,
+vz-projector, vz-projector-app, vz-projector-data-panel,
+vz-projector-projections-panel, vz-projector-inspector-panel,
+vz-projector-bookmark-panel, vz-projector-metadata-card,
+vz-projector-legend, vz-projector-input, vz-projector-projections-panel * {
+  font-family: "Antic Slab", Georgia, "Times New Roman", serif !important;
 }
 
-/* --- shadow-root-scoped overrides (applied via JS clone) --- */
+/* --- Antic type system: display / body / chrome splits ------------------
+ * Antic Didone → display headings (#appbar title, section titles, metadata
+ *   card header, total-variance caption) — elegant high-contrast serif.
+ * Antic Slab   → default body/UI copy (set globally above) — readable slab.
+ * Antic        → numerics + micro chrome (stats, kbd, dropdown items, tab
+ *   labels, bookmark list) — humanist sans that holds at small size.
+ *
+ * The baseline family above stays Antic Slab; these rules narrow specific
+ * surfaces to Didone or Antic.  Stacked after the baseline so they win. */
 
-.ink-panel, #left-pane, #right-pane, #main,
-.container, .title, paper-input, paper-dropdown-menu, paper-button {
-  background-color: var(--cgraph-bg) !important;
-  color: var(--cgraph-text) !important;
+#appbar > div:first-child, #appbar .logo,
+.title, .ink-panel .title, #left-pane .title, #right-pane .title,
+.data-panel .title, .projections-panel .title, .inspector-panel .title,
+#metadata-card #header, #metadata-card #metadata-label,
+vz-projector-bookmark-panel #title {
+  font-family: "Antic Didone", "Antic Slab", Georgia, serif !important;
+  letter-spacing: 0.1em !important;
 }
 
-.title, #left-pane .title, #right-pane .title {
-  border-bottom-color: var(--cgraph-border) !important;
-  color: var(--cgraph-text) !important;
+.ink-tab, .projection-tab,
+paper-listbox paper-item, paper-item,
+vz-projector-bookmark-panel #bookmarks,
+#total-variance, .projections-panel #total-variance,
+vz-projector-projections-panel #total-variance {
+  font-family: "Antic", "Antic Slab", Georgia, sans-serif !important;
+  letter-spacing: 0.02em !important;
 }
 
-.dirs, .item-details, .notice, .help-link {
-  color: var(--cgraph-muted) !important;
+/* Square every control surface in the Projector — no rounded corners. */
+button, .button, .ink-button, .reset-filter, .set-filter, .clear-selection,
+.tab, .ink-tab, .projection-tab,
+paper-button, paper-icon-button, paper-input, paper-dropdown-menu,
+paper-listbox, paper-item, paper-checkbox, paper-dialog, paper-toast,
+paper-card, paper-material,
+#metadata-card, .metadata-card, #metadata-card #header,
+#reset-zoom, #help3d-icon, .help-3d-icon, #nightDayMode,
+#selectMode, #editMode, #labels3DMode,
+.emb-explainer__controls button, .emb-explainer__chevron,
+.cgraph-rail-toggle, input, select, textarea {
+  border-radius: 0 !important;
 }
 
-.ink-tab, .projection-tab {
-  color: var(--cgraph-muted) !important;
-  border-bottom: 2px solid transparent !important;
-}
-.ink-tab.active, .projection-tab.active, .ink-tab[active], .projection-tab[active] {
-  color: var(--cgraph-accent) !important;
-  border-bottom-color: var(--cgraph-accent) !important;
-}
-
-.ink-button {
+/* The maroon #appbar at the top of the Projector — rebrand it to cgraph
+ * colours rather than hide it; the banner gives the Projector context when
+ * the dashboard tabs aren't visible (e.g. viz-projector standalone). */
+#appbar {
   background: var(--cgraph-bg-panel) !important;
   color: var(--cgraph-text) !important;
-  border: 1px solid var(--cgraph-border) !important;
+  border-bottom: 1px solid var(--cgraph-border) !important;
+  height: 48px !important;
+  padding: 0 20px !important;
 }
-.ink-button:hover {
-  background: var(--cgraph-bg-hover) !important;
-  border-color: var(--cgraph-accent) !important;
+#appbar > div:first-child,
+#appbar .logo {
+  color: var(--cgraph-text) !important;
+  font-size: 14px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.01em !important;
+}
+#appbar .icons a,
+#appbar paper-icon-button {
+  color: var(--cgraph-muted) !important;
+}
+#appbar .icons a:hover,
+#appbar paper-icon-button:hover {
+  color: var(--cgraph-accent) !important;
 }
 
+/* --- panel chrome (left / right rails, main stage) --------------------- */
+
+.ink-panel, #left-pane, #right-pane, #main, #container, .container {
+  background-color: var(--cgraph-bg-panel) !important;
+  color: var(--cgraph-text) !important;
+  border-color: var(--cgraph-border) !important;
+}
+
+/* Scatter stage keeps the deepest dark so coloured points pop.  The canvas
+ * elements themselves stay transparent — Three.js's WebGL clear-color
+ * (overridden to cgraph-bg by cgraph-patch.js) paints the scatter bg, and
+ * the sibling label canvas stacked on top MUST be transparent so the points
+ * underneath are visible.  The stage / scatter container carries the bg so
+ * there is no white flash before WebGL clears the first frame. */
+#scatter, .scatter, #nn-plot {
+  background-color: var(--cgraph-bg) !important;
+}
+
+/* Neutralise the Projector's built-in night-mode CSS filter.  We now swap
+ * the WebGL clear-colour directly (see cgraph-patch.js), so inverting the
+ * canvas pixels on top of that would double up and flip the palette back
+ * toward white.  !important beats the inline `style="filter: invert(100%)"`
+ * that the vendored setDayNightMode() writes. */
+#scatter canvas,
+.scatter canvas,
+#nn-plot canvas,
+vz-projector-scatter-plot canvas {
+  filter: none !important;
+  background-color: transparent !important;
+}
+
+/* Wrapper surfaces around the scatter that show through when the canvas
+ * hasn't painted yet — keep them dark so there is no white flash / white
+ * gap around the points. */
+#main, .stage, #main .stage, #scatter, vz-projector-scatter-plot {
+  background-color: var(--cgraph-bg) !important;
+}
+
+/* Section titles ("DATA", "PROJECTIONS", "INSPECTOR") */
+.title, .ink-panel .title, #left-pane .title, #right-pane .title,
+.data-panel .title, .projections-panel .title, .inspector-panel .title {
+  background: transparent !important;
+  color: var(--cgraph-accent) !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.06em !important;
+  text-transform: uppercase !important;
+  border-bottom: 1px solid var(--cgraph-border) !important;
+}
+
+/* Any default-styled "detail" rows in the side panels */
+.dirs, .item-details, .notice, .help-link,
+.metadata-description, .metadata-card-description {
+  color: var(--cgraph-muted) !important;
+}
+
+/* --- form text: labels, inputs, dropdowns (highest-impact contrast) --- */
+
+/* Paper-input: label + floating-label + value + underline */
+paper-input,
+paper-dropdown-menu {
+  --paper-input-container-color: var(--cgraph-muted);
+  --paper-input-container-focus-color: var(--cgraph-accent);
+  --paper-input-container-input-color: var(--cgraph-text);
+  --paper-input-container-invalid-color: var(--cgraph-accent-warm);
+  --paper-input-container-label-floating: {
+    color: var(--cgraph-muted);
+  };
+  --paper-input-container-label: {
+    color: var(--cgraph-muted);
+  };
+  --paper-input-container-input: {
+    color: var(--cgraph-text);
+  };
+  --paper-input-container-underline: {
+    border-color: var(--cgraph-border);
+  };
+  --paper-input-container-underline-focus: {
+    border-color: var(--cgraph-accent);
+  };
+  color: var(--cgraph-text) !important;
+  background: transparent !important;
+}
+
+paper-input input,
+paper-input .input-content,
+paper-dropdown-menu .dropdown-trigger,
+paper-dropdown-menu input,
+paper-dropdown-menu .dropdown-content,
+paper-listbox,
+paper-listbox paper-item,
+paper-item,
+paper-menu-button {
+  background-color: var(--cgraph-bg-panel) !important;
+  color: var(--cgraph-text) !important;
+}
+paper-item:hover,
+paper-listbox paper-item:hover,
+paper-listbox paper-item[pressed] {
+  background-color: var(--cgraph-bg-hover) !important;
+  color: var(--cgraph-accent) !important;
+}
+
+/* Free-standing labels and descriptors that aren't wrapped in paper-input:
+ * "X / Y / Z", "Component #1", "Tag selection as", "Checkpoint:", etc. */
+label, .label, .option-label,
+.config-label, .config-key, .config-row,
+.projection-config, .projection-config *,
+.pca-component-picker, .pca-component-picker *,
+.data-panel *:not(.title), .projections-panel *:not(.title),
+.inspector-panel *:not(.title) {
+  color: var(--cgraph-text) !important;
+}
+
+/* Paper-checkbox: label + filled/empty border */
 paper-checkbox {
   --paper-checkbox-checked-color: var(--cgraph-accent);
   --paper-checkbox-unchecked-color: var(--cgraph-muted);
   --paper-checkbox-label-color: var(--cgraph-text);
-}
-
-paper-input, paper-dropdown-menu {
-  --paper-input-container-color: var(--cgraph-muted);
-  --paper-input-container-focus-color: var(--cgraph-accent);
-  --paper-input-container-input-color: var(--cgraph-text);
-  color: var(--cgraph-text);
-}
-
-#reset-zoom, #help3d-icon, .help-3d-icon {
-  background: var(--cgraph-bg-panel) !important;
+  --paper-checkbox-checkmark-color: var(--cgraph-bg);
   color: var(--cgraph-text) !important;
 }
 
-/* Nearest-neighbor list items */
-.nn-list .neighbor, .neighbor-link, .similarity-label {
-  color: var(--cgraph-text) !important;
-}
-.similarity-value {
+/* --- projection tabs (UMAP / t-SNE / PCA / Custom) --------------------- */
+
+.ink-tab, .projection-tab {
   color: var(--cgraph-muted) !important;
+  font-weight: 500 !important;
+  letter-spacing: 0.02em !important;
+  border-bottom: 2px solid transparent !important;
+}
+.ink-tab:hover, .projection-tab:hover {
+  color: var(--cgraph-text) !important;
+  background-color: var(--cgraph-bg-hover) !important;
+}
+.ink-tab.active, .ink-tab[active],
+.projection-tab.active, .projection-tab[active] {
+  color: var(--cgraph-accent) !important;
+  border-bottom-color: var(--cgraph-accent) !important;
+  background-color: transparent !important;
 }
 
-/* Dialog + modal backgrounds */
-paper-dialog, paper-toast {
-  background: var(--cgraph-bg-panel) !important;
+/* --- inspector-panel buttons (Show All Data / Isolate / Clear) -------- */
+
+.button, .buttons .button,
+.reset-filter, .set-filter, .clear-selection {
+  background: var(--cgraph-bg-raised) !important;
+  background-color: var(--cgraph-bg-raised) !important;
+  color: var(--cgraph-text) !important;
+  border: 1px solid var(--cgraph-border) !important;
+  border-radius: 0 !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  padding: 8px 12px !important;
+  letter-spacing: 0.02em !important;
+  transition: background 0.12s, border-color 0.12s, color 0.12s !important;
+}
+.button:hover, .buttons .button:hover,
+.reset-filter:hover, .set-filter:hover, .clear-selection:hover {
+  background: var(--cgraph-bg-hover) !important;
+  border-color: var(--cgraph-accent) !important;
+  color: var(--cgraph-accent) !important;
+  cursor: pointer !important;
+}
+.button[disabled], .buttons .button[disabled] {
+  opacity: 0.45 !important;
+  cursor: default !important;
+}
+
+/* Generic Polymer buttons (paper-button, ink-button) use the same chrome */
+.ink-button, paper-button {
+  background: var(--cgraph-bg-raised) !important;
   color: var(--cgraph-text) !important;
   border: 1px solid var(--cgraph-border) !important;
 }
+.ink-button:hover, paper-button:hover {
+  background: var(--cgraph-bg-hover) !important;
+  border-color: var(--cgraph-accent) !important;
+  color: var(--cgraph-accent) !important;
+}
 
-/* Loading spinner is white-on-white against dark; switch to accent. */
+/* --- selected-point metadata card (right rail) ------------------------ */
+/* Upstream default is rgba(255,255,255,0.9) with an #e9e9e9 header.       */
+
+#metadata-card, .metadata-card {
+  background: var(--cgraph-bg-raised) !important;
+  background-color: var(--cgraph-bg-raised) !important;
+  color: var(--cgraph-text) !important;
+  border: 1px solid var(--cgraph-border) !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+  overflow: hidden !important;
+}
+#metadata-card #header, #metadata-card > #header {
+  background: var(--cgraph-accent-warm) !important;
+  color: var(--cgraph-bg) !important;
+}
+#metadata-card #metadata-label, #metadata-card .metadata-label {
+  color: var(--cgraph-bg) !important;
+  font-weight: 600 !important;
+}
+#metadata-card paper-icon-button {
+  color: var(--cgraph-bg) !important;
+}
+#metadata-card .metadata-row { color: var(--cgraph-text) !important; }
+#metadata-card .metadata-key {
+  color: var(--cgraph-muted) !important;
+  font-weight: 600 !important;
+}
+#metadata-card .metadata-value { color: var(--cgraph-text) !important; }
+#metadata-card #metadata-table { color: var(--cgraph-text) !important; }
+
+/* --- nearest-neighbor list -------------------------------------------- */
+
+.nn-list, .nn-list .neighbor, .neighbor-link, .similarity-label {
+  color: var(--cgraph-text) !important;
+  background-color: transparent !important;
+}
+.nn-list .neighbor:hover { background-color: var(--cgraph-bg-hover) !important; }
+.similarity-value { color: var(--cgraph-muted) !important; }
+.matches-list .row { border-bottom-color: var(--cgraph-border-soft) !important; }
+
+/* --- "Total variance described: X%" line (PCA panel footer) ----------- */
+/* Rendered by vz-projector-projections-panel #total-variance; default
+ * inherits --cgraph-text from the .projections-panel override above. The
+ * user wants it toned down so it reads as caption, not primary copy. */
+
+#total-variance,
+.projections-panel #total-variance,
+vz-projector-projections-panel #total-variance {
+  color: var(--cgraph-muted) !important;
+  font-size: 11px !important;
+  font-style: italic !important;
+  letter-spacing: 0.01em !important;
+  padding-top: 6px !important;
+}
+
+/* --- bookmark panel (BOOKMARKS (0)) ---------------------------------- */
+/* Upstream ships it with an almost-white #fafafa background — we want it
+ * to sit flush with the right-pane chrome. Hit every child because the
+ * panel has three stacked light-surface elements. */
+
+vz-projector-bookmark-panel,
+vz-projector-bookmark-panel #bookmark-container,
+vz-projector-bookmark-panel #header,
+vz-projector-bookmark-panel #title,
+vz-projector-bookmark-panel #bookmarks,
+vz-projector-bookmark-panel .bookmark-row {
+  background: var(--cgraph-bg-panel) !important;
+  background-color: var(--cgraph-bg-panel) !important;
+  color: var(--cgraph-text) !important;
+  border-color: var(--cgraph-border) !important;
+}
+vz-projector-bookmark-panel #title {
+  color: var(--cgraph-accent) !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.06em !important;
+  text-transform: uppercase !important;
+  border-bottom: 1px solid var(--cgraph-border) !important;
+}
+vz-projector-bookmark-panel paper-icon-button {
+  color: var(--cgraph-muted) !important;
+}
+
+/* --- reset-zoom + help icons on the scatter stage --------------------- */
+
+#reset-zoom, #help3d-icon, .help-3d-icon, #nightDayMode,
+#selectMode, #editMode, #labels3DMode {
+  background: var(--cgraph-bg-panel) !important;
+  color: var(--cgraph-text) !important;
+  border: 1px solid var(--cgraph-border) !important;
+  border-radius: 0 !important;
+}
+#reset-zoom:hover, #help3d-icon:hover, #nightDayMode:hover,
+#selectMode:hover, #editMode:hover, #labels3DMode:hover {
+  border-color: var(--cgraph-accent) !important;
+  color: var(--cgraph-accent) !important;
+}
+
+/* --- Polymer dialogs + toasts (stray white surfaces) ------------------ */
+
+paper-dialog, paper-toast, paper-card, paper-material {
+  background: var(--cgraph-bg-raised) !important;
+  color: var(--cgraph-text) !important;
+  border: 1px solid var(--cgraph-border) !important;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.5) !important;
+}
+
+/* Loading spinner */
 paper-spinner-lite {
   --paper-spinner-color: var(--cgraph-accent);
 }
 
-/* --- simple-mode hides --- */
-/* These rules only engage when <body> has the .cgraph-simple class,
- * applied by cgraph-patch.js unless the URL has ?advanced=1.               */
+/* --- side-rail collapse ------------------------------------------------ */
+/* cgraph-patch.js injects a .cgraph-rail-toggle button into #left-pane and
+ * #right-pane.  Click toggles .cgraph-rail-collapsed on the pane, which
+ * narrows it to a 28px strip and hides every child except the toggle.
+ *
+ * The pane gets position:relative so the toggle can sit absolute in the
+ * corner without reflowing the existing flex children. */
 
+#left-pane,
+#right-pane {
+  position: relative !important;
+  transition: min-width 0.18s ease-out, width 0.18s ease-out !important;
+}
+
+.cgraph-rail-toggle {
+  position: absolute;
+  top: 6px;
+  width: 22px; height: 22px;
+  padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--cgraph-bg-raised) !important;
+  color: var(--cgraph-muted) !important;
+  border: 1px solid var(--cgraph-border) !important;
+  border-radius: 0 !important;
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 1;
+  z-index: 50;
+  font-family: inherit;
+  transition: color 0.12s, border-color 0.12s, background 0.12s;
+}
+.cgraph-rail-toggle:hover {
+  color: var(--cgraph-accent) !important;
+  border-color: var(--cgraph-accent) !important;
+  background: var(--cgraph-bg-hover) !important;
+}
+#left-pane  > .cgraph-rail-toggle { right: 6px; }
+#right-pane > .cgraph-rail-toggle { left: 6px; }
+
+#left-pane.cgraph-rail-collapsed,
+#right-pane.cgraph-rail-collapsed {
+  min-width: 28px !important;
+  width: 28px !important;
+  overflow: hidden !important;
+}
+#left-pane.cgraph-rail-collapsed  > *:not(.cgraph-rail-toggle),
+#right-pane.cgraph-rail-collapsed > *:not(.cgraph-rail-toggle) {
+  display: none !important;
+}
+/* Recenter the toggle when the rail is a thin strip. */
+#left-pane.cgraph-rail-collapsed  > .cgraph-rail-toggle,
+#right-pane.cgraph-rail-collapsed > .cgraph-rail-toggle {
+  left: 3px; right: 3px;
+}
+
+/* --- simple-mode hides ------------------------------------------------ */
+/* Only engage when <body> has .cgraph-simple (cgraph-patch.js adds it
+ * unless the URL has ?advanced=1).  Selectors below are anchored to
+ * IDs and class names that exist in the vendored Projector today —
+ * verified via DOM inspection, not guessed.  If a selector here stops
+ * matching after an upstream bump, simple mode will no-op silently and
+ * advanced-mode behaviour is unaffected. */
+
+/* Load / Publish / Download bar + upload step */
 .cgraph-simple #label-button,
 .cgraph-simple #publish-container,
 .cgraph-simple #downloadMetadataLink,
-.cgraph-simple .data-step,
 .cgraph-simple #upload,
 .cgraph-simple #host-embedding,
 .cgraph-simple #checkpoint-file,
 .cgraph-simple #metadata-file,
-.cgraph-simple .sphereize-container,
-.cgraph-simple .edit-by-container,
-.cgraph-simple .tag-selection-container,
-.cgraph-simple #pca-sampling,
-.cgraph-simple #pca-x, .cgraph-simple #pca-y, .cgraph-simple #pca-z,
-.cgraph-simple .pca-component-picker,
-.cgraph-simple .run-umap-button,
-.cgraph-simple #custom-tab,
-.cgraph-simple .metadata-card-description {
+.cgraph-simple .upload-step,
+.cgraph-simple .data-step,
+.cgraph-simple .data-step-contents-upload,
+.cgraph-simple [id^="upload-"] {
   display: none !important;
 }
 
-/* Hide the "Edit by" / "Tag selection as" row, the Spherize checkbox, the
- * Load/Publish/Download bar, Checkpoint and Metadata paths, and the
- * "PCA is approximate" notice.  Text-based fallbacks in case the IDs above
- * don't exist or get renamed. */
+/* Data-panel knobs that a "just show me which functions are similar"
+ * user never touches: sphereize, metadata editor, supervise, checkpoint
+ * path rows. */
+.cgraph-simple #normalize-data-checkbox,         /* Sphereize data */
+.cgraph-simple .metadata-editor,                  /* Tag selection as */
+.cgraph-simple .supervise-settings,               /* Supervise with */
+.cgraph-simple .dirs {                            /* Checkpoint: / Metadata: */
+  display: none !important;
+}
 
+/* Fallback text-attribute hits in case upstream classes get renamed. */
 .cgraph-simple paper-input[label="Edit by"],
 .cgraph-simple paper-input[label="Tag selection as"],
 .cgraph-simple paper-dropdown-menu[label="Edit by"],
@@ -150,10 +516,21 @@ paper-spinner-lite {
   display: none !important;
 }
 
-/* Shrink the left panel's "DATA" section in simple mode — the only useful
- * thing in it at that point is the Label by / Color by dropdowns. */
-.cgraph-simple .data-panel-header,
-.cgraph-simple .data-panel-footer,
-.cgraph-simple [id^="upload-"] {
+/* Projections panel: hide PCA per-axis component pickers + approximation
+ * notice.  Users stay on UMAP/t-SNE/PCA tabs but don't see the X/Y/Z
+ * picker rows; the default components still render the projection. */
+.cgraph-simple vz-projector-projections-panel paper-dropdown-menu[label="X"],
+.cgraph-simple vz-projector-projections-panel paper-dropdown-menu[label="Y"],
+.cgraph-simple vz-projector-projections-panel paper-dropdown-menu[label="Z"],
+.cgraph-simple #pca-sampling,
+.cgraph-simple .run-umap-button,
+.cgraph-simple #custom-tab,
+.cgraph-simple .metadata-card-description {
   display: none !important;
+}
+
+/* Bookmark panel collapses to a compact footer in simple mode — the
+ * "save state" flow is an advanced concern. */
+.cgraph-simple vz-projector-bookmark-panel {
+  opacity: 0.6 !important;
 }
