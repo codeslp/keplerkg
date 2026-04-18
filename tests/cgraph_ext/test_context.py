@@ -213,7 +213,7 @@ def test_context_command_emits_json(monkeypatch):
         return_value=_MockProvider(),
     ):
         app = _context_app()
-        result = runner.invoke(app, ["context", "auth flow"])
+        result = runner.invoke(app, ["search", "auth flow"])
 
     assert result.exit_code == 0
     payload = _extract_json(result.output)
@@ -243,7 +243,7 @@ def test_context_command_with_seeds(monkeypatch):
         return_value=_MockProvider(),
     ):
         app = _context_app()
-        result = runner.invoke(app, ["context", "auth flow", "--k", "4", "--depth", "2"])
+        result = runner.invoke(app, ["search", "auth flow", "--k", "4", "--depth", "2"])
 
     assert result.exit_code == 0
     payload = _extract_json(result.output)
@@ -254,7 +254,7 @@ def test_context_command_with_seeds(monkeypatch):
 def test_context_command_rejects_non_kuzu(monkeypatch):
     monkeypatch.setenv("DEFAULT_DATABASE", "falkordb")
     app = _context_app()
-    result = runner.invoke(app, ["context", "auth flow"])
+    result = runner.invoke(app, ["search", "auth flow"])
 
     assert result.exit_code == 1
     payload = _extract_json(result.output)
@@ -265,4 +265,4 @@ def test_context_command_registered():
     app = _context_app()
     # Verify 'context' appears in the registered commands
     command_names = [cmd.name for cmd in app.registered_commands]
-    assert "context" in command_names
+    assert "search" in command_names

@@ -261,7 +261,7 @@
     </div>
     <div class="feature">
       <h4>Semantic Search</h4>
-      <p><code>kkg context &lt;query&gt;</code> returns the most relevant symbols in ~200 tokens. An agent reading raw files would burn 10-50x more context for the same answer.</p>
+      <p><code>kkg search &lt;query&gt;</code> returns the most relevant symbols in ~200 tokens. An agent reading raw files would burn 10-50x more context for the same answer.</p>
     </div>
     <div class="feature">
       <h4>Review Packets</h4>
@@ -324,7 +324,7 @@
     <tr><th>Command</th><th>What it does</th></tr>
     <tr><td>kkg index</td><td>Parse and index the repo into the KuzuDB graph</td></tr>
     <tr><td>kkg embed</td><td>Batch-embed functions and classes (local Jina v2 or API providers)</td></tr>
-    <tr><td>kkg context &lt;query&gt;</td><td>Semantic search + graph neighborhood expansion</td></tr>
+    <tr><td>kkg search &lt;query&gt;</td><td>Semantic search + graph neighborhood expansion</td></tr>
     <tr><td>kkg review-packet</td><td>Reviewer JSON with blast radius and advisories</td></tr>
     <tr><td>kkg blast-radius</td><td>Pre-lock collision check via transitive graph expansion</td></tr>
     <tr><td>kkg sync-check</td><td>Report upstream commits not yet merged</td></tr>
@@ -355,7 +355,7 @@
     <span class="cmd">kkg embed</span><br>
     <br>
     <span class="comment"># Semantic search</span><br>
-    <span class="cmd">kkg context</span> "authentication token validation"<br>
+    <span class="cmd">kkg search</span> "authentication token validation"<br>
     <br>
     <span class="comment"># Open the interactive dashboard</span><br>
     <span class="cmd">kkg viz-dashboard</span>

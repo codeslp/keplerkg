@@ -25,7 +25,7 @@ def register_extensions(app: typer.Typer) -> None:
     app.command(name="blast-radius", help=BLAST_RADIUS_SUMMARY)(blast_radius_command)
     app.command(name="sync-check", help=SYNC_CHECK_SUMMARY)(sync_check_command)
     app.command(name="embed", help=EMBED_SUMMARY)(embed_command)
-    app.command(name="context", help=CONTEXT_SUMMARY)(context_command)
+    app.command(name="search", help=CONTEXT_SUMMARY)(context_command)
     app.command(name="review-packet", help=REVIEW_PACKET_SUMMARY)(review_packet_command)
     app.command(name="viz-embeddings", help=VIZ_EMB_SUMMARY)(viz_embeddings_command)
     app.command(name="viz-graph", help=VIZ_GRAPH_SUMMARY)(viz_graph_command)

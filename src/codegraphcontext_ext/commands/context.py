@@ -23,9 +23,9 @@ from ..hybrid.traverse import traverse
 from ..io.json_stdout import emit_json
 from ..io.kuzu import get_kuzu_connection
 
-COMMAND_NAME = "context"
+COMMAND_NAME = "search"
 SCHEMA_FILE = "context.json"
-SUMMARY = "Hybrid retrieval: ANN vector search + graph traversal."
+SUMMARY = "Semantic search: ANN vector search + graph neighborhood expansion."
 
 
 def _estimate_tokens(text: str) -> int:

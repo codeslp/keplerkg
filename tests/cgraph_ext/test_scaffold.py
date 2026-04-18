@@ -15,7 +15,7 @@ def test_register_extensions_registers_sync_check_embed_and_context():
         "blast-radius",
         "sync-check",
         "embed",
-        "context",
+        "search",
         "review-packet",
         "viz-embeddings",
         "viz-graph",

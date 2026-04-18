@@ -10,7 +10,7 @@ Code is the pilot domain, not the ceiling — the architecture generalizes to an
 
 AI coding agents today burn most of their context window reading raw files to understand what they're changing. KeplerKG pre-computes the structural and semantic relationships so the agent gets exactly what it needs:
 
-- **`kkg context <query>`** — semantic search returns the most relevant symbols for a question. ~200 tokens instead of reading 10 files.
+- **`kkg search <query>`** — semantic search returns the most relevant symbols for a question. ~200 tokens instead of reading 10 files.
 - **`kkg review-packet`** — blast radius of a diff in ~2KB of JSON: touched nodes, external callers/callees, cross-module impact, advisories. The reviewer (human or agent) doesn't open a single file.
 - **`kkg blast-radius --files <paths>`** — transitive graph expansion to find everything affected by a change, including overlap with other active work.
 
@@ -26,7 +26,7 @@ pip install -e ".[dev]"
 
 kkg index                                    # build the graph
 kkg embed                                    # embed functions + classes
-kkg context "authentication token validation" # semantic search
+kkg search "authentication token validation" # semantic search
 kkg viz-dashboard                            # interactive 3-tab dashboard
 ```
 
@@ -36,7 +36,7 @@ kkg viz-dashboard                            # interactive 3-tab dashboard
 |---------|-------------|-------------|
 | `kkg index` | Parse repo into KuzuDB graph (18 node types, 7 edge types) | — |
 | `kkg embed` | Batch-embed functions and classes (local Jina v2, 768-dim) | — |
-| `kkg context <query>` | Semantic search + graph neighborhood expansion | 10-50x vs. raw file reads |
+| `kkg search <query>` | Semantic search + graph neighborhood expansion | 10-50x vs. raw file reads |
 | `kkg review-packet` | Reviewer JSON: touched nodes, callers, callees, advisories | 5-20x vs. raw diff |
 | `kkg blast-radius` | Transitive caller/callee expansion + lock overlap detection | Catches what `git diff` misses |
 | `kkg sync-check` | Report upstream commits not yet merged | — |
