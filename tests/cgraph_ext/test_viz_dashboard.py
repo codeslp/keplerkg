@@ -79,7 +79,7 @@ def test_dashboard_html_wires_three_tabs_including_embeddings():
         "nodes": [{"id": "u1", "name": "foo", "path": "a.py", "line": 1, "type": "Function"}],
         "edges": [],
     }
-    html = _dashboard_html(graph, 0, layout="cose")
+    html = _dashboard_html(graph, 0, "[]", layout="cose")
 
     # Three tabs: 2D Graph, 3D Graph, Embeddings (which now IS the Projector).
     assert 'data-pane="pane-2d"' in html
@@ -127,7 +127,7 @@ def test_dashboard_html_srcdoc_escapes_inner_html():
         "nodes": [{"id": "u1", "name": "</script>", "path": "a.py", "line": 1, "type": "Function"}],
         "edges": [],
     }
-    html = _dashboard_html(graph, 0, layout="cose")
+    html = _dashboard_html(graph, 0, "[]", layout="cose")
     assert "&lt;/script&gt;" in html
 
 

@@ -174,6 +174,7 @@ _DASHBOARD_TEMPLATE = """<!DOCTYPE html>
     <button class="tab active" data-pane="pane-2d">2D Graph</button>
     <button class="tab" data-pane="pane-3d">3D Graph</button>
     <button class="tab" data-pane="pane-embeddings">Embeddings</button>
+    <button class="tab" data-pane="pane-standards">Standards</button>
   </div>
   <button type="button" id="about-btn">About</button>
 </div>
@@ -232,6 +233,192 @@ _DASHBOARD_TEMPLATE = """<!DOCTYPE html>
            the iframe is visible. -->
       <iframe id="emb-iframe"></iframe>
     </div>
+  </div>
+  <div class="pane" id="pane-standards">
+    <div style="display:flex;height:100%;font-family:'Antic',sans-serif;color:#c9d1d9">
+      <div id="std-sidebar" style="width:280px;min-width:280px;overflow-y:auto;padding:16px;background:#0d1117;border-right:1px solid #21262d">
+        <h3 style="font-size:14px;color:#58a6ff;margin-bottom:12px">Rule Configuration</h3>
+        <div style="margin-bottom:12px">
+          <label style="font-size:11px;color:#8b949e;text-transform:uppercase;letter-spacing:0.1em">Profile</label>
+          <select id="std-profile" style="display:block;width:100%;margin-top:4px;padding:6px 8px;background:#161b22;color:#c9d1d9;border:1px solid #30363d;border-radius:4px;font-size:12px">
+            <option value="default">Default</option>
+            <option value="strict">Strict</option>
+            <option value="soc2">SOC 2</option>
+            <option value="minimal">Minimal</option>
+          </select>
+        </div>
+        <div style="margin-bottom:12px">
+          <label style="font-size:11px;color:#8b949e;text-transform:uppercase;letter-spacing:0.1em">Categories</label>
+          <div id="std-categories" style="margin-top:4px"></div>
+        </div>
+        <div style="margin-bottom:12px">
+          <label style="font-size:11px;color:#8b949e;text-transform:uppercase;letter-spacing:0.1em">Legend</label>
+          <div style="margin-top:6px;font-size:11px;line-height:2">
+            <span style="display:inline-block;width:10px;height:10px;background:#f85149;border-radius:50%;margin-right:4px"></span> Blocker/Hard
+            <span style="display:inline-block;width:10px;height:10px;background:#f0883e;border-radius:50%;margin-right:4px;margin-left:8px"></span> Critical
+            <span style="display:inline-block;width:10px;height:10px;background:#d29922;border-radius:50%;margin-right:4px;margin-left:8px"></span> Major/Warn
+            <span style="display:inline-block;width:10px;height:10px;background:#58a6ff;border-radius:50%;margin-right:4px;margin-left:8px"></span> Minor
+            <span style="display:inline-block;width:10px;height:10px;background:#484f58;border-radius:50%;margin-right:4px;margin-left:8px"></span> Info
+          </div>
+        </div>
+        <div id="std-detail" style="margin-top:16px;padding:12px;background:#161b22;border-radius:6px;font-size:12px;display:none">
+          <h4 id="std-detail-title" style="color:#58a6ff;margin-bottom:8px"></h4>
+          <div id="std-detail-body" style="color:#8b949e;line-height:1.6"></div>
+          <div style="margin-top:8px">
+            <label style="font-size:11px;color:#8b949e">Severity override:</label>
+            <select id="std-detail-override" style="margin-top:2px;padding:4px 6px;background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:3px;font-size:11px">
+              <option value="">Default</option>
+              <option value="blocker">Blocker</option>
+              <option value="critical">Critical</option>
+              <option value="major">Major</option>
+              <option value="minor">Minor</option>
+              <option value="info">Info</option>
+              <option value="off">Off</option>
+            </select>
+          </div>
+        </div>
+        <button id="std-export" style="margin-top:16px;width:100%;padding:8px;background:#238636;color:#fff;border:none;border-radius:6px;font-size:12px;cursor:pointer">Export Config (TOML)</button>
+      </div>
+      <div id="std-graph" style="flex:1;background:#0d1117"></div>
+    </div>
+    <script src="https://unpkg.com/cytoscape@3.28.1/dist/cytoscape.min.js"></script>
+    <script>
+    (function() {
+      const rulesData = __STANDARDS_JSON__;
+      const severityColors = {hard:'#f85149',blocker:'#f85149',critical:'#f0883e',warn:'#d29922',major:'#d29922',minor:'#58a6ff',info:'#484f58'};
+      const categoryColors = {coupling:'#f0883e',complexity:'#d29922',dead_code:'#484f58',clarity:'#58a6ff',inheritance:'#d2a8ff',compliance:'#f85149',patterns:'#7ee787'};
+      let overrides = {};
+      let disabledCategories = new Set();
+
+      function buildGraph() {
+        const elements = [];
+        const categories = new Set();
+        rulesData.forEach(r => categories.add(r.category));
+
+        // Category nodes
+        categories.forEach(cat => {
+          elements.push({data:{id:'cat_'+cat,label:cat.replace(/_/g,' '),type:'category'},classes:'category'});
+        });
+
+        // Rule nodes
+        rulesData.forEach(r => {
+          const sev = overrides[r.id] || r.severity;
+          if (sev === 'off' || disabledCategories.has(r.category)) return;
+          elements.push({
+            data:{id:r.id,label:r.id.replace(/^CGQ-[A-Z]\d+_?/,'').replace(/_/g,' ')||r.id,
+                  severity:sev,category:r.category,summary:r.summary,evidence:r.evidence||'',
+                  suggestion:r.suggestion||'',thresholds:JSON.stringify(r.thresholds||{})},
+            classes:'rule'
+          });
+          elements.push({data:{source:'cat_'+r.category,target:r.id}});
+        });
+
+        return elements;
+      }
+
+      function render() {
+        const container = document.getElementById('std-graph');
+        if (!container || typeof cytoscape === 'undefined') return;
+        container.innerHTML = '';
+        const cy = cytoscape({
+          container,
+          elements: buildGraph(),
+          style: [
+            {selector:'node.category',style:{'label':'data(label)','text-valign':'center','text-halign':'center',
+              'background-color':function(ele){return categoryColors[ele.data('id').replace('cat_','')]||'#30363d'},
+              'color':'#fff','font-size':'11px','width':60,'height':60,'text-wrap':'wrap','text-max-width':'55px',
+              'font-family':'Antic, sans-serif','border-width':2,'border-color':'#30363d'}},
+            {selector:'node.rule',style:{'label':'data(label)','text-valign':'center','text-halign':'center',
+              'background-color':function(ele){return severityColors[ele.data('severity')]||'#484f58'},
+              'color':'#fff','font-size':'9px','width':40,'height':40,'text-wrap':'wrap','text-max-width':'38px',
+              'font-family':'Antic, sans-serif','border-width':1,'border-color':'#21262d','opacity':0.9}},
+            {selector:'edge',style:{'line-color':'#21262d','width':1,'curve-style':'bezier','opacity':0.5}},
+            {selector:':selected',style:{'border-color':'#58a6ff','border-width':3}}
+          ],
+          layout:{name:'cose',padding:40,nodeRepulsion:function(){return 8000},idealEdgeLength:function(){return 80},animate:false},
+          minZoom:0.3,maxZoom:3
+        });
+
+        cy.on('tap','node.rule',function(evt){
+          const d = evt.target.data();
+          document.getElementById('std-detail').style.display='block';
+          document.getElementById('std-detail-title').textContent=d.id;
+          document.getElementById('std-detail-body').innerHTML=
+            '<p><strong>'+d.summary+'</strong></p>'+
+            '<p style="margin-top:6px">Severity: <span style="color:'+(severityColors[d.severity]||'#8b949e')+'">'+d.severity+'</span></p>'+
+            '<p style="margin-top:4px">Category: '+d.category+'</p>'+
+            (d.thresholds!=='{}'?'<p style="margin-top:4px">Thresholds: <code>'+d.thresholds+'</code></p>':'')+
+            (d.evidence?'<p style="margin-top:6px;font-style:italic;color:#6e7681">Evidence: '+d.evidence+'</p>':'')+
+            (d.suggestion?'<p style="margin-top:4px;color:#7ee787">'+d.suggestion+'</p>':'');
+          document.getElementById('std-detail-override').value=overrides[d.id]||'';
+        });
+
+        return cy;
+      }
+
+      // Category checkboxes
+      function buildCategoryCheckboxes() {
+        const cats = [...new Set(rulesData.map(r=>r.category))].sort();
+        const div = document.getElementById('std-categories');
+        if (!div) return;
+        div.innerHTML = '';
+        cats.forEach(cat => {
+          const label = document.createElement('label');
+          label.style.cssText='display:block;font-size:12px;padding:2px 0;cursor:pointer';
+          const cb = document.createElement('input');
+          cb.type='checkbox';cb.checked=!disabledCategories.has(cat);
+          cb.style.marginRight='6px';
+          cb.addEventListener('change',()=>{
+            if(cb.checked) disabledCategories.delete(cat); else disabledCategories.add(cat);
+            render();
+          });
+          label.appendChild(cb);
+          label.appendChild(document.createTextNode(cat.replace(/_/g,' ')));
+          div.appendChild(label);
+        });
+      }
+
+      // Override handler
+      document.getElementById('std-detail-override')?.addEventListener('change',function(){
+        const title=document.getElementById('std-detail-title')?.textContent;
+        if(!title) return;
+        if(this.value) overrides[title]=this.value; else delete overrides[title];
+        render();
+      });
+
+      // Profile handler
+      document.getElementById('std-profile')?.addEventListener('change',function(){
+        // Reset and apply preset
+        overrides={};disabledCategories=new Set();
+        // Minimal example — real presets could be injected as JSON
+        if(this.value==='minimal') disabledCategories=new Set(['complexity','dead_code','clarity','inheritance','compliance']);
+        if(this.value==='soc2'){disabledCategories=new Set(['complexity','dead_code','clarity','inheritance']);overrides['CGQ-H01']='blocker';overrides['CGQ-H04']='blocker';}
+        if(this.value==='strict'){['CGQ-A05','CGQ-A06','CGQ-B01'].forEach(id=>overrides[id]='blocker');}
+        buildCategoryCheckboxes();render();
+      });
+
+      // Export TOML
+      document.getElementById('std-export')?.addEventListener('click',function(){
+        let toml='[cgraph.standards]\\nprofile = "'+
+          (document.getElementById('std-profile')?.value||'default')+'"\\n';
+        const activeCats=[...new Set(rulesData.map(r=>r.category))].filter(c=>!disabledCategories.has(c));
+        toml+='categories = ['+activeCats.map(c=>'"'+c+'"').join(', ')+']\\n';
+        if(Object.keys(overrides).length){
+          toml+='\\n[cgraph.standards.overrides]\\n';
+          Object.entries(overrides).forEach(([k,v])=>{toml+=k+' = "'+v+'"\\n';});
+        }
+        const blob=new Blob([toml.replace(/\\\\n/g,'\\n')],{type:'text/plain'});
+        const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+        a.download='kkg-standards.toml';a.click();
+      });
+
+      // Initial render on tab click
+      let stdRendered=false;
+      document.querySelector('[data-pane="pane-standards"]')?.addEventListener('click',()=>{
+        if(!stdRendered){buildCategoryCheckboxes();render();stdRendered=true;}
+      });
+    })();
+    </script>
   </div>
 </div>
 <div class="modal-overlay" id="about-overlay" style="display:none">
@@ -335,6 +522,7 @@ aboutOverlay.addEventListener("click", (e) => {
 def _dashboard_html(
     graph: dict[str, Any],
     emb_count: int,
+    standards_json: str,
     *,
     layout: str,
 ) -> str:
@@ -353,7 +541,30 @@ def _dashboard_html(
     out = out.replace("__EMB_COUNT__", str(emb_count))
     out = out.replace("__IFRAME_2D__", iframe_2d)
     out = out.replace("__IFRAME_3D__", iframe_3d)
+    out = out.replace("__STANDARDS_JSON__", standards_json)
     return out
+
+
+def _load_standards_json() -> str:
+    """Load standards rules as JSON for the dashboard Standards tab."""
+    try:
+        from ..standards.loader import load_rules
+        from ..commands.audit import _find_standards_dir
+        rules = load_rules(_find_standards_dir())
+        return json.dumps([
+            {
+                "id": r.id,
+                "category": r.category,
+                "severity": r.severity,
+                "summary": r.summary,
+                "suggestion": r.suggestion,
+                "evidence": r.evidence,
+                "thresholds": r.thresholds,
+            }
+            for r in rules
+        ])
+    except Exception:
+        return "[]"
 
 
 def _prepare_dashboard_serve_dir(
@@ -369,7 +580,8 @@ def _prepare_dashboard_serve_dir(
     """
     serve_dir = Path(tempfile.mkdtemp(prefix="cgraph-dashboard-"))
 
-    html = _dashboard_html(graph, len(emb_nodes), layout=layout)
+    standards_json = _load_standards_json()
+    html = _dashboard_html(graph, len(emb_nodes), standards_json, layout=layout)
     (serve_dir / "index.html").write_text(html, encoding="utf-8")
 
     projector_dir = serve_dir / "projector"
