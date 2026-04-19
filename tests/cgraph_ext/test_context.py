@@ -58,15 +58,21 @@ class _FakeResult:
 class _FakeConn:
     """Mock KùzuDB connection that returns canned results per query pattern."""
 
-    def __init__(self, ann_rows=None, traverse_rows=None):
+    def __init__(self, ann_rows=None, traverse_rows=None, scan_rows=None, ann_error: bool = False):
         self._ann_rows = ann_rows or []
         self._traverse_rows = traverse_rows or []
+        self._scan_rows = scan_rows or []
+        self._ann_error = ann_error
         self.queries: list[str] = []
 
     def execute(self, query, *, parameters=None):
         self.queries.append(query)
         if "hnsw_search" in query.lower():
+            if self._ann_error:
+                raise RuntimeError("hnsw unavailable")
             return _FakeResult(self._ann_rows)
+        if "AS embedding" in query and "embedding" in query:
+            return _FakeResult(self._scan_rows)
         if "MATCH" in query:
             return _FakeResult(self._traverse_rows)
         return _FakeResult([])
@@ -105,6 +111,19 @@ def test_ann_search_respects_k():
     conn = _FakeConn(ann_rows=rows)
     results = ann_search(conn, [0.1] * 768, k=3)
     assert len(results) == 3
+
+
+def test_ann_search_falls_back_to_linear_scan_when_hnsw_unavailable():
+    scan_rows = [
+        ("uid1", "request_ctx", "src/ctx.py", 10, [0.1, 0.1, 0.1]),
+        ("uid2", "app_ctx", "src/ctx.py", 20, [0.9, 0.9, 0.9]),
+    ]
+    conn = _FakeConn(ann_error=True, scan_rows=scan_rows)
+
+    results = ann_search(conn, [0.1, 0.1, 0.1], k=2, tables=("Function",))
+
+    assert [row["uid"] for row in results] == ["uid1", "uid2"]
+    assert results[0]["score"] > results[1]["score"]
 
 
 # --- Unit tests: traverse ---

@@ -20,6 +20,7 @@ from ..embeddings.fetch import fetch_embedded_nodes
 from ..embeddings.runtime import probe_backend_support
 from ..io.json_stdout import emit_json
 from ..io.kuzu import get_kuzu_connection
+from ..project import PROJECT_OPTION_HELP, activate_project
 
 COMMAND_NAME = "viz-embeddings"
 SCHEMA_FILE = "context.json"  # reuse context schema stub for metadata
@@ -222,8 +223,14 @@ def viz_embeddings_command(
         "--reducer",
         help="Dimensionality reducer: `pca` (default, zero extra deps) or `umap` (requires `pip install umap-learn`).",
     ),
+    project: Optional[str] = typer.Option(
+        None,
+        "--project",
+        help=PROJECT_OPTION_HELP,
+    ),
 ) -> None:
     """Visualize code embeddings as an interactive 2D scatter plot."""
+    activate_project(project)
 
     if reducer not in _REDUCERS:
         raise typer.BadParameter(

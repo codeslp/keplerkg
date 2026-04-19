@@ -24,6 +24,7 @@ import typer
 from ..embeddings.runtime import probe_backend_support
 from ..io.json_stdout import emit_json
 from ..io.kuzu import get_kuzu_connection
+from ..project import PROJECT_OPTION_HELP, activate_project
 
 COMMAND_NAME = "viz-graph"
 SCHEMA_FILE = "context.json"  # reuse context schema stub for metadata
@@ -242,6 +243,7 @@ const COLORS = { File: "#8b949e", Module: "#f778ba", Class: "#d2a8ff", Function:
 const EDGE_COLORS = { CONTAINS: "#2ea043", CALLS: "#f0883e", IMPORTS: "#58a6ff", INHERITS: "#d2a8ff" };
 const SIZES = { File: 18, Module: 14, Class: 16, Function: 10, Variable: 8 };
 const TYPE_RANK = { File: 5, Module: 4, Class: 3, Function: 2, Variable: 1 };
+const DASHBOARD_HIGHLIGHT_ZOOM_SCALE = 0.4;
 
 if (typeof cytoscapeDagre !== "undefined") cytoscape.use(cytoscapeDagre);
 
@@ -330,10 +332,37 @@ cy.on("mouseout", "node", () => { tooltip.style.display = "none"; });
 
 // Tap to highlight closed neighborhood; tap background to clear.
 function clearHighlight() { cy.elements().removeClass("faded hit"); }
-cy.on("tap", "node", e => {
+function highlightMatches(targets, fit = false, fitZoomScale = 1) {
+  if (!targets || targets.length === 0) return false;
   clearHighlight();
   cy.elements().addClass("faded");
-  e.target.closedNeighborhood().removeClass("faded").addClass("hit");
+  targets.removeClass("faded").addClass("hit");
+  if (fit) {
+    cy.fit(targets, 40);
+    if (fitZoomScale !== 1) {
+      const nextZoom = Math.max(cy.minZoom(), cy.zoom() * fitZoomScale);
+      cy.zoom(nextZoom);
+      cy.center(targets);
+    }
+  }
+  return true;
+}
+function findHighlightMatches(payload) {
+  const id = String(payload.id || "").trim();
+  if (id) {
+    const direct = cy.$id(id);
+    if (direct.length > 0) {
+      return direct.union(direct.connectedEdges()).union(direct.openNeighborhood());
+    }
+  }
+  const name = String(payload.name || "").trim().toLowerCase();
+  if (!name) return cy.collection();
+  const matches = cy.nodes().filter(n => (n.data("label") || "").toLowerCase().includes(name));
+  if (matches.length === 0) return cy.collection();
+  return matches.union(matches.connectedEdges()).union(matches.openNeighborhood());
+}
+cy.on("tap", "node", e => {
+  highlightMatches(e.target.closedNeighborhood());
 });
 cy.on("tap", e => { if (e.target === cy) clearHighlight(); });
 
@@ -361,16 +390,23 @@ search.addEventListener("input", () => {
   const q = search.value.trim().toLowerCase();
   clearHighlight();
   if (!q) return;
-  const matches = cy.nodes().filter(n => (n.data("label") || "").toLowerCase().includes(q));
+  const matches = findHighlightMatches({ name: q });
   if (matches.length === 0) return;
-  cy.elements().addClass("faded");
-  matches.union(matches.connectedEdges()).union(matches.openNeighborhood()).removeClass("faded").addClass("hit");
+  highlightMatches(matches);
 });
 search.addEventListener("keydown", e => {
   if (e.key === "Enter") {
     const hits = cy.$(".hit");
     if (hits.length > 0) cy.fit(hits, 40);
   }
+});
+window.addEventListener("message", event => {
+  const payload = event.data || {};
+  if (payload.type !== "highlight") return;
+  const matches = findHighlightMatches(payload);
+  if (matches.length === 0) return;
+  if (payload.name) search.value = payload.name;
+  highlightMatches(matches, true, DASHBOARD_HIGHLIGHT_ZOOM_SCALE);
 });
 </script>
 </body>
@@ -646,8 +682,14 @@ def viz_graph_command(
         "--no-open",
         help="Write file but don't open in browser.",
     ),
+    project: Optional[str] = typer.Option(
+        None,
+        "--project",
+        help=PROJECT_OPTION_HELP,
+    ),
 ) -> None:
     """Visualize code graph as an interactive diagram (2D Cytoscape or 3D force-directed)."""
+    activate_project(project)
 
     if layout not in _LAYOUTS:
         raise typer.BadParameter(

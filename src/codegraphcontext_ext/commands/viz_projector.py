@@ -11,6 +11,7 @@ from __future__ import annotations
 import sys
 import tempfile
 from pathlib import Path
+from typing import Optional
 
 import typer
 
@@ -18,6 +19,7 @@ from ..embeddings.fetch import fetch_embedded_nodes
 from ..embeddings.runtime import probe_backend_support
 from ..io.json_stdout import emit_json
 from ..io.kuzu import get_kuzu_connection
+from ..project import PROJECT_OPTION_HELP, activate_project
 from ..viz_server import (
     DATA_SUBDIR,
     build_server,
@@ -55,8 +57,14 @@ def viz_projector_command(
         "--no-open",
         help="Start the server but don't open the browser.",
     ),
+    project: Optional[str] = typer.Option(
+        None,
+        "--project",
+        help=PROJECT_OPTION_HELP,
+    ),
 ) -> None:
     """Serve the TF Embedding Projector locally with your cgraph embeddings pre-loaded."""
+    activate_project(project)
 
     backend_payload = probe_backend_support()
     if not backend_payload["ok"]:

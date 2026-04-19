@@ -32,6 +32,67 @@ kkg audit --list                             # see available quality rules
 kkg viz-dashboard                            # interactive 4-tab dashboard
 ```
 
+## Targeting Other Codebases
+
+KeplerKG can now route each target repo to its own Kuzu store under
+`/Volumes/zombie/cgraph/db/<slug>/kuzudb`.
+
+Project resolution precedence:
+- `--project <slug>`
+- `CGRAPH_PROJECT=<slug>`
+- repo-local `.cgraph/project.toml` with top-level `project = "<slug>"`
+- fallback to the current target directory basename
+
+Example `project.toml`:
+
+```toml
+project = "flask"
+```
+
+Flask bootstrap flow:
+
+```bash
+git clone https://github.com/pallets/flask /Volumes/zombie/cgraph/src/flask
+source scripts/cgraph-env.sh
+
+kkg index --project flask /Volumes/zombie/cgraph/src/flask
+kkg embed --project flask
+kkg search --project flask "request context"
+kkg audit --project flask --format summary
+kkg viz-graph --project flask
+kkg viz-embeddings --project flask
+```
+
+Verified on April 18, 2026:
+- Flask graph store: `/Volumes/zombie/cgraph/db/flask/kuzudb` (`83.6M`)
+- Graph counts: `1` repo, `83` files, `1463` functions, `161` classes
+- Embeddings written: `856`
+- `kkg search --project flask "request context"` returned `8` seeds, all under the Flask checkout
+
+Notes:
+- `kkg index` and `kkg watch` now honor `--project`.
+- DB-touching extension commands (`search`, `embed`, `audit`, `blast-radius`, `review-packet`, `viz-*`, `export-embeddings`, `drift-check`) honor `--project`.
+- On Kuzu builds that reject `CREATE HNSW INDEX`, semantic search falls back to a linear embedding scan so new project stores stay usable.
+
+## Near-term Agent CLI Roadmap
+
+The next critical CLI work is not another command family; it is making the
+existing CLI more self-describing for agents and wrappers.
+
+- **Canonical JSON envelope** across commands so agents can rely on one
+  machine contract instead of command-by-command quirks.
+- **`kkg manifest --json`** to enumerate commands, schemas, `--project`
+  support, required env/prereqs, and output modes.
+- **Contract-test split** so help/schema/envelope regressions are caught
+  without needing a live Kuzu store.
+- **`kkg repl`** with sticky project/profile context after the envelope +
+  manifest stabilize.
+- **Agent-facing skill/registry packaging** after the CLI contract is pinned.
+
+This is the main lesson we are taking from agent-native CLI projects like
+CLI-Anything: treat discoverability and stable machine contracts as product
+features, not just docs.
+
 ## Commands
 
 ### Retrieval & analysis

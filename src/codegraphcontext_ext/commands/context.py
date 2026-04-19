@@ -22,6 +22,7 @@ from ..hybrid.ann import search as ann_search
 from ..hybrid.traverse import traverse
 from ..io.json_stdout import emit_json
 from ..io.kuzu import get_kuzu_connection
+from ..project import PROJECT_OPTION_HELP, activate_project
 
 COMMAND_NAME = "search"
 SCHEMA_FILE = "context.json"
@@ -91,8 +92,14 @@ def context_command(
         min=1,
         help="Embedding dimensions override.",
     ),
+    project: Optional[str] = typer.Option(
+        None,
+        "--project",
+        help=PROJECT_OPTION_HELP,
+    ),
 ) -> None:
     """Hybrid retrieval: find code relevant to a query via ANN + graph walk."""
+    activate_project(project)
 
     # Backend gate
     backend_payload = probe_backend_support()

@@ -105,6 +105,22 @@ def test_generate_graph_html_valid_json_data():
     assert data["edges"] == []
 
 
+def test_generate_graph_html_accepts_dashboard_highlight_messages():
+    graph = {
+        "nodes": [{"id": "u1", "name": "f", "path": "a.py", "line": 1, "type": "Function"}],
+        "edges": [],
+    }
+    html = gen_graph_html(graph)
+
+    assert 'window.addEventListener("message"' in html
+    assert 'payload.type !== "highlight"' in html
+    assert "payload.id" in html
+    assert "payload.name" in html
+    assert "DASHBOARD_HIGHLIGHT_ZOOM_SCALE = 0.4" in html
+    assert "cy.center(targets)" in html
+    assert "highlightMatches(matches, true, DASHBOARD_HIGHLIGHT_ZOOM_SCALE)" in html
+
+
 # --- CLI integration tests ---
 
 

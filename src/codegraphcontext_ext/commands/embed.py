@@ -21,11 +21,15 @@ from ..embeddings.runtime import (
 from ..embeddings.schema import (
     EMBEDDABLE_TABLES,
     EMBEDDING_COLUMN,
+    NAME_EMBEDDING_COLUMN,
     ensure_embedding_columns,
     ensure_hnsw_indexes,
+    ensure_name_embedding_columns,
+    ensure_name_hnsw_indexes,
 )
 from ..io.json_stdout import emit_json
 from ..io.kuzu import get_kuzu_connection
+from ..project import PROJECT_OPTION_HELP, activate_project
 
 COMMAND_NAME = "embed"
 SUMMARY = "Vectorize code-entity nodes in KùzuDB for hybrid retrieval."
@@ -44,6 +48,134 @@ def _build_embed_text(node: dict[str, Any]) -> str:
     if node.get("source"):
         parts.append(node["source"])
     return "\n".join(parts) if parts else ""
+
+
+import re as _re
+
+_CAMEL_BOUNDARY = _re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
+
+
+def _humanize_name(name: str) -> str:
+    """Split snake_case / camelCase / PascalCase into spaced words.
+
+    >>> _humanize_name("calculate_total_price")
+    'calculate total price'
+    >>> _humanize_name("getUserById")
+    'get User By Id'
+    """
+    # snake_case → spaces
+    spaced = name.replace("_", " ")
+    # camelCase / PascalCase boundaries → spaces
+    spaced = _CAMEL_BOUNDARY.sub(" ", spaced)
+    return " ".join(spaced.split())
+
+
+def _build_name_text(node: dict[str, Any]) -> str:
+    """Build name-only text for the name embedding (no docstring/source)."""
+    name = node.get("name", "")
+    return _humanize_name(name) if name else ""
+
+
+def _fetch_name_nodes(
+    conn: Any,
+    table: str,
+    *,
+    force: bool,
+    batch_size: int,
+    offset: int,
+) -> list[dict[str, Any]]:
+    """Fetch a batch of nodes for name embedding."""
+    where = "" if force else f"WHERE n.`{NAME_EMBEDDING_COLUMN}` IS NULL "
+    query = (
+        f"MATCH (n:`{table}`) {where}"
+        f"RETURN n.uid AS uid, n.name AS name "
+        f"SKIP {offset} LIMIT {batch_size}"
+    )
+    result = conn.execute(query)
+    rows: list[dict[str, Any]] = []
+    while result.has_next():
+        row = result.get_next()
+        rows.append({"uid": row[0], "name": row[1]})
+    return rows
+
+
+def _write_name_embeddings(
+    conn: Any,
+    table: str,
+    uids: list[str],
+    vectors: list[list[float]],
+) -> int:
+    """Write name embedding vectors back to nodes."""
+    for uid, vec in zip(uids, vectors):
+        conn.execute(
+            f"MATCH (n:`{table}`) WHERE n.uid = $uid SET n.`{NAME_EMBEDDING_COLUMN}` = $vec",
+            parameters={"uid": uid, "vec": vec},
+        )
+    return len(uids)
+
+
+def _run_name_embed(
+    conn: Any,
+    provider: EmbeddingProvider,
+    *,
+    force: bool,
+) -> dict[str, Any]:
+    """Name embedding loop — embeds function/class names only."""
+    table_stats: list[dict[str, Any]] = []
+    total_embedded = 0
+    total_skipped = 0
+
+    for table in EMBEDDABLE_TABLES:
+        embedded = 0
+        skipped = 0
+        offset = 0
+        seen_uids: set[str] = set()
+
+        while True:
+            nodes = _fetch_name_nodes(
+                conn, table, force=force, batch_size=_BATCH_SIZE, offset=offset
+            )
+            if not nodes:
+                break
+
+            new_nodes = [n for n in nodes if n["uid"] not in seen_uids]
+            if not new_nodes:
+                break
+            for n in new_nodes:
+                seen_uids.add(n["uid"])
+
+            texts = [_build_name_text(n) for n in new_nodes]
+            embeddable_indices = [i for i, t in enumerate(texts) if t.strip()]
+            skipped += len(texts) - len(embeddable_indices)
+
+            if embeddable_indices:
+                embeddable_texts = [texts[i] for i in embeddable_indices]
+                vectors = provider.embed_texts(embeddable_texts)
+                embeddable_uids = [new_nodes[i]["uid"] for i in embeddable_indices]
+                written = _write_name_embeddings(conn, table, embeddable_uids, vectors)
+                embedded += written
+                print(
+                    f"  {table}: name-embedded {embedded} nodes...",
+                    file=sys.stderr,
+                    end="\r",
+                )
+
+            offset += _BATCH_SIZE
+
+        print(file=sys.stderr)
+        table_stats.append({
+            "table": table,
+            "embedded": embedded,
+            "skipped_empty": skipped,
+        })
+        total_embedded += embedded
+        total_skipped += skipped
+
+    return {
+        "tables": table_stats,
+        "total_embedded": total_embedded,
+        "total_skipped_empty": total_skipped,
+    }
 
 
 def _fetch_nodes(
@@ -187,8 +319,14 @@ def embed_command(
         "--force",
         help="Re-embed all nodes, even those with existing vectors.",
     ),
+    project: Optional[str] = typer.Option(
+        None,
+        "--project",
+        help=PROJECT_OPTION_HELP,
+    ),
 ) -> None:
     """Vectorize code-entity nodes in KùzuDB for hybrid retrieval."""
+    activate_project(project)
 
     # --- Backend gate (unchanged from Phase 1 scaffold) ---
     backend_payload = probe_backend_support()
@@ -215,16 +353,22 @@ def embed_command(
     emb_provider = create_provider(config)
     conn = get_kuzu_connection()
 
-    # Ensure schema has embedding columns
+    # Ensure schema has embedding columns (behavior + name)
     col_results = ensure_embedding_columns(conn, config.dimensions)
     idx_results = ensure_hnsw_indexes(conn, config.dimensions)
+    name_col_results = ensure_name_embedding_columns(conn, config.dimensions)
+    name_idx_results = ensure_name_hnsw_indexes(conn, config.dimensions)
 
-    # Run vectorization
+    # Run behavior vectorization
     print(
         f"Embedding with {config.provider}/{config.model} ({config.dimensions}d)...",
         file=sys.stderr,
     )
     embed_results = _run_embed(conn, emb_provider, force=force)
+
+    # Run name vectorization (for naming-analysis standards)
+    print("Generating name embeddings...", file=sys.stderr)
+    name_results = _run_name_embed(conn, emb_provider, force=force)
 
     payload = {
         "ok": True,
@@ -234,8 +378,9 @@ def embed_command(
         "model": config.model,
         "dimensions": config.dimensions,
         "force": force,
-        "schema": col_results + idx_results,
+        "schema": col_results + idx_results + name_col_results + name_idx_results,
         **embed_results,
+        "name_embedding": name_results,
     }
     typer.echo(emit_json(payload))
     raise typer.Exit(code=0)

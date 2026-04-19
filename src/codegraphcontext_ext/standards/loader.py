@@ -39,6 +39,7 @@ class StandardRule:
     exemptions: str = ""
     evidence: str = ""
     category: str = ""
+    detection_method: str = "cypher"  # "cypher" | "embedding"
 
     @property
     def is_hard(self) -> bool:
@@ -184,6 +185,7 @@ def _parse_rule_file(path: Path) -> StandardRule:
         exemptions=data.get("exemptions", ""),
         evidence=data.get("evidence", ""),
         category=data.get("category", ""),
+        detection_method=data.get("detection_method", "cypher"),
     )
 
 
@@ -221,12 +223,61 @@ def _inject_exemption_clauses(query: str, clauses: str) -> str:
     return query[:insert_pos] + f"  AND {clauses}\n" + query[insert_pos:]
 
 
+def _run_embedding_rule(conn: Any, rule: StandardRule) -> RuleResult:
+    """Execute a Python-backed embedding rule (detection_method='embedding')."""
+    from .naming_rules import EMBEDDING_RULES
+    from ..embeddings.schema import NAME_EMBEDDING_COLUMN
+
+    func = EMBEDDING_RULES.get(rule.id)
+    if func is None:
+        return RuleResult(
+            rule=rule,
+            error=f"No embedding rule implementation for '{rule.id}'",
+        )
+
+    # Probe: are there any name_embedding vectors?
+    try:
+        probe = conn.execute(
+            f"MATCH (f:Function) WHERE f.`{NAME_EMBEDDING_COLUMN}` IS NOT NULL "
+            f"RETURN count(f)"
+        )
+        count = probe.get_next()[0] if probe.has_next() else 0
+    except Exception:
+        count = 0
+
+    if count == 0:
+        return RuleResult(
+            rule=rule,
+            error="No name_embedding data found. Run 'kkg embed' to generate name embeddings.",
+        )
+
+    try:
+        raw = func(conn, rule.thresholds)
+    except Exception as exc:
+        return RuleResult(rule=rule, error=f"{type(exc).__name__}: {exc}")
+
+    offenders = [
+        Violation(
+            uid=v["uid"],
+            name=v.get("name"),
+            path=v.get("path"),
+            line_number=v.get("line_number"),
+            metric_value=v.get("metric_value"),
+        )
+        for v in raw
+    ]
+    return RuleResult(rule=rule, offenders=offenders)
+
+
 def run_rule(
     conn: Any,
     rule: StandardRule,
     exemptions: Exemptions,
 ) -> RuleResult:
     """Execute a single rule against the DB and collect violations."""
+    if rule.detection_method == "embedding":
+        return _run_embedding_rule(conn, rule)
+
     resolved = resolve_query(rule, exemptions)
 
     try:

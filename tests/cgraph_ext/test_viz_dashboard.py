@@ -7,12 +7,14 @@ escaping, Projector tempdir layout, and the typed error paths.
 
 from __future__ import annotations
 
+import json
 from unittest.mock import patch
 
 from typer.testing import CliRunner
 
 from codegraphcontext_ext.commands.viz_dashboard import (
     _dashboard_html,
+    _load_standards_json,
     _prepare_dashboard_serve_dir,
 )
 from codegraphcontext_ext.viz_server import DATA_SUBDIR
@@ -161,3 +163,213 @@ def test_prepare_dashboard_serve_dir_layout(tmp_path, monkeypatch):
            '"tensorShape":[1,3]' in cfg or '[\n        1,\n        3\n      ]' in cfg, (
         f"tensor shape [1, 3] not found in config:\n{cfg}"
     )
+
+
+def test_standards_subtab_buttons_not_matched_by_outer_tab_selector():
+    """Regression: clicking Configuration/Violations sub-tabs triggered the
+    outer tab handler because both used class="tab".  The outer handler
+    removed .active from all .pane elements (including pane-standards itself)
+    and tried to activate a pane via data-pane — which sub-tabs don't have —
+    resulting in a black screen.
+
+    Fix: outer selector must use '#tab-bar .tab' (or '[data-pane]') so
+    Standards sub-tab buttons are excluded.
+    """
+    graph = {
+        "nodes": [{"id": "u1", "name": "foo", "path": "a.py", "line": 1, "type": "Function"}],
+        "edges": [],
+    }
+    html = _dashboard_html(graph, 0, "[]", "[]", layout="cose")
+
+    # The outer tab selector must NOT be querySelectorAll(".tab") — it must
+    # be scoped to only match the 4 main nav tabs, not the standards sub-tabs.
+    # Either '#tab-bar .tab' or '.tab-bar .tab' or '[data-pane]' is acceptable.
+    assert 'querySelectorAll(".tab")' not in html, (
+        "Outer tab selector must be scoped (e.g. '#tab-bar .tab') to avoid "
+        "matching Standards sub-tab buttons that share the .tab class"
+    )
+
+
+def test_dashboard_html_violation_rows_use_resizable_fixed_width_table_contract():
+    graph = {
+        "nodes": [{"id": "u1", "name": "foo", "path": "a.py", "line": 1, "type": "Function"}],
+        "edges": [],
+    }
+    standards_json = json.dumps([{
+        "id": "cross_file_private_access",
+        "category": "coupling",
+        "severity": "warn",
+        "summary": "Cross-file private access.",
+        "suggestion": "Use a public API.",
+        "evidence": "CALLS edge across files.",
+        "thresholds": {},
+    }])
+    violations_json = json.dumps([{
+        "standard_id": "cross_file_private_access",
+        "severity": "warn",
+        "kind": "cross_file_private_access",
+        "offenders": [{
+            "uid": "u1",
+            "name": "foo",
+            "path": "src/really/long/path/module_name.py",
+            "line_number": 41,
+            "metric_value": "_bar",
+        }],
+    }])
+
+    html = _dashboard_html(graph, 0, standards_json, violations_json, layout="cose")
+
+    assert "std-offender-table" in html
+    assert "table-layout:fixed" in html
+    assert "data-col-resizer" in html
+    assert "data-viz-id" in html
+    assert "setupOffenderTableResizers" in html
+
+
+def test_dashboard_html_includes_stowable_violations_explainer():
+    graph = {
+        "nodes": [{"id": "u1", "name": "foo", "path": "a.py", "line": 1, "type": "Function"}],
+        "edges": [],
+    }
+    standards_json = json.dumps([{
+        "id": "cross_file_private_access",
+        "category": "coupling",
+        "severity": "warn",
+        "summary": "Cross-file private access.",
+        "suggestion": "Use a public API.",
+        "evidence": "CALLS edge across files.",
+        "thresholds": {},
+    }])
+    violations_json = json.dumps([{
+        "standard_id": "cross_file_private_access",
+        "severity": "warn",
+        "kind": "cross_file_private_access",
+        "offenders": [{
+            "uid": "u1",
+            "name": "foo",
+            "path": "src/really/long/path/module_name.py",
+            "line_number": 41,
+            "metric_value": "_bar",
+        }],
+    }])
+
+    html = _dashboard_html(graph, 0, standards_json, violations_json, layout="cose")
+
+    assert 'id="std-viol-explainer"' in html
+    assert 'id="std-viol-explainer-toggle"' in html
+    assert 'aria-controls="std-viol-explainer-body"' in html
+    assert "What this tab shows" in html
+    assert "Severity dot" in html
+    assert "2D button" in html
+    assert "Configure this rule" in html
+
+
+def test_dashboard_html_violation_details_include_rule_principle_copy():
+    graph = {
+        "nodes": [{"id": "u1", "name": "foo", "path": "a.py", "line": 1, "type": "Function"}],
+        "edges": [],
+    }
+    standards_json = json.dumps([{
+        "id": "cross_file_private_access",
+        "category": "coupling",
+        "severity": "warn",
+        "summary": "Cross-file private access.",
+        "suggestion": "Use a public API.",
+        "evidence": "CALLS edge across files.",
+        "principle": "Respect module boundaries and keep private implementation details private.",
+        "thresholds": {},
+    }])
+    violations_json = json.dumps([{
+        "standard_id": "cross_file_private_access",
+        "severity": "warn",
+        "kind": "cross_file_private_access",
+        "offenders": [{
+            "uid": "u1",
+            "name": "foo",
+            "path": "src/really/long/path/module_name.py",
+            "line_number": 41,
+            "metric_value": "_bar",
+        }],
+    }])
+
+    html = _dashboard_html(graph, 0, standards_json, violations_json, layout="cose")
+
+    assert "rule.principle" in html
+    assert "Principle:" in html
+    assert "Respect module boundaries and keep private implementation details private." in html
+
+
+def test_load_standards_json_includes_principles_for_shipped_rules():
+    data = json.loads(_load_standards_json())
+
+    assert data, "expected shipped standards JSON"
+    assert all(item.get("principle") for item in data), (
+        "every shipped dashboard rule should expose a principle blurb"
+    )
+
+    cross_file_private_access = next(
+        item for item in data if item["id"] == "cross_file_private_access"
+    )
+    assert cross_file_private_access["principle"] == (
+        "Respect module boundaries and keep private implementation details private."
+    )
+
+
+# ---------------------------------------------------------------------------
+# Taxonomy tab (Phase 5.5a)
+# ---------------------------------------------------------------------------
+
+
+def test_dashboard_html_wires_taxonomy_tab():
+    graph = {
+        "nodes": [{"id": "u1", "name": "foo", "path": "a.py", "line": 1, "type": "Function"}],
+        "edges": [],
+    }
+    html = _dashboard_html(graph, 0, "[]", "[]", layout="cose")
+
+    assert 'data-pane="pane-taxonomy"' in html
+    assert 'id="pane-taxonomy"' in html
+    assert ">Taxonomy</button>" in html
+
+
+def test_dashboard_html_taxonomy_subtabs():
+    graph = {
+        "nodes": [{"id": "u1", "name": "foo", "path": "a.py", "line": 1, "type": "Function"}],
+        "edges": [],
+    }
+    html = _dashboard_html(graph, 0, "[]", "[]", layout="cose")
+
+    assert 'data-tax-pane="tax-structure"' in html
+    assert 'data-tax-pane="tax-inheritance"' in html
+    assert 'data-tax-pane="tax-communities"' in html
+    assert ">Structure</button>" in html
+    assert ">Inheritance</button>" in html
+    assert ">Communities</button>" in html
+
+
+def test_taxonomy_subtab_selectors_scoped():
+    """Taxonomy sub-tabs use data-tax-pane, not data-pane or data-std-pane."""
+    graph = {
+        "nodes": [{"id": "u1", "name": "foo", "path": "a.py", "line": 1, "type": "Function"}],
+        "edges": [],
+    }
+    html = _dashboard_html(graph, 0, "[]", "[]", layout="cose")
+
+    # The taxonomy JS should use [data-tax-pane], not [data-pane]
+    assert "data-tax-pane" in html
+    # Lazy init should be present
+    assert "window._taxInit" in html
+    assert "taxLoaded" in html
+
+
+def test_dashboard_html_taxonomy_data_injected():
+    graph = {
+        "nodes": [{"id": "u1", "name": "foo", "path": "a.py", "line": 1, "type": "Function"}],
+        "edges": [],
+    }
+    tax = json.dumps({"structure": {"nodes": [], "stats": {}}, "inheritance": {"nodes": [], "edges": [], "roots": [], "stats": {}}, "communities": None})
+    html = _dashboard_html(graph, 0, "[]", "[]", tax, layout="cose")
+
+    # The taxonomy JSON should be injected (not the placeholder)
+    assert "__TAXONOMY_JSON__" not in html
+    assert '"communities":' in html

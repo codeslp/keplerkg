@@ -45,6 +45,51 @@ COMMAND_NAME = "viz-dashboard"
 SCHEMA_FILE = "context.json"
 SUMMARY = "Unified dashboard: 2D graph, 3D graph, embeddings scatter, and TF Projector as tabs."
 
+_CATEGORY_PRINCIPLES: dict[str, str] = {
+    "clarity": "Public interfaces should explain intent and expectations clearly.",
+    "compliance": "Security- and trust-sensitive flows should be controlled, auditable, and safe by default.",
+    "complexity": "Keep units small and focused enough that one reader can understand and test them end to end.",
+    "coupling": "Keep dependencies directional and module boundaries explicit so change stays local.",
+    "dead_code": "Keep the public surface area intentional, discoverable, and actually used.",
+    "inheritance": "Prefer shallow hierarchies and explicit composition over deep inheritance.",
+    "naming": "Names should match behavior and reinforce a consistent vocabulary across the codebase.",
+}
+
+_RULE_PRINCIPLES: dict[str, str] = {
+    "admin_action_no_audit_trail": "Privileged mutations should leave an audit trail so changes remain attributable.",
+    "auth_bypass": "Authorization belongs on the path to sensitive data or state changes, not as an optional convention.",
+    "circular_imports": "Modules should depend in one direction so they stay independently understandable and testable.",
+    "class_too_large": "A class should stay cohesive enough to have one clear reason to change.",
+    "cross_file_private_access": "Respect module boundaries and keep private implementation details private.",
+    "deep_inheritance": "Prefer composition and shallow hierarchies over deep inheritance chains.",
+    "error_handler_leaks_internals": "Failures should be observable without exposing internal implementation details.",
+    "excessive_fan_out": "Keep control flow narrow enough that one function remains easy to reason about.",
+    "function_cyclomatic_complexity": "Keep branching under control so behavior stays understandable and testable.",
+    "function_too_long": "Keep routines short enough that the whole flow fits in one reader's head.",
+    "hardcoded_secret_in_graph": "Secrets must be managed outside source code and outside the graph built from it.",
+    "inconsistent_naming": "Semantically similar behavior should use consistent names so the codebase forms a stable vocabulary.",
+    "misleading_name": "A symbol's name should describe what the code actually does, not what it once did or hoped to do.",
+    "missing_docstring_public": "Public interfaces should document intent, constraints, and expected use.",
+    "module_content_mismatch": "A module name should reflect the work its contents actually perform.",
+    "parameter_count": "Function interfaces should stay small enough that the call contract remains cohesive.",
+    "rate_limit_missing": "External-facing operations should enforce backpressure so one caller cannot overwhelm the system.",
+    "sensitive_data_unprotected": "Sensitive data should be masked, minimized, or encrypted before it leaves trusted boundaries.",
+    "separation_of_duties_violation": "Separate business logic from infrastructure concerns so each layer can evolve safely.",
+    "suggest_better_name": "Prefer names that align with the established vocabulary of similar code.",
+    "test_import_in_prod": "Production code should not depend on test-only helpers, fixtures, or scaffolding.",
+    "unlogged_endpoint": "Request handling should leave an operational trail for debugging, forensics, and accountability.",
+    "unreferenced_public_class": "Unused public APIs create maintenance burden and should not survive by accident.",
+    "unreferenced_public_function": "Unused public APIs create maintenance burden and should not survive by accident.",
+}
+
+
+def _rule_principle(rule_id: str, category: str) -> str:
+    """Return the human-facing quality principle behind a standards rule."""
+    return _RULE_PRINCIPLES.get(rule_id) or _CATEGORY_PRINCIPLES.get(
+        category,
+        "Each rule protects a code-quality boundary so behavior stays understandable, maintainable, and safe to change.",
+    )
+
 
 _DASHBOARD_TEMPLATE = """<!DOCTYPE html>
 <html lang="en">
@@ -164,6 +209,83 @@ _DASHBOARD_TEMPLATE = """<!DOCTYPE html>
   .modal td { padding: 4px 8px; border-bottom: 1px solid #21262d; }
   .modal a { color: #58a6ff; text-decoration: none; }
   .modal a:hover { text-decoration: underline; }
+  .std-offender-table-wrap {
+    width: 100%;
+    max-width: 100%;
+    overflow: hidden;
+    border: 1px solid #21262d;
+    background: #0d1117;
+  }
+  .std-offender-table {
+    width: 100%;
+    max-width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+  }
+  .std-offender-table thead th {
+    position: relative;
+    padding: 4px 8px;
+    border-bottom: 1px solid #21262d;
+    color: #8b949e;
+    font-size: 11px;
+    font-weight: 500;
+    text-align: left;
+    background: #0d1117;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .std-offender-table td {
+    padding: 4px 8px;
+    border-bottom: 1px solid #161b22;
+    color: #8b949e;
+    font-size: 11px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    vertical-align: middle;
+  }
+  .std-offender-table td.std-cell-name {
+    color: #e6edf3;
+    font-family: ui-monospace, SFMono-Regular, monospace;
+  }
+  .std-offender-table td.std-cell-path { font-size: 10px; }
+  .std-offender-table td.std-cell-line,
+  .std-offender-table td.std-cell-metric,
+  .std-offender-table td.std-cell-viz,
+  .std-offender-table th.std-head-line,
+  .std-offender-table th.std-head-metric,
+  .std-offender-table th.std-head-viz {
+    text-align: center;
+  }
+  .std-viz-btn {
+    padding: 2px 6px;
+    font-size: 10px;
+    background: #161b22;
+    color: #58a6ff;
+    border: 1px solid #30363d;
+    cursor: pointer;
+  }
+  .std-viz-btn:hover { border-color: #58a6ff; color: #e6edf3; }
+  .std-col-resizer {
+    position: absolute;
+    top: 0;
+    right: -5px;
+    width: 10px;
+    height: 100%;
+    cursor: col-resize;
+    user-select: none;
+    touch-action: none;
+  }
+  .std-col-resizer::after {
+    content: "";
+    position: absolute;
+    top: 20%;
+    bottom: 20%;
+    left: 4px;
+    width: 1px;
+    background: #30363d;
+  }
 </style>
 </head>
 <body>
@@ -175,6 +297,7 @@ _DASHBOARD_TEMPLATE = """<!DOCTYPE html>
     <button class="tab" data-pane="pane-3d">3D Graph</button>
     <button class="tab" data-pane="pane-embeddings">Embeddings</button>
     <button class="tab" data-pane="pane-standards">Standards</button>
+    <button class="tab" data-pane="pane-taxonomy">Taxonomy</button>
   </div>
   <button type="button" id="about-btn">About</button>
 </div>
@@ -246,6 +369,36 @@ _DASHBOARD_TEMPLATE = """<!DOCTYPE html>
 
       <!-- VIOLATIONS SUB-TAB -->
       <div id="std-violations" style="flex:1;overflow-y:auto;padding:12px 16px">
+        <section class="emb-explainer" id="std-viol-explainer" aria-label="Standards violations guide" style="margin-bottom:12px">
+          <div class="emb-explainer__bar">
+            <div class="emb-explainer__lede">
+              <strong>Each card is one rule that currently fires.</strong> Open a card to inspect the offending symbols, then jump into the 2D graph or the configuration view to understand and tune what you&rsquo;re seeing.
+            </div>
+            <div class="emb-explainer__controls">
+              <button type="button" id="std-viol-explainer-toggle" class="emb-explainer__chevron" aria-expanded="true" aria-controls="std-viol-explainer-body" title="Hide tips"><span class="chev">&#9662;</span></button>
+            </div>
+          </div>
+          <div class="emb-explainer__body" id="std-viol-explainer-body">
+            <div>
+              <h3>What this tab shows</h3>
+              <p><strong>Each card</strong> is one standard that currently fires against the live graph.</p>
+              <p><strong>Severity dot</strong> marks whether the hit is a <kbd>warn</kbd> or <kbd>hard</kbd> finding.</p>
+              <p><strong>Offender count</strong> on the right tells you how many symbols matched that rule.</p>
+            </div>
+            <div>
+              <h3>What the table means</h3>
+              <p><strong>Name / File / Line</strong> identify the offending symbol.</p>
+              <p><strong>Metric</strong> shows the rule-specific value or matched target that caused the hit.</p>
+              <p><strong>2D button</strong> jumps straight to that offender inside the graph view.</p>
+            </div>
+            <div>
+              <h3>What to do next</h3>
+              <p><strong>Open a card</strong> to inspect evidence, suggestion text, and all matched offenders.</p>
+              <p><strong>Configure this rule</strong> jumps to the configuration sub-tab for severity or enablement changes.</p>
+              <p><strong>Header count</strong> summarizes total fired rows across the whole tab.</p>
+            </div>
+          </div>
+        </section>
         <div id="std-viol-body"></div>
       </div>
 
@@ -287,6 +440,102 @@ _DASHBOARD_TEMPLATE = """<!DOCTYPE html>
       let overrides = {};
       let disabled = new Set();
       let collapsedCats = new Set();
+      const offenderColumns = [
+        { key: 'name', label: 'Name', width: '18%', min: 120 },
+        { key: 'file', label: 'File', width: '44%', min: 240 },
+        { key: 'line', label: 'Line', width: '10%', min: 72 },
+        { key: 'metric', label: 'Metric', width: '16%', min: 96 },
+        { key: 'viz', label: 'Viz', width: '12%', min: 72 },
+      ];
+
+      function escapeHtml(value) {
+        return String(value ?? '').replace(/[&<>"']/g, ch => ({
+          '&': '&amp;',
+          '<': '&lt;',
+          '>': '&gt;',
+          '"': '&quot;',
+          "'": '&#39;',
+        }[ch]));
+      }
+
+      function renderOffenderTable(offenders) {
+        const cols = offenderColumns.map(col =>
+          '<col data-col-key="' + col.key + '" data-min-width="' + col.min + '" style="width:' + col.width + '">'
+        ).join('');
+        const heads = offenderColumns.map((col, index) =>
+          '<th class="std-head-' + col.key + '" data-col-key="' + col.key + '">' +
+            escapeHtml(col.label) +
+            (index < offenderColumns.length - 1
+              ? '<span class="std-col-resizer" data-col-resizer="' + col.key + '"></span>'
+              : '') +
+          '</th>'
+        ).join('');
+        const rows = (offenders || []).map(o => {
+          const uid = escapeHtml(o.uid || '');
+          const name = escapeHtml(o.name || '—');
+          const path = escapeHtml(o.path || '—');
+          const line = escapeHtml(o.line_number != null ? o.line_number : '—');
+          const metric = escapeHtml(o.metric_value != null ? o.metric_value : '—');
+          return '<tr>' +
+            '<td class="std-cell-name" title="' + name + '">' + name + '</td>' +
+            '<td class="std-cell-path" title="' + path + '">' + path + '</td>' +
+            '<td class="std-cell-line" title="' + line + '">' + line + '</td>' +
+            '<td class="std-cell-metric" title="' + metric + '">' + metric + '</td>' +
+            '<td class="std-cell-viz">' +
+              '<button class="std-viz-btn" data-viz-id="' + uid + '" data-viz-name="' + name + '" title="Show in 2D graph">2D</button>' +
+            '</td>' +
+          '</tr>';
+        }).join('');
+        return '<div class="std-offender-table-wrap">' +
+          '<table class="std-offender-table" style="table-layout:fixed">' +
+            '<colgroup>' + cols + '</colgroup>' +
+            '<thead><tr>' + heads + '</tr></thead>' +
+            '<tbody>' + rows + '</tbody>' +
+          '</table>' +
+        '</div>';
+      }
+
+      function setupOffenderTableResizers(root) {
+        root.querySelectorAll('.std-offender-table').forEach(table => {
+          if (table.dataset.resizeReady === '1') return;
+          table.dataset.resizeReady = '1';
+          const cols = Array.from(table.querySelectorAll('col[data-col-key]'));
+          const lookup = Object.fromEntries(cols.map((col, index) => [col.dataset.colKey, index]));
+          table.querySelectorAll('[data-col-resizer]').forEach(handle => {
+            handle.addEventListener('mousedown', event => {
+              event.preventDefault();
+              event.stopPropagation();
+              const key = handle.dataset.colResizer;
+              const index = lookup[key];
+              const current = cols[index];
+              const next = cols[index + 1];
+              if (!current || !next) return;
+              const startX = event.clientX;
+              const startCurrent = current.getBoundingClientRect().width;
+              const startNext = next.getBoundingClientRect().width;
+              const minCurrent = Number(current.dataset.minWidth || 72);
+              const minNext = Number(next.dataset.minWidth || 72);
+
+              function onMove(moveEvent) {
+                const rawDelta = moveEvent.clientX - startX;
+                const minDelta = minCurrent - startCurrent;
+                const maxDelta = startNext - minNext;
+                const delta = Math.max(minDelta, Math.min(rawDelta, maxDelta));
+                current.style.width = (startCurrent + delta) + 'px';
+                next.style.width = (startNext - delta) + 'px';
+              }
+
+              function onUp() {
+                window.removeEventListener('mousemove', onMove);
+                window.removeEventListener('mouseup', onUp);
+              }
+
+              window.addEventListener('mousemove', onMove);
+              window.addEventListener('mouseup', onUp);
+            });
+          });
+        });
+      }
 
       // ---- Sub-tab switching ----
       document.querySelectorAll('[data-std-pane]').forEach(btn => {
@@ -339,23 +588,15 @@ _DASHBOARD_TEMPLATE = """<!DOCTYPE html>
           detail.style.cssText = 'display:none;padding:12px 14px;background:#0d1117;border-top:1px solid #21262d';
 
           // Description
-          let desc = '<p style="margin:0 0 8px;font-size:12px;color:#8b949e">' + (rule.summary||v.kind) + '</p>';
-          if (v.suggestion) desc += '<p style="margin:0 0 10px;font-size:11px;color:#7ee787">' + v.suggestion + '</p>';
-          if (rule.evidence) desc += '<p style="margin:0 0 10px;font-size:11px;color:#6e7681;font-style:italic">Evidence: ' + rule.evidence + '</p>';
+          let desc = '<p style="margin:0 0 8px;font-size:12px;color:#8b949e">' + escapeHtml(rule.summary||v.kind) + '</p>';
+          if (rule.principle) {
+            desc += '<p style="margin:0 0 10px;font-size:11px;color:#9ecbff;line-height:1.5"><strong style="color:#58a6ff">Principle:</strong> ' + escapeHtml(rule.principle) + '</p>';
+          }
+          if (v.suggestion) desc += '<p style="margin:0 0 10px;font-size:11px;color:#7ee787">' + escapeHtml(v.suggestion) + '</p>';
+          if (rule.evidence) desc += '<p style="margin:0 0 10px;font-size:11px;color:#6e7681;font-style:italic">Evidence: ' + escapeHtml(rule.evidence) + '</p>';
 
           // Offender list
-          desc += '<table style="width:100%;border-collapse:collapse;font-size:11px;margin-top:4px">';
-          desc += '<tr style="border-bottom:1px solid #21262d;color:#8b949e"><th style="padding:4px 8px;text-align:left">Name</th><th style="padding:4px 8px;text-align:left">File</th><th style="padding:4px 8px;text-align:left">Line</th><th style="padding:4px 8px">Metric</th><th style="padding:4px 8px">Viz</th></tr>';
-          (v.offenders||[]).forEach(o => {
-            desc += '<tr style="border-bottom:1px solid #161b22">' +
-              '<td style="padding:4px 8px;color:#e6edf3;font-family:monospace">' + (o.name||'—') + '</td>' +
-              '<td style="padding:4px 8px;color:#8b949e;font-size:10px">' + (o.path||'—') + '</td>' +
-              '<td style="padding:4px 8px;color:#8b949e">' + (o.line_number||'—') + '</td>' +
-              '<td style="padding:4px 8px;color:#d29922;text-align:center">' + (o.metric_value!=null?o.metric_value:'—') + '</td>' +
-              '<td style="padding:4px 8px;text-align:center"><button data-viz-uid="'+(o.uid||'')+'" data-viz-name="'+(o.name||'')+'" style="padding:2px 6px;font-size:10px;background:#161b22;color:#58a6ff;border:1px solid #30363d;border-radius:3px;cursor:pointer" title="Show in 2D graph">&#x1F50D;</button></td>' +
-              '</tr>';
-          });
-          desc += '</table>';
+          desc += renderOffenderTable(v.offenders || []);
 
           // Link to config tab
           desc += '<div style="margin-top:10px"><button data-goto-config="'+v.standard_id+'" style="padding:4px 10px;font-size:11px;background:#161b22;color:#58a6ff;border:1px solid #30363d;border-radius:4px;cursor:pointer">Configure this rule &rarr;</button></div>';
@@ -374,9 +615,12 @@ _DASHBOARD_TEMPLATE = """<!DOCTYPE html>
         });
 
         // Wire viz buttons
-        body.querySelectorAll('[data-viz-uid]').forEach(btn => {
+        setupOffenderTableResizers(body);
+
+        body.querySelectorAll('[data-viz-id]').forEach(btn => {
           btn.addEventListener('click', (e) => {
             e.stopPropagation();
+            const id = btn.dataset.vizId;
             const name = btn.dataset.vizName;
             // Switch to 2D tab and highlight
             const tab2d = document.querySelector('[data-pane="pane-2d"]');
@@ -385,7 +629,7 @@ _DASHBOARD_TEMPLATE = """<!DOCTYPE html>
             const iframe2d = document.getElementById('iframe-2d');
             if (iframe2d && iframe2d.contentWindow) {
               setTimeout(() => {
-                iframe2d.contentWindow.postMessage({type:'highlight',name:name}, '*');
+                iframe2d.contentWindow.postMessage({type:'highlight',id:id,name:name}, '*');
               }, 500);
             }
           });
@@ -502,7 +746,375 @@ _DASHBOARD_TEMPLATE = """<!DOCTYPE html>
         const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='kkg-standards.toml';a.click();
       });
 
+      const stdViolExplainer = document.getElementById('std-viol-explainer');
+      const stdViolExplainerToggle = document.getElementById('std-viol-explainer-toggle');
+      if (stdViolExplainer && stdViolExplainerToggle) {
+        stdViolExplainerToggle.addEventListener('click', () => {
+          const collapsed = stdViolExplainer.classList.toggle('collapsed');
+          stdViolExplainerToggle.setAttribute('aria-expanded', String(!collapsed));
+          stdViolExplainerToggle.setAttribute('title', collapsed ? 'Show tips' : 'Hide tips');
+        });
+      }
+
       window._stdInit = function() { renderViolations(); renderTable(); };
+    })();
+    </script>
+  </div>
+  <!-- ═══ TAXONOMY TAB ═══ -->
+  <div class="pane" id="pane-taxonomy">
+    <div style="display:flex;flex-direction:column;width:100%;height:100%;position:absolute;inset:0;font-family:'Antic',sans-serif;color:#c9d1d9">
+      <div style="display:flex;align-items:center;gap:0;background:#0d1117;border-bottom:2px solid #30363d;flex-shrink:0;padding:0 12px">
+        <button class="tab active" data-tax-pane="tax-structure" style="padding:8px 16px;font-size:13px;color:#58a6ff;background:transparent;border:none;border-bottom:2px solid #58a6ff;cursor:pointer;margin-bottom:-2px">Structure</button>
+        <button class="tab" data-tax-pane="tax-inheritance" style="padding:8px 16px;font-size:13px;color:#8b949e;background:transparent;border:none;border-bottom:2px solid transparent;cursor:pointer;margin-bottom:-2px">Inheritance</button>
+        <button class="tab" data-tax-pane="tax-communities" style="padding:8px 16px;font-size:13px;color:#8b949e;background:transparent;border:none;border-bottom:2px solid transparent;cursor:pointer;margin-bottom:-2px">Communities</button>
+        <span style="flex:1"></span>
+        <input id="tax-search" type="text" placeholder="Search nodes..." style="padding:4px 8px;background:#161b22;color:#c9d1d9;border:1px solid #30363d;font-size:12px;width:160px;font-family:inherit">
+        <span id="tax-stats" style="font-size:11px;color:#8b949e;margin-left:12px"></span>
+      </div>
+
+      <!-- STRUCTURE SUB-TAB -->
+      <div id="tax-structure" style="flex:1;position:relative">
+        <div id="tax-structure-cy" style="position:absolute;inset:0;background:#0d1117"></div>
+        <div style="position:absolute;bottom:16px;left:16px;display:flex;gap:12px;align-items:center;background:rgba(13,17,23,0.85);padding:6px 12px;border:1px solid #30363d;font-size:11px;color:#8b949e">
+          <label>Depth <input type="range" id="tax-depth" min="1" max="5" value="3" style="width:80px;vertical-align:middle"> <span id="tax-depth-val">3</span></label>
+        </div>
+        <div id="tax-structure-legend" style="position:absolute;top:12px;right:12px;background:rgba(13,17,23,0.85);padding:8px 12px;border:1px solid #30363d;font-size:10px;color:#8b949e;display:flex;flex-direction:column;gap:2px"></div>
+      </div>
+
+      <!-- INHERITANCE SUB-TAB -->
+      <div id="tax-inheritance" style="flex:1;position:relative;display:none">
+        <div id="tax-inheritance-cy" style="position:absolute;inset:0;background:#0d1117"></div>
+        <div id="tax-inh-stats" style="position:absolute;top:12px;right:12px;background:rgba(13,17,23,0.85);padding:8px 12px;border:1px solid #30363d;font-size:11px;color:#8b949e"></div>
+      </div>
+
+      <!-- COMMUNITIES SUB-TAB -->
+      <div id="tax-communities" style="flex:1;position:relative;display:none">
+        <div id="tax-communities-cy" style="position:absolute;inset:0;background:#0d1117"></div>
+        <div id="tax-comm-stats" style="position:absolute;top:12px;right:12px;background:rgba(13,17,23,0.85);padding:8px 12px;border:1px solid #30363d;font-size:11px;color:#8b949e"></div>
+        <div id="tax-comm-legend" style="position:absolute;top:12px;left:12px;background:rgba(13,17,23,0.85);padding:8px 12px;border:1px solid #30363d;font-size:10px;color:#8b949e;display:flex;flex-direction:column;gap:2px;max-height:40%;overflow-y:auto"></div>
+      </div>
+    </div>
+
+    <script>
+    (function() {
+      const taxonomyData = __TAXONOMY_JSON__;
+      const TAX_COLORS = {
+        Repository:'#f0883e', Directory:'#d29922', File:'#8b949e', Module:'#f778ba',
+        Class:'#d2a8ff', Function:'#7ee787', Variable:'#79c0ff', Interface:'#58a6ff',
+        Struct:'#f778ba', Enum:'#ff7b72', Trait:'#a5d6ff', Macro:'#ffa657',
+        Union:'#ff7b72', Annotation:'#d2a8ff', Record:'#f778ba', Property:'#79c0ff',
+      };
+      const TAX_SIZES = {
+        Repository:28, Directory:22, File:16, Module:14,
+        Class:14, Function:10, Variable:8, Interface:14,
+      };
+
+      // ── Sub-tab switching ──
+      document.querySelectorAll('[data-tax-pane]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('[data-tax-pane]').forEach(b => {
+            b.style.color='#8b949e'; b.style.borderBottomColor='transparent'; b.classList.remove('active');
+          });
+          btn.style.color='#58a6ff'; btn.style.borderBottomColor='#58a6ff'; btn.classList.add('active');
+          document.getElementById('tax-structure').style.display = btn.dataset.taxPane==='tax-structure'?'block':'none';
+          document.getElementById('tax-inheritance').style.display = btn.dataset.taxPane==='tax-inheritance'?'block':'none';
+          document.getElementById('tax-communities').style.display = btn.dataset.taxPane==='tax-communities'?'flex':'none';
+        });
+      });
+
+      // ── Lazy Cytoscape loader ──
+      function loadScript(src, cb) {
+        const s = document.createElement('script');
+        s.src = src; s.onload = cb; document.head.appendChild(s);
+      }
+
+      function initTaxonomyViews() {
+        if (typeof cytoscapeDagre !== 'undefined') cytoscape.use(cytoscapeDagre);
+        initStructureView();
+        initInheritanceView();
+        initCommunitiesView();
+      }
+
+      // ── Structure view ──
+      function initStructureView() {
+        const data = taxonomyData && taxonomyData.structure;
+        if (!data || !data.nodes || data.nodes.length === 0) {
+          document.getElementById('tax-structure-cy').innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#8b949e">No structure data. Index a repository first.</div>';
+          return;
+        }
+
+        const depthSlider = document.getElementById('tax-depth');
+        const depthVal = document.getElementById('tax-depth-val');
+        const statsEl = document.getElementById('tax-stats');
+        const legendEl = document.getElementById('tax-structure-legend');
+
+        // Compute depth per node
+        const parentMap = {};
+        data.nodes.forEach(n => { parentMap[n.id] = n.parent; });
+        const depthCache = {};
+        function nodeDepth(id) {
+          if (depthCache[id] !== undefined) return depthCache[id];
+          let d = 0, cur = id;
+          while (parentMap[cur]) { d++; cur = parentMap[cur]; if (d > 10) break; }
+          depthCache[id] = d;
+          return d;
+        }
+
+        let maxDepth = parseInt(depthSlider.value);
+
+        function buildElements() {
+          const visible = data.nodes.filter(n => nodeDepth(n.id) <= maxDepth);
+          const visibleIds = new Set(visible.map(n => n.id));
+          return visible.map(n => ({
+            data: {
+              id: n.id, label: n.label, type: n.type,
+              parent: (n.parent && visibleIds.has(n.parent)) ? n.parent : undefined,
+              path: n.path, line: n.line,
+            }
+          }));
+        }
+
+        function updateStats() {
+          const s = data.stats;
+          const parts = Object.entries(s).map(([k,v]) => v + ' ' + k);
+          statsEl.textContent = parts.join(' · ');
+        }
+
+        // Legend
+        const seenTypes = new Set(data.nodes.map(n => n.type));
+        legendEl.innerHTML = Array.from(seenTypes).sort().map(t =>
+          '<div><span style="display:inline-block;width:8px;height:8px;background:' +
+          (TAX_COLORS[t]||'#8b949e') + ';margin-right:6px"></span>' + t + '</div>'
+        ).join('');
+
+        const cy = cytoscape({
+          container: document.getElementById('tax-structure-cy'),
+          elements: buildElements(),
+          style: [
+            { selector: 'node', style: {
+              'background-color': function(ele) { return TAX_COLORS[ele.data('type')] || '#8b949e'; },
+              'label': 'data(label)', 'font-size': 9, 'color': '#8b949e',
+              'text-halign': 'center', 'text-valign': 'bottom',
+              'width': function(ele) { return TAX_SIZES[ele.data('type')] || 10; },
+              'height': function(ele) { return TAX_SIZES[ele.data('type')] || 10; },
+            }},
+            { selector: ':parent', style: {
+              'background-opacity': 0.06, 'border-width': 1,
+              'border-color': function(ele) { return TAX_COLORS[ele.data('type')] || '#30363d'; },
+              'text-valign': 'top', 'text-halign': 'center', 'font-size': 10,
+              'color': function(ele) { return TAX_COLORS[ele.data('type')] || '#8b949e'; },
+            }},
+            { selector: '.faded', style: { opacity: 0.08 }},
+            { selector: '.hit', style: { opacity: 1, 'z-index': 10 }},
+          ],
+          layout: { name: 'dagre', rankDir: 'TB', animate: false, spacingFactor: 1.1 },
+          minZoom: 0.1, maxZoom: 4,
+        });
+
+        updateStats();
+
+        depthSlider.addEventListener('input', function() {
+          maxDepth = parseInt(this.value);
+          depthVal.textContent = maxDepth;
+          cy.json({ elements: buildElements() });
+          cy.layout({ name: 'dagre', rankDir: 'TB', animate: false, spacingFactor: 1.1 }).run();
+        });
+
+        // Click → highlight subtree
+        cy.on('tap', 'node', function(e) {
+          cy.elements().removeClass('faded hit');
+          cy.elements().addClass('faded');
+          const target = e.target;
+          const subtree = target.union(target.descendants());
+          subtree.removeClass('faded').addClass('hit');
+        });
+        cy.on('tap', function(e) { if (e.target === cy) cy.elements().removeClass('faded hit'); });
+
+        // Search
+        const searchInput = document.getElementById('tax-search');
+        searchInput.addEventListener('input', function() {
+          const q = this.value.trim().toLowerCase();
+          cy.elements().removeClass('faded hit');
+          if (!q) return;
+          const matches = cy.nodes().filter(n => (n.data('label')||'').toLowerCase().includes(q));
+          if (matches.length === 0) return;
+          cy.elements().addClass('faded');
+          matches.union(matches.ancestors()).removeClass('faded').addClass('hit');
+        });
+      }
+
+      // ── Inheritance view ──
+      function initInheritanceView() {
+        const data = taxonomyData && taxonomyData.inheritance;
+        if (!data || !data.nodes || data.nodes.length === 0) {
+          document.getElementById('tax-inheritance-cy').innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#8b949e">No inheritance relationships found.</div>';
+          return;
+        }
+
+        const statsEl = document.getElementById('tax-inh-stats');
+        const s = data.stats;
+        statsEl.innerHTML = s.trees + ' tree(s) · ' + s.total_nodes + ' nodes · ' +
+          s.inherits_edges + ' inherits · ' + s.implements_edges + ' implements';
+
+        const elements = [
+          ...data.nodes.map(n => ({
+            data: { id: n.id, label: n.label, type: n.type, path: n.path, line: n.line }
+          })),
+          ...data.edges.map((e, i) => ({
+            data: { id: 'inh-e-' + i, source: e.source, target: e.target, edgeType: e.type }
+          })),
+        ];
+
+        const cy = cytoscape({
+          container: document.getElementById('tax-inheritance-cy'),
+          elements: elements,
+          style: [
+            { selector: 'node', style: {
+              'background-color': function(ele) { return TAX_COLORS[ele.data('type')] || '#8b949e'; },
+              'label': 'data(label)', 'font-size': 10, 'color': '#c9d1d9',
+              'text-halign': 'center', 'text-valign': 'bottom',
+              'width': 14, 'height': 14,
+            }},
+            { selector: 'edge', style: {
+              'line-color': function(ele) { return ele.data('edgeType')==='INHERITS' ? '#d2a8ff' : '#58a6ff'; },
+              'target-arrow-shape': 'triangle',
+              'target-arrow-color': function(ele) { return ele.data('edgeType')==='INHERITS' ? '#d2a8ff' : '#58a6ff'; },
+              'curve-style': 'straight', 'width': 2, 'opacity': 0.7,
+            }},
+            { selector: '.faded', style: { opacity: 0.08 }},
+            { selector: '.hit', style: { opacity: 1, 'z-index': 10 }},
+          ],
+          layout: { name: 'dagre', rankDir: 'BT', animate: false, spacingFactor: 1.2 },
+          minZoom: 0.1, maxZoom: 4,
+        });
+
+        cy.on('tap', 'node', function(e) {
+          cy.elements().removeClass('faded hit');
+          cy.elements().addClass('faded');
+          e.target.closedNeighborhood().removeClass('faded').addClass('hit');
+        });
+        cy.on('tap', function(e) { if (e.target === cy) cy.elements().removeClass('faded hit'); });
+      }
+
+      // ── Communities view ──
+      function initCommunitiesView() {
+        const data = taxonomyData && taxonomyData.communities;
+        if (!data || !data.communities || data.communities.length === 0) {
+          document.getElementById('tax-communities-cy').innerHTML =
+            '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#8b949e">' +
+            'No community data. Run <code style="background:#161b22;padding:2px 6px;border:1px solid #30363d">kkg embed</code> first to enable semantic community detection.</div>';
+          return;
+        }
+
+        const COMM_PALETTE = [
+          '#7ee787','#58a6ff','#d2a8ff','#f0883e','#f778ba',
+          '#ff7b72','#d29922','#a5d6ff','#79c0ff','#ffa657',
+          '#8b949e','#7ee787','#58a6ff','#d2a8ff','#f0883e',
+        ];
+
+        const statsEl = document.getElementById('tax-comm-stats');
+        const legendEl = document.getElementById('tax-comm-legend');
+        const s = data.stats;
+        statsEl.innerHTML = s.communities + ' communities &middot; ' + s.total_nodes + ' nodes &middot; ' +
+          s.structural_edges + ' structural &middot; ' + s.semantic_edges + ' semantic &middot; ' +
+          s.cross_community_edges + ' cross-boundary';
+
+        // Build community color map
+        const nodeToComm = {};
+        data.communities.forEach(c => {
+          c.members.forEach(m => { nodeToComm[m.uid] = c.id; });
+        });
+
+        // Legend
+        legendEl.innerHTML = data.communities.map(c =>
+          '<div><span style="display:inline-block;width:8px;height:8px;background:' +
+          COMM_PALETTE[c.id % COMM_PALETTE.length] + ';margin-right:6px"></span>' +
+          'Community ' + c.id + ' (' + c.size + ')</div>'
+        ).join('');
+
+        // Build Cytoscape elements — nodes colored by community
+        const nodeSet = new Set();
+        const elements = [];
+        data.communities.forEach(c => {
+          c.members.forEach(m => {
+            if (!nodeSet.has(m.uid)) {
+              nodeSet.add(m.uid);
+              elements.push({
+                data: { id: m.uid, label: m.name, community: c.id, type: m.type, path: m.path }
+              });
+            }
+          });
+        });
+        data.edges.forEach((e, i) => {
+          if (nodeSet.has(e.source) && nodeSet.has(e.target)) {
+            elements.push({
+              data: {
+                id: 'comm-e-' + i, source: e.source, target: e.target,
+                edgeType: e.type, provenance: e.provenance, confidence: e.confidence,
+              }
+            });
+          }
+        });
+
+        const cy = cytoscape({
+          container: document.getElementById('tax-communities-cy'),
+          elements: elements,
+          style: [
+            { selector: 'node', style: {
+              'background-color': function(ele) {
+                return COMM_PALETTE[ele.data('community') % COMM_PALETTE.length];
+              },
+              'label': 'data(label)', 'font-size': 9, 'color': '#8b949e',
+              'text-halign': 'center', 'text-valign': 'bottom',
+              'width': 10, 'height': 10,
+            }},
+            { selector: 'edge', style: {
+              'line-color': function(ele) {
+                if (ele.data('provenance') === 'inferred') return '#d29922';
+                return '#30363d';
+              },
+              'width': function(ele) {
+                return ele.data('provenance') === 'inferred' ? 2 : 1;
+              },
+              'opacity': 0.4, 'curve-style': 'straight',
+            }},
+            { selector: '.faded', style: { opacity: 0.06 }},
+            { selector: '.hit', style: { opacity: 1, 'z-index': 10 }},
+          ],
+          layout: { name: 'cose', animate: false, nodeRepulsion: function() { return 8000; },
+                    idealEdgeLength: function() { return 80; }, numIter: 500 },
+          minZoom: 0.1, maxZoom: 4,
+        });
+
+        // Click community node → highlight its community
+        cy.on('tap', 'node', function(e) {
+          const comm = e.target.data('community');
+          cy.elements().removeClass('faded hit');
+          cy.elements().addClass('faded');
+          cy.nodes().filter(n => n.data('community') === comm).removeClass('faded').addClass('hit');
+          cy.edges().filter(edge => {
+            const src = nodeToComm[edge.data('source')];
+            const tgt = nodeToComm[edge.data('target')];
+            return src === comm || tgt === comm;
+          }).removeClass('faded').addClass('hit');
+        });
+        cy.on('tap', function(e) { if (e.target === cy) cy.elements().removeClass('faded hit'); });
+      }
+
+      // ── Lazy init entry point ──
+      window._taxInit = function() {
+        if (typeof cytoscape === 'undefined') {
+          loadScript('https://unpkg.com/cytoscape@3.28.1/dist/cytoscape.min.js', function() {
+            loadScript('https://unpkg.com/dagre@0.8.5/dist/dagre.min.js', function() {
+              loadScript('https://unpkg.com/cytoscape-dagre@2.5.0/cytoscape-dagre.js', function() {
+                initTaxonomyViews();
+              });
+            });
+          });
+        } else {
+          initTaxonomyViews();
+        }
+      };
     })();
     </script>
   </div>
@@ -536,7 +1148,7 @@ _DASHBOARD_TEMPLATE = """<!DOCTYPE html>
   </div>
 </div>
 <script>
-const tabs = document.querySelectorAll(".tab");
+const tabs = document.querySelectorAll("#tab-bar .tab");
 const panes = document.querySelectorAll(".pane");
 
 // Projector pane state.
@@ -546,6 +1158,7 @@ const embIframe = document.getElementById("emb-iframe");
 let embLoaded = false;
 let embAdvanced = false;
 let stdLoaded = false;
+let taxLoaded = false;
 
 function loadEmbIframe() {
   embIframe.src = embAdvanced ? "projector/?advanced=1" : "projector/";
@@ -581,6 +1194,10 @@ tabs.forEach(tab => {
       if (window._stdInit) window._stdInit();
       stdLoaded = true;
     }
+    if (tab.dataset.pane === "pane-taxonomy" && !taxLoaded) {
+      if (window._taxInit) window._taxInit();
+      taxLoaded = true;
+    }
   });
 });
 
@@ -615,6 +1232,7 @@ def _dashboard_html(
     emb_count: int,
     standards_json: str,
     violations_json: str = "[]",
+    taxonomy_json: str = "null",
     *,
     layout: str,
 ) -> str:
@@ -635,6 +1253,7 @@ def _dashboard_html(
     out = out.replace("__IFRAME_3D__", iframe_3d)
     out = out.replace("__STANDARDS_JSON__", standards_json)
     out = out.replace("__VIOLATIONS_JSON__", violations_json)
+    out = out.replace("__TAXONOMY_JSON__", taxonomy_json)
     return out
 
 
@@ -652,6 +1271,7 @@ def _load_standards_json() -> str:
                 "summary": r.summary,
                 "suggestion": r.suggestion,
                 "evidence": r.evidence,
+                "principle": _rule_principle(r.id, r.category),
                 "thresholds": r.thresholds,
             }
             for r in rules
@@ -701,7 +1321,16 @@ def _prepare_dashboard_serve_dir(
         violations_json = _run_audit_for_viz(audit_conn)
     except Exception:
         pass
-    html = _dashboard_html(graph, len(emb_nodes), standards_json, violations_json, layout=layout)
+
+    tax_json = "null"
+    try:
+        from .viz_taxonomy import taxonomy_json as _taxonomy_json
+        tax_conn = get_kuzu_connection()
+        tax_json = _taxonomy_json(tax_conn, limit=limit)
+    except Exception:
+        pass
+
+    html = _dashboard_html(graph, len(emb_nodes), standards_json, violations_json, tax_json, layout=layout)
     (serve_dir / "index.html").write_text(html, encoding="utf-8")
 
     projector_dir = serve_dir / "projector"

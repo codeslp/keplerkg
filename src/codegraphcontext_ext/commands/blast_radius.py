@@ -19,6 +19,7 @@ import typer
 
 from ..io.json_stdout import emit_json
 from ..io.kuzu import get_kuzu_connection
+from ..project import PROJECT_OPTION_HELP, activate_project
 
 COMMAND_NAME = "blast-radius"
 SCHEMA_FILE = "blast-radius.json"
@@ -573,12 +574,18 @@ def blast_radius_command(
         min=1,
         help="Max hops for transitive caller/callee BFS (default 5).",
     ),
+    project: Optional[str] = typer.Option(
+        None,
+        "--project",
+        help=PROJECT_OPTION_HELP,
+    ),
 ) -> None:
     """Pre-lock collision check: expand file paths through the code graph.
 
     Reports transitive callers and callees outside the requested scope,
     cross-module impact, and overlap with other active btrain lanes.
     """
+    activate_project(project)
     file_list = [f.strip() for f in files.split(",") if f.strip()]
     if not file_list:
         typer.echo(emit_json({

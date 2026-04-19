@@ -17,6 +17,7 @@ from typing import Any
 EMBEDDABLE_TABLES = ("Function", "Class")
 
 EMBEDDING_COLUMN = "embedding"
+NAME_EMBEDDING_COLUMN = "name_embedding"
 
 
 def ensure_embedding_columns(conn: Any, dimensions: int) -> list[dict[str, object]]:
@@ -58,6 +59,45 @@ def ensure_embedding_columns(conn: Any, dimensions: int) -> list[dict[str, objec
     return results
 
 
+def ensure_name_embedding_columns(conn: Any, dimensions: int) -> list[dict[str, object]]:
+    """Add name_embedding FLOAT[N] columns to embeddable node tables.
+
+    Mirrors ensure_embedding_columns for the name-only embedding used by
+    naming-analysis standards (CGQ-F01 through F04).
+    """
+    results: list[dict[str, object]] = []
+    for table in EMBEDDABLE_TABLES:
+        try:
+            conn.execute(
+                f"ALTER TABLE `{table}` ADD `{NAME_EMBEDDING_COLUMN}` FLOAT[{dimensions}]"
+            )
+            results.append({
+                "table": table,
+                "action": "created",
+                "detail": f"Added {NAME_EMBEDDING_COLUMN} FLOAT[{dimensions}]",
+            })
+            print(f"Added {NAME_EMBEDDING_COLUMN} column to {table}", file=sys.stderr)
+        except Exception as exc:
+            msg = str(exc).lower()
+            if "already exists" in msg or "exist" in msg:
+                results.append({
+                    "table": table,
+                    "action": "exists",
+                    "detail": f"{NAME_EMBEDDING_COLUMN} column already present",
+                })
+            else:
+                results.append({
+                    "table": table,
+                    "action": "error",
+                    "detail": str(exc),
+                })
+                print(
+                    f"Warning: could not add {NAME_EMBEDDING_COLUMN} to {table}: {exc}",
+                    file=sys.stderr,
+                )
+    return results
+
+
 def ensure_hnsw_indexes(conn: Any, dimensions: int) -> list[dict[str, object]]:
     """Create HNSW indexes on embedding columns for ANN search.
 
@@ -69,6 +109,42 @@ def ensure_hnsw_indexes(conn: Any, dimensions: int) -> list[dict[str, object]]:
         try:
             conn.execute(
                 f"CREATE HNSW INDEX `{index_name}` ON `{table}` (`{EMBEDDING_COLUMN}`)"
+            )
+            results.append({
+                "table": table,
+                "action": "created",
+                "detail": f"HNSW index {index_name} created",
+            })
+            print(f"Created HNSW index {index_name}", file=sys.stderr)
+        except Exception as exc:
+            msg = str(exc).lower()
+            if "already exists" in msg or "exist" in msg:
+                results.append({
+                    "table": table,
+                    "action": "exists",
+                    "detail": f"HNSW index {index_name} already present",
+                })
+            else:
+                results.append({
+                    "table": table,
+                    "action": "error",
+                    "detail": str(exc),
+                })
+                print(
+                    f"Warning: could not create HNSW index on {table}: {exc}",
+                    file=sys.stderr,
+                )
+    return results
+
+
+def ensure_name_hnsw_indexes(conn: Any, dimensions: int) -> list[dict[str, object]]:
+    """Create HNSW indexes on name_embedding columns for ANN search."""
+    results: list[dict[str, object]] = []
+    for table in EMBEDDABLE_TABLES:
+        index_name = f"{table.lower()}_name_embedding_hnsw"
+        try:
+            conn.execute(
+                f"CREATE HNSW INDEX `{index_name}` ON `{table}` (`{NAME_EMBEDDING_COLUMN}`)"
             )
             results.append({
                 "table": table,

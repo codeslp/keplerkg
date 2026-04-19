@@ -19,6 +19,7 @@ import typer
 
 from ..io.json_stdout import emit_json
 from ..io.kuzu import get_kuzu_connection
+from ..project import PROJECT_OPTION_HELP, activate_project
 
 COMMAND_NAME = "drift-check"
 SCHEMA_FILE = "drift-check.json"
@@ -262,8 +263,14 @@ def drift_check_command(
         "--lane",
         help="btrain lane id (for output labeling).",
     ),
+    project: Optional[str] = typer.Option(
+        None,
+        "--project",
+        help=PROJECT_OPTION_HELP,
+    ),
 ) -> None:
     """Check if graph neighbors of locked files have changed since a timestamp."""
+    activate_project(project)
     file_list = [f.strip() for f in files.split(",") if f.strip()]
 
     if not since:

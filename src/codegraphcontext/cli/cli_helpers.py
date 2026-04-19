@@ -53,6 +53,13 @@ def _initialize_services(cli_context_flag: Optional[str] = None) -> tuple[Any, A
         # Override the database backend with the context's specific choice
         if ctx.database:
             os.environ['CGC_RUNTIME_DB_TYPE'] = ctx.database
+
+        # Spec 004 project targeting: when the active backend is KùzuDB and a
+        # project-scoped KUZUDB_PATH is already exported by the CLI wrapper,
+        # prefer it over the context registry's global path.
+        project_db_path = os.environ.get("KUZUDB_PATH")
+        if ctx.database and ctx.database.lower() == "kuzudb" and project_db_path:
+            ctx.db_path = project_db_path
         
         # Pass the exact DB path resolved from the context
         db_manager = get_database_manager(db_path=ctx.db_path)

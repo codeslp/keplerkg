@@ -12,6 +12,7 @@ from ..embeddings.fetch import fetch_embedded_nodes
 from ..embeddings.runtime import probe_backend_support
 from ..io.json_stdout import emit_json
 from ..io.kuzu import get_kuzu_connection
+from ..project import PROJECT_OPTION_HELP, activate_project
 
 COMMAND_NAME = "export-embeddings"
 SCHEMA_FILE = "context.json"
@@ -58,8 +59,14 @@ def export_embeddings_command(
         "--output-dir", "-d",
         help="Directory for the output files.  Defaults to the current working directory.",
     ),
+    project: Optional[str] = typer.Option(
+        None,
+        "--project",
+        help=PROJECT_OPTION_HELP,
+    ),
 ) -> None:
     """Export embeddings as TSV files for projector.tensorflow.org."""
+    activate_project(project)
 
     backend_payload = probe_backend_support()
     if not backend_payload["ok"]:

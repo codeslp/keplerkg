@@ -21,6 +21,7 @@ from codegraphcontext.cli.config_manager import DEFAULT_CGCIGNORE_PATTERNS
 from codegraphcontext.core.cgcignore import find_cgcignore, parse_cgcignore_lines
 from ..io.json_stdout import emit_json
 from ..io.kuzu import get_kuzu_connection
+from ..project import PROJECT_OPTION_HELP, activate_project
 
 COMMAND_NAME = "review-packet"
 SCHEMA_FILE = "review-packet.json"
@@ -996,8 +997,14 @@ def review_packet_command(
         min=1,
         help="Per-bucket node cap (default 50).",
     ),
+    project: Optional[str] = typer.Option(
+        None,
+        "--project",
+        help=PROJECT_OPTION_HELP,
+    ),
 ) -> None:
     """Generate a reviewer JSON packet with blast radius and advisories."""
+    activate_project(project)
 
     # Validate conflicting include flags
     forced = sum([include_staged, include_workdir, include_untracked])

@@ -93,6 +93,19 @@ console = Console(stderr=True)
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(name)s - %(message)s')
 
 
+def _activate_project_target(project: Optional[str], *, start_dir: Optional[Path] = None) -> None:
+    """Route the current CLI process to a project-specific Kuzu store."""
+    if project is None and start_dir is None:
+        return
+
+    try:
+        from codegraphcontext_ext.project import activate_project
+    except ImportError:
+        return
+
+    activate_project(project, start_dir=start_dir)
+
+
 def get_version() -> str:
     """
     Try to read version from the installed package metadata.
@@ -971,6 +984,11 @@ def index(
     path: Optional[str] = typer.Argument(None, help="Path to the directory or file to index. Defaults to the current directory."),
     force: bool = typer.Option(False, "--force", "-f", help="Force re-index (delete existing and rebuild)"),
     context: Optional[str] = typer.Option(None, "--context", "-c", help="Specific context to use (overrides mode/default)"),
+    project: Optional[str] = typer.Option(
+        None,
+        "--project",
+        help="Target project slug. Routes KUZUDB_PATH to /Volumes/zombie/cgraph/db/<slug>/kuzudb.",
+    ),
 ):
     """
     Indexes a directory or file by adding it to the code graph.
@@ -981,7 +999,8 @@ def index(
     _load_credentials()
     if path is None:
         path = str(Path.cwd())
-    
+    _activate_project_target(project, start_dir=Path(path))
+
     if force:
         console.print("[yellow]Force re-indexing (--force flag detected)[/yellow]")
         reindex_helper(path, context)
@@ -1144,6 +1163,11 @@ def add_package(
 def watch(
     path: str = typer.Argument(".", help="Path to the directory to watch. Defaults to current directory."),
     context: Optional[str] = typer.Option(None, "--context", "-c", help="Specific context to use"),
+    project: Optional[str] = typer.Option(
+        None,
+        "--project",
+        help="Target project slug. Routes KUZUDB_PATH to /Volumes/zombie/cgraph/db/<slug>/kuzudb.",
+    ),
 ):
     """
     Watch a directory for file changes and automatically update the code graph.
@@ -1165,6 +1189,7 @@ def watch(
         cgc w .                        # Using shortcut alias
     """
     _load_credentials()
+    _activate_project_target(project, start_dir=Path(path))
     watch_helper(path, context)
 
 @app.command()
@@ -2265,10 +2290,15 @@ def cypher_legacy(
 def index_abbrev(
     path: Optional[str] = typer.Argument(None, help="Path to index"),
     force: bool = typer.Option(False, "--force", "-f", help="Force re-index (delete existing and rebuild)"),
-    context: Optional[str] = typer.Option(None, "--context", "-c", help="Specific context to use")
+    context: Optional[str] = typer.Option(None, "--context", "-c", help="Specific context to use"),
+    project: Optional[str] = typer.Option(
+        None,
+        "--project",
+        help="Target project slug. Routes KUZUDB_PATH to /Volumes/zombie/cgraph/db/<slug>/kuzudb.",
+    ),
 ):
     """Shortcut for 'cgc index'"""
-    index(path, force=force, context=context)
+    index(path, force=force, context=context, project=project)
 
 @app.command("ls", rich_help_panel="Shortcuts")
 def list_abbrev(
@@ -2300,9 +2330,14 @@ def visualize_abbrev(
 def watch_abbrev(
     path: str = typer.Argument(".", help="Path to watch"),
     context: Optional[str] = typer.Option(None, "--context", "-c", help="Specific context to use"),
+    project: Optional[str] = typer.Option(
+        None,
+        "--project",
+        help="Target project slug. Routes KUZUDB_PATH to /Volumes/zombie/cgraph/db/<slug>/kuzudb.",
+    ),
 ):
     """Shortcut for 'cgc watch'"""
-    watch(path, context=context)
+    watch(path, context=context, project=project)
 
 
 # ============================================================================

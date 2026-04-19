@@ -21,6 +21,7 @@ import typer
 from ..config import resolve_cgraph_config, StandardsConfig, STANDARDS_PRESETS
 from ..io.json_stdout import emit_json
 from ..io.kuzu import get_kuzu_connection
+from ..project import PROJECT_OPTION_HELP, activate_project
 from ..standards.loader import (
     RuleResult,
     load_exemptions,
@@ -182,6 +183,19 @@ def build_audit_payload(
             "error": error_msg,
         }
 
+    # Wire up embedding provider for naming rules (F03 needs live embedding)
+    if any(r.detection_method == "embedding" for r in rules):
+        try:
+            from ..embeddings.runtime import resolve_embedding_config
+            from ..embeddings.providers import create_provider
+            from ..standards.naming_rules import set_provider
+            emb_config = resolve_embedding_config(
+                provider=None, model=None, dimensions=None,
+            )
+            set_provider(create_provider(emb_config))
+        except Exception:
+            pass  # Embedding rules degrade gracefully
+
     exemptions = load_exemptions(std_dir)
     for rule in rules:
         result = run_rule(conn, rule, exemptions)
@@ -298,8 +312,15 @@ def audit_command(
         "--format",
         help="Output format: json, summary.",
     ),
+    project: Optional[str] = typer.Option(
+        None,
+        "--project",
+        help=PROJECT_OPTION_HELP,
+    ),
 ) -> None:
     """Run code-quality standards against the graph."""
+    activate_project(project)
+
     if list_standards:
         payload = build_list_payload()
         typer.echo(emit_json(payload))
