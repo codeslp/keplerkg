@@ -236,71 +236,171 @@ _DASHBOARD_TEMPLATE = """<!DOCTYPE html>
   </div>
   <div class="pane" id="pane-standards">
     <div style="display:flex;flex-direction:column;width:100%;height:100%;position:absolute;inset:0;font-family:'Antic',sans-serif;color:#c9d1d9">
-      <section class="emb-explainer" id="std-explainer" aria-label="Standards guide">
-        <div class="emb-explainer__bar">
-          <div class="emb-explainer__lede">
-            <strong>Toggle rules on or off.</strong> Each row is a quality rule backed by a <em>graph query</em> &mdash; not regex, not heuristics. Change severity with the dropdown, or disable rules you don&rsquo;t need. Export your config as TOML when done.
-          </div>
-          <div class="emb-explainer__controls">
-            <button type="button" id="std-explainer-toggle" class="emb-explainer__chevron" aria-expanded="true" aria-controls="std-explainer-body" title="Hide tips"><span class="chev">&#9662;</span></button>
-          </div>
-        </div>
-        <div class="emb-explainer__body" id="std-explainer-body">
-          <div>
-            <h3>How to use</h3>
-            <p><strong>Toggle switch</strong> turns a rule on or off.</p>
-            <p><strong>Severity dropdown</strong> controls what happens when the rule fires: <span style="color:#f85149">hard</span> blocks merges, <span style="color:#d29922">warn</span> shows a reminder.</p>
-            <p><strong>Click a row</strong> to expand its evidence &mdash; the graph pattern that proves the finding.</p>
-          </div>
-          <div>
-            <h3>Profiles</h3>
-            <p><strong>Default</strong> &mdash; 3 hard rules (circular imports, test-in-prod, private access). Everything else warns.</p>
-            <p><strong>Strict</strong> &mdash; promotes complexity + coupling to blockers.</p>
-            <p><strong>SOC 2</strong> &mdash; enables compliance category, promotes auth/secrets to blockers.</p>
-            <p><strong>Minimal</strong> &mdash; coupling rules only.</p>
-          </div>
-          <div>
-            <h3>Saving</h3>
-            <p><strong>Export Config</strong> downloads a <kbd>.toml</kbd> snippet. Paste into <code>[cgraph.standards]</code> in your project config.</p>
-            <p>Config takes effect on the next <kbd>kkg audit</kbd> run, including enforcement hooks.</p>
-          </div>
-        </div>
-      </section>
-      <div style="padding:8px 16px;display:flex;align-items:center;gap:12px;background:#0d1117;border-bottom:1px solid #21262d;flex-shrink:0">
-        <label style="font-size:11px;color:#8b949e">Profile:</label>
-        <select id="std-profile" style="padding:4px 8px;background:#161b22;color:#c9d1d9;border:1px solid #30363d;border-radius:4px;font-size:12px">
-          <option value="default">Default</option>
-          <option value="strict">Strict</option>
-          <option value="soc2">SOC 2</option>
-          <option value="minimal">Minimal</option>
-        </select>
+      <!-- Sub-tab bar -->
+      <div style="display:flex;align-items:center;gap:0;background:#0d1117;border-bottom:2px solid #30363d;flex-shrink:0;padding:0 12px">
+        <button class="tab active" data-std-pane="std-violations" style="padding:8px 16px;font-size:13px;color:#58a6ff;background:transparent;border:none;border-bottom:2px solid #58a6ff;cursor:pointer;margin-bottom:-2px">Violations</button>
+        <button class="tab" data-std-pane="std-config" style="padding:8px 16px;font-size:13px;color:#8b949e;background:transparent;border:none;border-bottom:2px solid transparent;cursor:pointer;margin-bottom:-2px">Configuration</button>
         <span style="flex:1"></span>
-        <span style="font-size:11px;color:#8b949e" id="std-summary"></span>
-        <button id="std-export" style="padding:5px 12px;background:#238636;color:#fff;border:none;border-radius:4px;font-size:11px;cursor:pointer">Export TOML</button>
+        <span style="font-size:11px;color:#8b949e" id="std-viol-count"></span>
       </div>
-      <div style="flex:1;overflow-y:auto;padding:0" id="std-table-wrap">
-        <table style="width:100%;border-collapse:collapse;font-size:12px" id="std-table">
-          <thead style="position:sticky;top:0;background:#0d1117;z-index:1">
-            <tr style="border-bottom:2px solid #30363d;text-align:left">
-              <th style="padding:8px 12px;width:40px">On</th>
-              <th style="padding:8px 8px">Rule</th>
-              <th style="padding:8px 8px">Category</th>
-              <th style="padding:8px 8px;width:100px">Severity</th>
-              <th style="padding:8px 12px">Summary</th>
-            </tr>
-          </thead>
-          <tbody id="std-tbody"></tbody>
-        </table>
+
+      <!-- VIOLATIONS SUB-TAB -->
+      <div id="std-violations" style="flex:1;overflow-y:auto;padding:12px 16px">
+        <div id="std-viol-body"></div>
+      </div>
+
+      <!-- CONFIGURATION SUB-TAB (hidden initially) -->
+      <div id="std-config" style="flex:1;overflow-y:auto;display:none;flex-direction:column">
+        <div style="padding:8px 16px;display:flex;align-items:center;gap:12px;background:#0d1117;border-bottom:1px solid #21262d;flex-shrink:0">
+          <label style="font-size:11px;color:#8b949e">Profile:</label>
+          <select id="std-profile" style="padding:4px 8px;background:#161b22;color:#c9d1d9;border:1px solid #30363d;border-radius:4px;font-size:12px">
+            <option value="default">Default</option><option value="strict">Strict</option>
+            <option value="soc2">SOC 2</option><option value="minimal">Minimal</option>
+          </select>
+          <span style="flex:1"></span>
+          <span style="font-size:11px;color:#8b949e" id="std-summary"></span>
+          <button id="std-export" style="padding:5px 12px;background:#238636;color:#fff;border:none;border-radius:4px;font-size:11px;cursor:pointer">Export TOML</button>
+        </div>
+        <div style="flex:1;overflow-y:auto;padding:0">
+          <table style="width:100%;border-collapse:collapse;font-size:12px" id="std-table">
+            <thead style="position:sticky;top:0;background:#0d1117;z-index:1">
+              <tr style="border-bottom:2px solid #30363d;text-align:left">
+                <th style="padding:8px 12px;width:40px">On</th>
+                <th style="padding:8px 8px">Rule</th>
+                <th style="padding:8px 8px">Category</th>
+                <th style="padding:8px 8px;width:100px">Severity</th>
+                <th style="padding:8px 8px;width:24px"></th>
+                <th style="padding:8px 12px">Summary</th>
+              </tr>
+            </thead>
+            <tbody id="std-tbody"></tbody>
+          </table>
+        </div>
       </div>
     </div>
     <script>
     (function() {
       const rulesData = __STANDARDS_JSON__;
+      const violationsData = __VIOLATIONS_JSON__;
       const sevColors = {hard:'#f85149',warn:'#d29922'};
       const catColors = {coupling:'#f0883e',complexity:'#d29922',dead_code:'#484f58',clarity:'#58a6ff',inheritance:'#d2a8ff',compliance:'#f85149'};
       let overrides = {};
       let disabled = new Set();
+      let collapsedCats = new Set();
 
+      // ---- Sub-tab switching ----
+      document.querySelectorAll('[data-std-pane]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('[data-std-pane]').forEach(b => {
+            b.style.color='#8b949e'; b.style.borderBottomColor='transparent'; b.classList.remove('active');
+          });
+          btn.style.color='#58a6ff'; btn.style.borderBottomColor='#58a6ff'; btn.classList.add('active');
+          document.getElementById('std-violations').style.display = btn.dataset.stdPane==='std-violations'?'block':'none';
+          document.getElementById('std-config').style.display = btn.dataset.stdPane==='std-config'?'flex':'none';
+        });
+      });
+
+      // ---- VIOLATIONS TAB ----
+      function renderViolations() {
+        const body = document.getElementById('std-viol-body');
+        if (!body) return;
+        body.innerHTML = '';
+        const countEl = document.getElementById('std-viol-count');
+
+        if (!violationsData.length) {
+          body.innerHTML = '<div style="padding:40px;text-align:center;color:#7ee787"><h3 style="margin-bottom:8px">No violations found</h3><p style="color:#8b949e">All standards pass against the current graph. Run <code>kkg audit --format summary</code> for CLI output.</p></div>';
+          if (countEl) countEl.textContent = '0 violations';
+          return;
+        }
+
+        let totalOffenders = 0;
+        violationsData.forEach(v => { totalOffenders += (v.offenders||[]).length; });
+        if (countEl) countEl.textContent = totalOffenders + ' violation' + (totalOffenders!==1?'s':'') + ' across ' + violationsData.length + ' rule' + (violationsData.length!==1?'s':'');
+
+        violationsData.forEach(v => {
+          const rule = rulesData.find(r => r.id === v.standard_id) || {};
+          const section = document.createElement('div');
+          section.style.cssText = 'margin-bottom:16px;border:1px solid #21262d;border-radius:6px;overflow:hidden';
+
+          // Header bar
+          const header = document.createElement('div');
+          header.style.cssText = 'display:flex;align-items:center;padding:10px 14px;background:#161b22;cursor:pointer;gap:10px';
+          const sevDot = '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:'+(sevColors[v.severity]||'#8b949e')+'"></span>';
+          const arrow = document.createElement('span');
+          arrow.textContent = '\u25B6'; arrow.style.cssText = 'font-size:10px;color:#484f58;transition:transform 0.15s';
+          header.innerHTML = sevDot + '<strong style="color:#e6edf3;font-size:12px">' + v.standard_id + '</strong>' +
+            '<span style="font-size:11px;color:'+(catColors[rule.category]||'#8b949e')+'">'+((rule.category||'').replace(/_/g,' '))+'</span>' +
+            '<span style="flex:1"></span>' +
+            '<span style="font-size:11px;color:#f0883e">' + (v.offenders||[]).length + ' offender' + ((v.offenders||[]).length!==1?'s':'') + '</span>';
+          header.prepend(arrow);
+
+          // Body (collapsed by default)
+          const detail = document.createElement('div');
+          detail.style.cssText = 'display:none;padding:12px 14px;background:#0d1117;border-top:1px solid #21262d';
+
+          // Description
+          let desc = '<p style="margin:0 0 8px;font-size:12px;color:#8b949e">' + (rule.summary||v.kind) + '</p>';
+          if (v.suggestion) desc += '<p style="margin:0 0 10px;font-size:11px;color:#7ee787">' + v.suggestion + '</p>';
+          if (rule.evidence) desc += '<p style="margin:0 0 10px;font-size:11px;color:#6e7681;font-style:italic">Evidence: ' + rule.evidence + '</p>';
+
+          // Offender list
+          desc += '<table style="width:100%;border-collapse:collapse;font-size:11px;margin-top:4px">';
+          desc += '<tr style="border-bottom:1px solid #21262d;color:#8b949e"><th style="padding:4px 8px;text-align:left">Name</th><th style="padding:4px 8px;text-align:left">File</th><th style="padding:4px 8px;text-align:left">Line</th><th style="padding:4px 8px">Metric</th><th style="padding:4px 8px">Viz</th></tr>';
+          (v.offenders||[]).forEach(o => {
+            desc += '<tr style="border-bottom:1px solid #161b22">' +
+              '<td style="padding:4px 8px;color:#e6edf3;font-family:monospace">' + (o.name||'—') + '</td>' +
+              '<td style="padding:4px 8px;color:#8b949e;font-size:10px">' + (o.path||'—') + '</td>' +
+              '<td style="padding:4px 8px;color:#8b949e">' + (o.line_number||'—') + '</td>' +
+              '<td style="padding:4px 8px;color:#d29922;text-align:center">' + (o.metric_value!=null?o.metric_value:'—') + '</td>' +
+              '<td style="padding:4px 8px;text-align:center"><button data-viz-uid="'+(o.uid||'')+'" data-viz-name="'+(o.name||'')+'" style="padding:2px 6px;font-size:10px;background:#161b22;color:#58a6ff;border:1px solid #30363d;border-radius:3px;cursor:pointer" title="Show in 2D graph">&#x1F50D;</button></td>' +
+              '</tr>';
+          });
+          desc += '</table>';
+
+          // Link to config tab
+          desc += '<div style="margin-top:10px"><button data-goto-config="'+v.standard_id+'" style="padding:4px 10px;font-size:11px;background:#161b22;color:#58a6ff;border:1px solid #30363d;border-radius:4px;cursor:pointer">Configure this rule &rarr;</button></div>';
+
+          detail.innerHTML = desc;
+
+          header.addEventListener('click', () => {
+            const open = detail.style.display !== 'none';
+            detail.style.display = open ? 'none' : 'block';
+            arrow.style.transform = open ? '' : 'rotate(90deg)';
+          });
+
+          section.appendChild(header);
+          section.appendChild(detail);
+          body.appendChild(section);
+        });
+
+        // Wire viz buttons
+        body.querySelectorAll('[data-viz-uid]').forEach(btn => {
+          btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const name = btn.dataset.vizName;
+            // Switch to 2D tab and highlight
+            const tab2d = document.querySelector('[data-pane="pane-2d"]');
+            if (tab2d) { tab2d.click(); }
+            // Post message to 2D iframe to highlight node
+            const iframe2d = document.getElementById('iframe-2d');
+            if (iframe2d && iframe2d.contentWindow) {
+              setTimeout(() => {
+                iframe2d.contentWindow.postMessage({type:'highlight',name:name}, '*');
+              }, 500);
+            }
+          });
+        });
+
+        // Wire config links
+        body.querySelectorAll('[data-goto-config]').forEach(btn => {
+          btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            document.querySelector('[data-std-pane="std-config"]').click();
+          });
+        });
+      }
+
+      // ---- CONFIGURATION TAB ----
       function renderTable() {
         const tbody = document.getElementById('std-tbody');
         if (!tbody) return;
@@ -309,11 +409,18 @@ _DASHBOARD_TEMPLATE = """<!DOCTYPE html>
         let warnCount=0, hardCount=0, offCount=0;
 
         cats.forEach(cat => {
-          // Category header row
+          const isCollapsed = collapsedCats.has(cat);
           const catRow = document.createElement('tr');
-          catRow.style.cssText='background:#161b22;cursor:default';
-          catRow.innerHTML='<td colspan="5" style="padding:8px 12px;font-weight:600;color:'+(catColors[cat]||'#8b949e')+';font-size:11px;text-transform:uppercase;letter-spacing:0.1em;border-bottom:1px solid #21262d">'+cat.replace(/_/g,' ')+'</td>';
+          catRow.style.cssText='background:#161b22;cursor:pointer';
+          const catArrow = isCollapsed ? '\u25B6' : '\u25BC';
+          catRow.innerHTML='<td colspan="6" style="padding:8px 12px;font-weight:600;color:'+(catColors[cat]||'#8b949e')+';font-size:11px;text-transform:uppercase;letter-spacing:0.1em;border-bottom:1px solid #21262d"><span style="font-size:9px;margin-right:6px;color:#484f58">'+catArrow+'</span>'+cat.replace(/_/g,' ')+'</td>';
+          catRow.addEventListener('click', () => {
+            if (collapsedCats.has(cat)) collapsedCats.delete(cat); else collapsedCats.add(cat);
+            renderTable();
+          });
           tbody.appendChild(catRow);
+
+          if (isCollapsed) return;
 
           rulesData.filter(r=>r.category===cat).forEach(r => {
             const isOff = disabled.has(r.id) || overrides[r.id]==='off';
@@ -322,6 +429,18 @@ _DASHBOARD_TEMPLATE = """<!DOCTYPE html>
 
             const tr = document.createElement('tr');
             tr.style.cssText='border-bottom:1px solid #21262d;'+(isOff?'opacity:0.4':'');
+
+            const evRow = document.createElement('tr');
+            evRow.style.cssText='display:none;background:#161b22';
+            evRow.innerHTML='<td></td><td colspan="5" style="padding:8px 12px;font-size:11px;line-height:1.6;color:#6e7681">'+
+              (r.evidence?'<strong style="color:#58a6ff">Evidence:</strong> '+r.evidence+'<br>':'')+
+              (r.suggestion?'<strong style="color:#7ee787">Suggestion:</strong> '+r.suggestion+'<br>':'')+
+              (r.thresholds&&Object.keys(r.thresholds).length?'<strong>Thresholds:</strong> '+JSON.stringify(r.thresholds):'')+
+              '</td>';
+
+            let isExpanded = false;
+            const expandArrow = '<span class="cfg-arrow" style="font-size:9px;color:#484f58;cursor:pointer;display:inline-block;transition:transform 0.15s">\u25B6</span>';
+
             tr.innerHTML=
               '<td style="padding:6px 12px;text-align:center"><label style="cursor:pointer"><input type="checkbox" data-rule="'+r.id+'" '+(isOff?'':'checked')+' style="accent-color:#238636"></label></td>'+
               '<td style="padding:6px 8px;color:#e6edf3;font-family:monospace;font-size:11px">'+r.id+'</td>'+
@@ -330,20 +449,15 @@ _DASHBOARD_TEMPLATE = """<!DOCTYPE html>
                 '<option value="hard"'+(sev==='hard'?' selected':'')+'>hard</option>'+
                 '<option value="warn"'+(sev==='warn'?' selected':'')+'>warn</option>'+
               '</select></td>'+
+              '<td style="padding:6px 4px">'+expandArrow+'</td>'+
               '<td style="padding:6px 8px;color:#8b949e">'+r.summary+'</td>';
-
-            // Expandable evidence row
-            const evRow = document.createElement('tr');
-            evRow.style.cssText='display:none;background:#161b22';
-            evRow.innerHTML='<td></td><td colspan="4" style="padding:8px 12px;font-size:11px;line-height:1.6;color:#6e7681">'+
-              (r.evidence?'<strong style="color:#58a6ff">Evidence:</strong> '+r.evidence+'<br>':'')+
-              (r.suggestion?'<strong style="color:#7ee787">Suggestion:</strong> '+r.suggestion+'<br>':'')+
-              (r.thresholds&&Object.keys(r.thresholds).length?'<strong>Thresholds:</strong> '+JSON.stringify(r.thresholds):'')+
-              '</td>';
 
             tr.addEventListener('click',function(e){
               if(e.target.tagName==='INPUT'||e.target.tagName==='SELECT') return;
-              evRow.style.display=evRow.style.display==='none'?'table-row':'none';
+              isExpanded = !isExpanded;
+              evRow.style.display = isExpanded ? 'table-row' : 'none';
+              const a = tr.querySelector('.cfg-arrow');
+              if(a) a.style.transform = isExpanded ? 'rotate(90deg)' : '';
             });
             tr.style.cursor='pointer';
             tbody.appendChild(tr);
@@ -351,11 +465,9 @@ _DASHBOARD_TEMPLATE = """<!DOCTYPE html>
           });
         });
 
-        // Update summary
         const sum = document.getElementById('std-summary');
         if(sum) sum.textContent=hardCount+' hard \u00b7 '+warnCount+' warn \u00b7 '+offCount+' off \u00b7 '+rulesData.length+' total';
 
-        // Wire toggle checkboxes
         tbody.querySelectorAll('input[data-rule]').forEach(cb=>{
           cb.addEventListener('change',function(){
             if(this.checked) { disabled.delete(this.dataset.rule); delete overrides[this.dataset.rule]; }
@@ -363,8 +475,6 @@ _DASHBOARD_TEMPLATE = """<!DOCTYPE html>
             renderTable();
           });
         });
-
-        // Wire severity dropdowns
         tbody.querySelectorAll('select[data-sev]').forEach(sel=>{
           sel.addEventListener('change',function(){
             overrides[this.dataset.sev]=this.value;
@@ -373,49 +483,26 @@ _DASHBOARD_TEMPLATE = """<!DOCTYPE html>
         });
       }
 
-      // Profile handler
       document.getElementById('std-profile')?.addEventListener('change',function(){
         overrides={};disabled=new Set();
-        if(this.value==='minimal'){
-          rulesData.forEach(r=>{if(r.category!=='coupling'){disabled.add(r.id);overrides[r.id]='off';}});
-        }
-        if(this.value==='soc2'){
-          rulesData.forEach(r=>{if(r.category!=='coupling'&&r.category!=='compliance'){disabled.add(r.id);overrides[r.id]='off';}});
-          ['auth_bypass','sensitive_data_unprotected','hardcoded_secret_in_graph','admin_action_no_audit_trail'].forEach(id=>overrides[id]='hard');
-        }
-        if(this.value==='strict'){
-          ['class_too_large','function_cyclomatic_complexity','excessive_fan_out'].forEach(id=>overrides[id]='hard');
-        }
+        if(this.value==='minimal') rulesData.forEach(r=>{if(r.category!=='coupling'){disabled.add(r.id);overrides[r.id]='off';}});
+        if(this.value==='soc2'){rulesData.forEach(r=>{if(r.category!=='coupling'&&r.category!=='compliance'){disabled.add(r.id);overrides[r.id]='off';}});['auth_bypass','sensitive_data_unprotected','hardcoded_secret_in_graph','admin_action_no_audit_trail'].forEach(id=>overrides[id]='hard');}
+        if(this.value==='strict') ['class_too_large','function_cyclomatic_complexity','excessive_fan_out'].forEach(id=>overrides[id]='hard');
         renderTable();
       });
 
-      // Export TOML
       document.getElementById('std-export')?.addEventListener('click',function(){
         const profile=document.getElementById('std-profile')?.value||'default';
         let lines=['[cgraph.standards]','profile = "'+profile+'"'];
         const activeCats=[...new Set(rulesData.map(r=>r.category))].filter(c=>!rulesData.every(r=>r.category!==c||disabled.has(r.id)));
         lines.push('categories = ['+activeCats.map(c=>'"'+c+'"').join(', ')+']');
         const ovr=Object.entries(overrides).filter(([,v])=>v);
-        if(ovr.length){
-          lines.push('','[cgraph.standards.overrides]');
-          ovr.forEach(([k,v])=>lines.push(k+' = "'+v+'"'));
-        }
+        if(ovr.length){lines.push('','[cgraph.standards.overrides]');ovr.forEach(([k,v])=>lines.push(k+' = "'+v+'"'));}
         const blob=new Blob([lines.join('\\n')],{type:'text/plain'});
         const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='kkg-standards.toml';a.click();
       });
 
-      // Collapse / expand the explainer
-      const stdExplainer = document.getElementById('std-explainer');
-      const stdExplainerToggle = document.getElementById('std-explainer-toggle');
-      if (stdExplainerToggle && stdExplainer) {
-        stdExplainerToggle.addEventListener('click', () => {
-          const collapsed = stdExplainer.classList.toggle('collapsed');
-          stdExplainerToggle.setAttribute('aria-expanded', String(!collapsed));
-          stdExplainerToggle.setAttribute('title', collapsed ? 'Show tips' : 'Hide tips');
-        });
-      }
-
-      window._stdInit = function() { renderTable(); };
+      window._stdInit = function() { renderViolations(); renderTable(); };
     })();
     </script>
   </div>
@@ -527,6 +614,7 @@ def _dashboard_html(
     graph: dict[str, Any],
     emb_count: int,
     standards_json: str,
+    violations_json: str = "[]",
     *,
     layout: str,
 ) -> str:
@@ -546,6 +634,7 @@ def _dashboard_html(
     out = out.replace("__IFRAME_2D__", iframe_2d)
     out = out.replace("__IFRAME_3D__", iframe_3d)
     out = out.replace("__STANDARDS_JSON__", standards_json)
+    out = out.replace("__VIOLATIONS_JSON__", violations_json)
     return out
 
 
@@ -571,6 +660,25 @@ def _load_standards_json() -> str:
         return "[]"
 
 
+def _run_audit_for_viz(conn: Any) -> str:
+    """Run audit against the live graph and return violations as JSON."""
+    try:
+        from ..standards.loader import load_rules, load_exemptions, run_rule
+        from ..commands.audit import _find_standards_dir
+        std_dir = _find_standards_dir()
+        rules = load_rules(std_dir)
+        exemptions = load_exemptions(std_dir)
+        violations = []
+        for rule in rules:
+            result = run_rule(conn, rule, exemptions)
+            if result.fired:
+                adv = result.to_advisory()
+                violations.append(adv)
+        return json.dumps(violations)
+    except Exception:
+        return "[]"
+
+
 def _prepare_dashboard_serve_dir(
     graph: dict[str, Any],
     emb_nodes: list[dict[str, Any]],
@@ -585,7 +693,15 @@ def _prepare_dashboard_serve_dir(
     serve_dir = Path(tempfile.mkdtemp(prefix="cgraph-dashboard-"))
 
     standards_json = _load_standards_json()
-    html = _dashboard_html(graph, len(emb_nodes), standards_json, layout=layout)
+    # Audit runs best-effort — needs a live DB connection
+    violations_json = "[]"
+    try:
+        print("Running audit for standards tab...", file=sys.stderr)
+        audit_conn = get_kuzu_connection()
+        violations_json = _run_audit_for_viz(audit_conn)
+    except Exception:
+        pass
+    html = _dashboard_html(graph, len(emb_nodes), standards_json, violations_json, layout=layout)
     (serve_dir / "index.html").write_text(html, encoding="utf-8")
 
     projector_dir = serve_dir / "projector"
