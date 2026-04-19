@@ -13,6 +13,7 @@ AI coding agents today burn most of their context window reading raw files to un
 - **`kkg search <query>`** — semantic search returns the most relevant symbols for a question. ~200 tokens instead of reading 10 files.
 - **`kkg review-packet`** — blast radius of a diff in ~2KB of JSON: touched nodes, external callers/callees, cross-module impact, advisories. The reviewer (human or agent) doesn't open a single file.
 - **`kkg blast-radius --files <paths>`** — transitive graph expansion to find everything affected by a change, including overlap with other active work.
+- **`kkg audit`** — run code-quality standards backed by graph queries and report violations. Configurable presets (default, strict, SOC 2, minimal) with per-rule overrides.
 
 All outputs are JSON with stable schemas under `schemas/`. Agents parse them directly — no scraping, no heuristics.
 
@@ -27,23 +28,103 @@ pip install -e ".[dev]"
 kkg index                                    # build the graph
 kkg embed                                    # embed functions + classes
 kkg search "authentication token validation" # semantic search
-kkg viz-dashboard                            # interactive 3-tab dashboard
+kkg audit --list                             # see available quality rules
+kkg viz-dashboard                            # interactive 4-tab dashboard
 ```
 
 ## Commands
 
+### Retrieval & analysis
+
 | Command | What it does | Tokens saved |
 |---------|-------------|-------------|
-| `kkg index` | Parse repo into KuzuDB graph (18 node types, 7 edge types) | — |
-| `kkg embed` | Batch-embed functions and classes (local Jina v2, 768-dim) | — |
 | `kkg search <query>` | Semantic search + graph neighborhood expansion | 10-50x vs. raw file reads |
 | `kkg review-packet` | Reviewer JSON: touched nodes, callers, callees, advisories | 5-20x vs. raw diff |
-| `kkg blast-radius` | Transitive caller/callee expansion + lock overlap detection | Catches what `git diff` misses |
-| `kkg sync-check` | Report upstream commits not yet merged | — |
-| `kkg viz-dashboard` | Three-tab browser dashboard (2D, 3D, Embeddings) | — |
-| `kkg viz-graph` | Standalone 2D or 3D graph visualization | — |
-| `kkg viz-embeddings` | Standalone embedding scatter plot | — |
-| `kkg export-embeddings` | Export embeddings as TSV for external tools | — |
+| `kkg blast-radius --files <paths>` | Transitive caller/callee expansion + lock overlap detection | Catches what `git diff` misses |
+| `kkg drift-check --files <paths>` | Detect graph-neighborhood changes outside a lane | Catches silent upstream drift |
+| `kkg advise <situation>` | Situational tip lookup (lock_overlap, drift, etc.) | Pre-formatted recommendations |
+
+### Code quality & standards
+
+| Command | What it does |
+|---------|-------------|
+| `kkg audit` | Run 12 quality rules against the graph — coupling, complexity, dead code, clarity, inheritance |
+| `kkg audit --profile soc2` | Run with SOC 2 compliance preset (auth-bypass, logging gaps, secrets) |
+| `kkg audit --list` | List all registered standards and their current severity |
+| `kkg audit --explain <id>` | Show a rule's definition, thresholds, evidence, and exemptions |
+| `kkg audit --scope diff` | Only check files you just changed (for PostToolUse hooks) |
+| `kkg audit --require-hard-zero` | Exit 2 if any hard violation fires (for CI gates) |
+
+### Indexing & embedding
+
+| Command | What it does |
+|---------|-------------|
+| `kkg index` | Parse repo into KuzuDB graph (18 node types, 7 edge types) |
+| `kkg embed` | Batch-embed functions and classes (local Jina v2, 768-dim) |
+| `kkg sync-check` | Report upstream commits not yet merged |
+
+### Visualization
+
+| Command | What it does |
+|---------|-------------|
+| `kkg viz-dashboard` | 4-tab browser dashboard: 2D graph, 3D graph, embeddings, standards config |
+| `kkg viz-graph` | Standalone 2D or 3D graph visualization |
+| `kkg viz-embeddings` | Standalone embedding scatter plot |
+| `kkg viz-projector` | TF Embedding Projector (UMAP/t-SNE/PCA) |
+| `kkg export-embeddings` | Export embeddings as TSV for external tools |
+
+### Infrastructure
+
+| Command | What it does |
+|---------|-------------|
+| `kkg serve` | Warm daemon on Unix socket — eliminates Python cold-start for fast commands |
+
+## Standards & enforcement
+
+KeplerKG ships 12 code-quality rules that query the graph for structural problems linters can't catch:
+
+| Category | Rules | What they detect |
+|----------|-------|-----------------|
+| **Coupling** | circular_imports, test_import_in_prod, cross_file_private_access, excessive_fan_out | Import cycles, test/prod boundary violations, private API misuse |
+| **Complexity** | function_cyclomatic_complexity, function_too_long, class_too_large, parameter_count | Functions and classes that are too complex |
+| **Dead code** | unreferenced_public_function, unreferenced_public_class | Public symbols with zero callers in the graph |
+| **Clarity** | missing_docstring_public | Public API without documentation |
+| **Inheritance** | deep_inheritance | Inheritance chains deeper than 4 levels |
+
+Every rule is backed by a Cypher query against the knowledge graph — not regex, not heuristics. The `evidence` field in each rule documents exactly what graph pattern proves the finding.
+
+### Configuration
+
+```toml
+# In .btrain/project.toml or kkg.toml
+[cgraph.standards]
+profile = "soc2"                          # Preset: default | strict | soc2 | minimal
+categories = ["coupling", "compliance"]   # Which categories to run
+
+[cgraph.standards.overrides]
+CGQ-B04 = "off"                           # Disable parameter_count
+CGQ-A05 = "blocker"                       # Promote god_class to hard-stop
+```
+
+### Enforcement hooks
+
+KeplerKG integrates with Claude Code hooks to enforce standards automatically:
+
+- **PostToolUse hook** — runs `kkg audit --scope diff` after every Edit/Write (5s timeout)
+- **Stop hook** — runs `kkg audit --scope session` before turn closes (10s timeout)
+- **Pre-handoff** — `kkg audit --scope lane --require-hard-zero` gates handoffs
+- **CI gate** — `kkg audit --require-hard-zero` on PRs (exit 2 on hard violations)
+
+Copy `scripts/hooks/settings.example.json` to `.claude/settings.json` to enable.
+
+### Visual configuration
+
+Run `kkg viz-dashboard` and click the **Standards** tab to configure rules interactively:
+- See rules as a graph organized by category
+- Click any rule to read its evidence and change its severity
+- Toggle entire categories on/off
+- Switch between presets (default, strict, SOC 2, minimal)
+- Export your config as TOML
 
 ## Embedding providers
 
@@ -57,20 +138,28 @@ kkg viz-dashboard                            # interactive 3-tab dashboard
 
 ```
 src/
-  codegraphcontext/          # Graph indexer, KuzuDB driver, parsers
+  codegraphcontext/          # Graph indexer, KuzuDB driver, parsers (upstream)
   codegraphcontext_ext/      # KeplerKG extensions
-    commands/                # CLI commands (context, embed, review-packet, blast-radius, viz-*)
+    commands/                # CLI: search, review-packet, blast-radius, drift-check,
+                             #      advise, audit, embed, viz-*, export, sync-check
+    standards/               # Standards engine: YAML rule loader + Cypher runner
     embeddings/              # Embedding pipeline (providers, schema, runtime)
     hybrid/                  # Hybrid retrieval (ANN search + graph traversal)
-    viz_assets/projector/    # Vendored TF Embedding Projector
+    daemon/                  # Warm daemon (Unix socket server)
+    config.py                # Config layer: reads [cgraph] from project.toml
+    preflight.py             # Fail-closed storage check (zombie mount guard)
     viz_server.py            # HTTP server for dashboard + projector
+standards/                   # 12 YAML rule definitions + _exemptions.yaml
 schemas/                     # JSON Schema for every command output
-tests/                       # 228 tests
+scripts/hooks/               # Claude Code enforcement hook scripts
+tests/                       # 375 tests
 ```
 
 **Graph store:** KuzuDB (embedded, no server). 18 node tables, 7 relationship groups, HNSW indexes for ANN search.
 
 **Agent integration:** Every command emits structured JSON to stdout with a `kind` discriminator and stable schema. Agents pipe command output directly into their context — no parsing needed.
+
+**Standalone-safe:** KeplerKG works without btrain. The config layer falls back to sensible defaults when no `.btrain/project.toml` exists.
 
 ## Credits
 
