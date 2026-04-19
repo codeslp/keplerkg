@@ -14,6 +14,7 @@ from .commands.export_embeddings import (
     SUMMARY as EXPORT_EMB_SUMMARY,
     export_embeddings_command,
 )
+from .commands.manifest import SUMMARY as MANIFEST_SUMMARY, manifest_command
 from .commands.review_packet import SUMMARY as REVIEW_PACKET_SUMMARY, review_packet_command
 from .commands.sync_check import SUMMARY as SYNC_CHECK_SUMMARY, sync_check_command
 from .commands.viz_dashboard import SUMMARY as VIZ_DASHBOARD_SUMMARY, viz_dashboard_command
@@ -32,6 +33,7 @@ def register_extensions(app: typer.Typer) -> None:
     app.command(name="drift-check", help=DRIFT_CHECK_SUMMARY)(drift_check_command)
     app.command(name="sync-check", help=SYNC_CHECK_SUMMARY)(sync_check_command)
     app.command(name="embed", help=EMBED_SUMMARY)(embed_command)
+    app.command(name="manifest", help=MANIFEST_SUMMARY)(manifest_command)
     app.command(name="search", help=CONTEXT_SUMMARY)(context_command)
     app.command(name="review-packet", help=REVIEW_PACKET_SUMMARY)(review_packet_command)
     app.command(name="viz-embeddings", help=VIZ_EMB_SUMMARY)(viz_embeddings_command)

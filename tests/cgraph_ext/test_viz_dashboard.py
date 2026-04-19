@@ -76,6 +76,51 @@ def test_viz_dashboard_rejects_unknown_layout(monkeypatch):
     assert "unknown layout" in result.output or "tree" in result.output
 
 
+def test_viz_dashboard_routes_project_before_serving(monkeypatch, tmp_path):
+    mark_kuzu_backend_available(monkeypatch)
+    graph = {
+        "nodes": [{"id": "u1", "name": "foo", "path": "a.py", "line": 1, "type": "Function"}],
+        "edges": [],
+    }
+
+    with patch(
+        "codegraphcontext_ext.commands.viz_dashboard.activate_project",
+    ) as activate_project, patch(
+        "codegraphcontext_ext.commands.viz_dashboard.get_kuzu_connection",
+        return_value=object(),
+    ), patch(
+        "codegraphcontext_ext.commands.viz_dashboard._fetch_graph",
+        return_value=graph,
+    ), patch(
+        "codegraphcontext_ext.commands.viz_dashboard.fetch_embedded_nodes",
+        return_value=[],
+    ), patch(
+        "codegraphcontext_ext.commands.viz_dashboard._prepare_dashboard_serve_dir",
+        return_value=tmp_path,
+    ), patch(
+        "codegraphcontext_ext.commands.viz_dashboard.find_free_port",
+        return_value=43123,
+    ), patch(
+        "codegraphcontext_ext.commands.viz_dashboard.build_server",
+        return_value=object(),
+    ), patch(
+        "codegraphcontext_ext.commands.viz_dashboard.serve_until_interrupted",
+        return_value=None,
+    ):
+        activate_project.return_value.slug = "flask"
+
+        result = runner.invoke(
+            build_ext_app(),
+            ["viz-dashboard", "--project", "flask", "--no-open", "--port", "0"],
+        )
+
+    assert result.exit_code == 0
+    activate_project.assert_called_once_with("flask")
+    payload = extract_last_json(result.output)
+    assert payload["kind"] == "viz_dashboard_serving"
+    assert payload["project"] == "flask"
+
+
 def test_dashboard_html_wires_three_tabs_including_embeddings():
     graph = {
         "nodes": [{"id": "u1", "name": "foo", "path": "a.py", "line": 1, "type": "Function"}],

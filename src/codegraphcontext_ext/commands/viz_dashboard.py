@@ -28,6 +28,7 @@ from ..embeddings.fetch import fetch_embedded_nodes
 from ..embeddings.runtime import probe_backend_support
 from ..io.json_stdout import emit_json
 from ..io.kuzu import get_kuzu_connection
+from ..project import PROJECT_OPTION_HELP, activate_project
 from ..viz_server import (
     build_server,
     copy_vendored_projector,
@@ -1362,12 +1363,19 @@ def viz_dashboard_command(
         "--no-open",
         help="Start the server but don't open the browser.",
     ),
+    project: Optional[str] = typer.Option(
+        None,
+        "--project",
+        help=PROJECT_OPTION_HELP,
+    ),
 ) -> None:
     """Unified dashboard: 2D graph, 3D graph, and TF Embedding Projector.
 
     Starts a local HTTP server; blocks until Ctrl-C.  Needed because the
     Embeddings tab fetches its config via real HTTP (can't be srcdoc-inlined).
     """
+
+    target = activate_project(project)
 
     if layout not in _LAYOUTS:
         raise typer.BadParameter(
@@ -1406,6 +1414,7 @@ def viz_dashboard_command(
         "edges": len(graph["edges"]),
         "embeddings": len(emb_nodes),
         "layout": layout,
+        "project": target.slug,
         "serve_dir": str(serve_dir),
         "url": url,
     }))

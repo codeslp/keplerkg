@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://codeslp.dev/cgraph/schemas/envelope.json",
+  "title": "cgraph canonical JSON envelope",
+  "description": "Base envelope that every cgraph JSON response must satisfy. Command-specific fields extend this at the same top level.",
+  "type": "object",
+  "required": ["ok", "kind", "schema_version"],
+  "properties": {
+    "ok": {
+      "type": "boolean",
+      "description": "Whether the command succeeded."
+    },
+    "kind": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Discriminator matching the command name (e.g. 'audit', 'blast_radius', 'manifest')."
+    },
+    "schema_version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+$",
+      "description": "Envelope version. Currently '1.0'."
+    },
+    "project": {
+      "type": ["string", "null"],
+      "description": "Active project slug or null when no project is targeted."
+    },
+    "error": {
+      "type": ["string", "null"],
+      "description": "Error detail when ok=false. Absent or null on success."
+    }
+  }
+}

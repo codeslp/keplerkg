@@ -18,6 +18,7 @@ def test_register_extensions_registers_sync_check_embed_and_context():
         "drift-check",
         "sync-check",
         "embed",
+        "manifest",
         "search",
         "review-packet",
         "viz-embeddings",

@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://codeslp.dev/cgraph/schemas/manifest.json",
+  "title": "kkg manifest response",
+  "description": "Self-describing command registry so agents can discover kkg capabilities.",
+  "type": "object",
+  "required": ["ok", "kind", "schema_version", "commands", "envelope_schema", "total_commands"],
+  "properties": {
+    "ok": { "type": "boolean" },
+    "kind": { "const": "manifest" },
+    "schema_version": { "type": "string", "pattern": "^\\d+\\.\\d+$" },
+    "project": { "type": ["string", "null"] },
+    "commands": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/command_entry" }
+    },
+    "envelope_schema": {
+      "type": "string",
+      "description": "Filename of the envelope schema that all responses satisfy."
+    },
+    "total_commands": {
+      "type": "integer",
+      "minimum": 1
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "command_entry": {
+      "type": "object",
+      "required": ["name", "summary", "project_aware", "touches_kuzu", "output_modes", "server", "prereqs"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "description": "CLI command name as registered in Typer."
+        },
+        "summary": {
+          "type": "string",
+          "description": "One-line human description."
+        },
+        "schema": {
+          "type": ["string", "null"],
+          "description": "Filename in schemas/ for the command's response, or null."
+        },
+        "project_aware": {
+          "type": "boolean",
+          "description": "True if the command accepts --project and routes to a per-project store."
+        },
+        "touches_kuzu": {
+          "type": "boolean",
+          "description": "True if the command opens a KuzuDB connection."
+        },
+        "output_modes": {
+          "type": "array",
+          "items": { "type": "string", "enum": ["json", "html", "summary"] },
+          "minItems": 1,
+          "description": "Supported output formats."
+        },
+        "server": {
+          "type": "boolean",
+          "description": "True if the command starts a long-running process."
+        },
+        "prereqs": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Environment variables or services required at runtime (e.g. KUZUDB_PATH, HF_HOME)."
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}
