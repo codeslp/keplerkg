@@ -79,6 +79,27 @@ _TIP_TABLE: dict[str, dict[str, str]] = {
             "regressions."
         ),
     },
+    "audit_hard_violation": {
+        "suggestion": (
+            "Run `kkg audit --scope diff --require-hard-zero` to see which "
+            "hard violations are blocking. Fix them before handoff."
+        ),
+        "rationale": (
+            "Hard violations (circular imports, test imports in prod, "
+            "compliance rules) block merges when enforcement is enabled."
+        ),
+    },
+    "compliance_gap": {
+        "suggestion": (
+            "Run `kkg audit --profile soc2` to identify compliance gaps. "
+            "Auth bypass, unlogged endpoints, and hardcoded secrets are "
+            "the most common findings."
+        ),
+        "rationale": (
+            "SOC 2 auditors need evidence that access control, monitoring, "
+            "and data protection controls are in place."
+        ),
+    },
 }
 
 

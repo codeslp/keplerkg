@@ -29,7 +29,7 @@ def test_default_standards_config():
     cfg = CgraphConfig()
     assert cfg.standards.profile == "default"
     assert cfg.standards.categories == ["all"]
-    assert "CGQ-A01" in cfg.standards.hard_stop
+    assert "circular_imports" in cfg.standards.hard_stop
 
 
 # ---------------------------------------------------------------------------
@@ -40,16 +40,16 @@ def test_preset_soc2():
     std = StandardsConfig(profile="soc2")
     _apply_preset(std)
     assert "compliance" in std.categories
-    assert "CGQ-H01" in std.hard_stop
-    assert "CGQ-H04" in std.hard_stop
-    assert std.overrides.get("CGQ-H01") == "blocker"
+    assert "auth_bypass" in std.hard_stop
+    assert "hardcoded_secret_in_graph" in std.hard_stop
+    assert std.overrides.get("auth_bypass") == "blocker"
 
 
 def test_preset_strict():
     std = StandardsConfig(profile="strict")
     _apply_preset(std)
-    assert "CGQ-A05" in std.hard_stop
-    assert std.overrides.get("CGQ-A05") == "blocker"
+    assert "class_too_large" in std.hard_stop
+    assert std.overrides.get("class_too_large") == "blocker"
 
 
 def test_preset_minimal():
@@ -70,23 +70,23 @@ def test_user_overrides_win_over_preset():
     """User explicit overrides are not clobbered by preset."""
     std = StandardsConfig(
         profile="soc2",
-        overrides={"CGQ-H01": "warn"},  # User downgrades from preset's blocker
+        overrides={"auth_bypass": "warn"},  # User downgrades from preset's blocker
     )
     _apply_preset(std)
     # User value should win
-    assert std.overrides["CGQ-H01"] == "warn"
+    assert std.overrides["auth_bypass"] == "warn"
 
 
 def test_hard_stop_union():
     """User hard_stop + preset hard_stop = union."""
     std = StandardsConfig(
         profile="soc2",
-        hard_stop=["CGQ-B01"],  # User adds their own
+        hard_stop=["function_cyclomatic_complexity"],  # User adds their own
     )
     _apply_preset(std)
-    assert "CGQ-B01" in std.hard_stop  # User's
-    assert "CGQ-H01" in std.hard_stop  # Preset's
-    assert "CGQ-A01" in std.hard_stop  # Preset's
+    assert "function_cyclomatic_complexity" in std.hard_stop  # User's
+    assert "auth_bypass" in std.hard_stop  # Preset's
+    assert "circular_imports" in std.hard_stop  # Preset's
 
 
 # ---------------------------------------------------------------------------
@@ -101,17 +101,17 @@ enabled = true
 [cgraph.standards]
 profile = "soc2"
 categories = ["coupling", "compliance"]
-hard_stop = ["CGQ-A01", "CGQ-A02", "CGQ-H01"]
+hard_stop = ["circular_imports", "CGQ-A02", "auth_bypass"]
 
 [cgraph.standards.overrides]
-CGQ-B04 = "off"
-CGQ-A05 = "blocker"
+parameter_count = "off"
+class_too_large = "blocker"
 """
     cfg = _parse_cgraph_section(text)
     assert cfg.standards.profile == "soc2"
     assert "compliance" in cfg.standards.categories
-    assert cfg.standards.overrides["CGQ-B04"] == "off"
-    assert cfg.standards.overrides["CGQ-A05"] == "blocker"
+    assert cfg.standards.overrides["parameter_count"] == "off"
+    assert cfg.standards.overrides["class_too_large"] == "blocker"
 
 
 def test_parse_standards_inherits_preset():
@@ -121,7 +121,7 @@ profile = "strict"
 """
     cfg = _parse_cgraph_section(text)
     # Strict preset should populate overrides
-    assert "CGQ-A05" in cfg.standards.overrides
+    assert "class_too_large" in cfg.standards.overrides
 
 
 # ---------------------------------------------------------------------------
@@ -152,7 +152,7 @@ def _make_standards_dir(tmp_path):
     std.mkdir()
     (std / "_exemptions.yaml").write_text("paths: []\n")
     (std / "rule_coupling.yaml").write_text(dedent("""\
-        id: CGQ-A01
+        id: circular_imports
         advisory_kind: circular_imports
         severity: hard
         category: coupling
@@ -160,7 +160,7 @@ def _make_standards_dir(tmp_path):
         query: "MATCH (f:Function) WHERE f.x > 5 RETURN f.uid, f.name, f.path, f.line_number"
     """))
     (std / "rule_complexity.yaml").write_text(dedent("""\
-        id: CGQ-B01
+        id: function_cyclomatic_complexity
         advisory_kind: high_complexity
         severity: warn
         category: complexity
@@ -193,7 +193,7 @@ def test_audit_rule_disabled_via_override(tmp_path):
     """Rules with override="off" are skipped."""
     std = _make_standards_dir(tmp_path)
     cfg = CgraphConfig(standards=StandardsConfig(
-        overrides={"CGQ-A01": "off"},
+        overrides={"circular_imports": "off"},
     ))
 
     with patch(
@@ -206,7 +206,7 @@ def test_audit_rule_disabled_via_override(tmp_path):
         from codegraphcontext_ext.commands.audit import build_audit_payload
         result = build_audit_payload(standards_dir=std)
 
-    # CGQ-A01 disabled, only CGQ-B01 should run
+    # circular_imports disabled, only function_cyclomatic_complexity should run
     assert result["standards_evaluated"] == 1
 
 

@@ -147,7 +147,7 @@ def build_audit_payload(
     if "all" not in active_categories:
         rules = [r for r in rules if r.category in active_categories]
 
-    # Apply per-rule overrides (severity changes + "off" disables)
+    # Apply per-rule overrides (severity, thresholds, "off" disables)
     filtered_rules = []
     for rule in rules:
         override = std_cfg.overrides.get(rule.id)
@@ -158,6 +158,10 @@ def build_audit_payload(
         # Check hard_stop list — promote to hard if listed
         if rule.id in std_cfg.hard_stop and rule.severity != "hard":
             rule.severity = "hard"
+        # Apply threshold overrides from config
+        threshold_overrides = std_cfg.thresholds.get(rule.id)
+        if threshold_overrides:
+            rule.thresholds.update(threshold_overrides)
         filtered_rules.append(rule)
 
     rules = filtered_rules

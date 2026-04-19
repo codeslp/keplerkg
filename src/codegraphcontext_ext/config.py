@@ -31,7 +31,7 @@ class StandardsConfig:
     overrides: dict[str, str] = field(default_factory=dict)  # rule_id → severity | "off"
     thresholds: dict[str, dict[str, int]] = field(default_factory=dict)  # rule_id → {warn: N, hard: M}
     hard_stop: list[str] = field(
-        default_factory=lambda: ["CGQ-A01", "CGQ-A02", "CGQ-A03"],
+        default_factory=lambda: ["circular_imports", "test_import_in_prod", "cross_file_private_access"],
     )
 
 
@@ -39,36 +39,37 @@ class StandardsConfig:
 STANDARDS_PRESETS: dict[str, dict[str, Any]] = {
     "default": {
         "categories": ["all"],
-        "hard_stop": ["CGQ-A01", "CGQ-A02", "CGQ-A03"],
+        "hard_stop": ["circular_imports", "test_import_in_prod", "cross_file_private_access"],
     },
     "strict": {
         "categories": ["all"],
         "overrides": {
-            "CGQ-A05": "blocker",  # god_class
-            "CGQ-A06": "blocker",  # inappropriate_intimacy
-            "CGQ-B01": "blocker",  # cyclomatic_complexity
+            "class_too_large": "blocker",
+            "function_cyclomatic_complexity": "blocker",
+            "excessive_fan_out": "blocker",
         },
         "hard_stop": [
-            "CGQ-A01", "CGQ-A02", "CGQ-A03",
-            "CGQ-A05", "CGQ-A06", "CGQ-B01",
+            "circular_imports", "test_import_in_prod", "cross_file_private_access",
+            "class_too_large", "function_cyclomatic_complexity", "excessive_fan_out",
         ],
     },
     "soc2": {
         "categories": ["coupling", "compliance"],
         "overrides": {
-            "CGQ-H01": "blocker",  # auth_bypass
-            "CGQ-H03": "blocker",  # sensitive_data_unprotected
-            "CGQ-H04": "blocker",  # hardcoded_secret
-            "CGQ-H05": "blocker",  # admin_no_audit_trail
+            "auth_bypass": "blocker",
+            "sensitive_data_unprotected": "blocker",
+            "hardcoded_secret_in_graph": "blocker",
+            "admin_action_no_audit_trail": "blocker",
         },
         "hard_stop": [
-            "CGQ-A01", "CGQ-A02", "CGQ-A03",
-            "CGQ-H01", "CGQ-H03", "CGQ-H04", "CGQ-H05",
+            "circular_imports", "test_import_in_prod", "cross_file_private_access",
+            "auth_bypass", "sensitive_data_unprotected", "hardcoded_secret_in_graph",
+            "admin_action_no_audit_trail",
         ],
     },
     "minimal": {
         "categories": ["coupling"],
-        "hard_stop": ["CGQ-A01", "CGQ-A02", "CGQ-A03"],
+        "hard_stop": ["circular_imports", "test_import_in_prod", "cross_file_private_access"],
     },
 }
 
@@ -183,6 +184,15 @@ def _parse_cgraph_section(text: str) -> CgraphConfig:
             # [cgraph.standards.overrides] — rule_id = severity
             if isinstance(val, str):
                 cfg.standards.overrides[key] = val
+        elif len(section) == 4 and section[:3] == ("cgraph", "standards", "thresholds"):
+            # [cgraph.standards.thresholds.rule_id] — warn = N, hard = M
+            rule_id = section[3]
+            if rule_id not in cfg.standards.thresholds:
+                cfg.standards.thresholds[rule_id] = {}
+            if isinstance(val, (int, float)):
+                cfg.standards.thresholds[rule_id][key] = int(val)
+            elif isinstance(val, str) and val.isdigit():
+                cfg.standards.thresholds[rule_id][key] = int(val)
         elif len(section) == 3 and section[:2] == ("cgraph", "lanes"):
             lane_id = section[2]
             if lane_id not in cfg.lanes:
