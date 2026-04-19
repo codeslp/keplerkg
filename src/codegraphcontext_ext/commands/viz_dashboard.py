@@ -236,7 +236,38 @@ _DASHBOARD_TEMPLATE = """<!DOCTYPE html>
     </div>
   </div>
   <div class="pane" id="pane-standards">
-    <div style="display:flex;width:100%;height:100%;position:absolute;inset:0;font-family:'Antic',sans-serif;color:#c9d1d9">
+    <div style="display:flex;flex-direction:column;width:100%;height:100%;position:absolute;inset:0;font-family:'Antic',sans-serif;color:#c9d1d9">
+      <section class="emb-explainer" id="std-explainer" aria-label="Standards guide">
+        <div class="emb-explainer__bar">
+          <div class="emb-explainer__lede">
+            <strong>Each node is a quality rule.</strong> Rules are grouped by <em>category</em> &mdash; click any rule to see what it detects, the graph evidence that proves it, and how to change its severity.
+          </div>
+          <div class="emb-explainer__controls">
+            <button type="button" id="std-explainer-toggle" class="emb-explainer__chevron" aria-expanded="true" aria-controls="std-explainer-body" title="Hide tips"><span class="chev">&#9662;</span></button>
+          </div>
+        </div>
+        <div class="emb-explainer__body" id="std-explainer-body">
+          <div>
+            <h3>What you&rsquo;re looking at</h3>
+            <p><strong>Large circles</strong> are <em>categories</em> &mdash; coupling, complexity, compliance, etc. They group related rules.</p>
+            <p><strong>Small circles</strong> are individual <em>rules</em>. Their color shows severity:</p>
+            <p><span style="color:#f85149">&bull;</span> <strong>Red</strong> = blocker/hard (blocks merge) &nbsp; <span style="color:#f0883e">&bull;</span> <strong>Orange</strong> = critical &nbsp; <span style="color:#d29922">&bull;</span> <strong>Yellow</strong> = major/warn &nbsp; <span style="color:#58a6ff">&bull;</span> <strong>Blue</strong> = minor &nbsp; <span style="color:#484f58">&bull;</span> <strong>Gray</strong> = info</p>
+          </div>
+          <div>
+            <h3>How to configure</h3>
+            <p><strong>Click a rule</strong> &rarr; the sidebar shows its summary, evidence, and a severity dropdown. Set it to <kbd>Off</kbd> to disable it or <kbd>Blocker</kbd> to make it a hard gate.</p>
+            <p><strong>Category checkboxes</strong> (left sidebar) toggle entire groups. Uncheck &ldquo;dead_code&rdquo; to hide all dead-code rules at once.</p>
+            <p><strong>Profile selector</strong> switches presets: <em>Default</em> (3 hard rules), <em>Strict</em> (complexity + coupling blockers), <em>SOC 2</em> (compliance-focused), <em>Minimal</em> (coupling only).</p>
+          </div>
+          <div>
+            <h3>Saving your config</h3>
+            <p><strong>Export Config</strong> (bottom of sidebar) downloads a <kbd>.toml</kbd> file. Paste it into your project&rsquo;s <code>[cgraph.standards]</code> section:</p>
+            <p style="font-size:10px;color:#7ee787;font-family:monospace">kkg.toml &nbsp;or&nbsp; .btrain/project.toml</p>
+            <p>The config controls which rules run, at what severity, and which ones block merges. Changes take effect on the next <kbd>kkg audit</kbd> run.</p>
+          </div>
+        </div>
+      </section>
+    <div style="display:flex;flex:1;min-height:0">
       <div id="std-sidebar" style="width:280px;min-width:280px;overflow-y:auto;padding:16px;background:#0d1117;border-right:1px solid #21262d">
         <h3 style="font-size:14px;color:#58a6ff;margin-bottom:12px">Rule Configuration</h3>
         <div style="margin-bottom:12px">
@@ -281,6 +312,7 @@ _DASHBOARD_TEMPLATE = """<!DOCTYPE html>
         <button id="std-export" style="margin-top:16px;width:100%;padding:8px;background:#238636;color:#fff;border:none;border-radius:6px;font-size:12px;cursor:pointer">Export Config (TOML)</button>
       </div>
       <div id="std-graph" style="flex:1;min-height:400px;background:#0d1117;position:relative"></div>
+    </div>
     </div>
     <script>
     (function() {
@@ -419,6 +451,17 @@ _DASHBOARD_TEMPLATE = """<!DOCTYPE html>
         const a=document.createElement('a');a.href=URL.createObjectURL(blob);
         a.download='kkg-standards.toml';a.click();
       });
+
+      // Collapse / expand the standards explainer
+      const stdExplainer = document.getElementById('std-explainer');
+      const stdExplainerToggle = document.getElementById('std-explainer-toggle');
+      if (stdExplainerToggle && stdExplainer) {
+        stdExplainerToggle.addEventListener('click', () => {
+          const collapsed = stdExplainer.classList.toggle('collapsed');
+          stdExplainerToggle.setAttribute('aria-expanded', String(!collapsed));
+          stdExplainerToggle.setAttribute('title', collapsed ? 'Show tips' : 'Hide tips');
+        });
+      }
 
       // Expose init for the main tab-switch handler
       window._stdInit = function() { buildCategoryCheckboxes(); render(); };
