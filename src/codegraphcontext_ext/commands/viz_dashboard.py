@@ -236,7 +236,7 @@ _DASHBOARD_TEMPLATE = """<!DOCTYPE html>
     </div>
   </div>
   <div class="pane" id="pane-standards">
-    <div style="display:flex;height:100%;font-family:'Antic',sans-serif;color:#c9d1d9">
+    <div style="display:flex;width:100%;height:100%;position:absolute;inset:0;font-family:'Antic',sans-serif;color:#c9d1d9">
       <div id="std-sidebar" style="width:280px;min-width:280px;overflow-y:auto;padding:16px;background:#0d1117;border-right:1px solid #21262d">
         <h3 style="font-size:14px;color:#58a6ff;margin-bottom:12px">Rule Configuration</h3>
         <div style="margin-bottom:12px">
@@ -280,7 +280,7 @@ _DASHBOARD_TEMPLATE = """<!DOCTYPE html>
         </div>
         <button id="std-export" style="margin-top:16px;width:100%;padding:8px;background:#238636;color:#fff;border:none;border-radius:6px;font-size:12px;cursor:pointer">Export Config (TOML)</button>
       </div>
-      <div id="std-graph" style="flex:1;background:#0d1117"></div>
+      <div id="std-graph" style="flex:1;min-height:400px;background:#0d1117;position:relative"></div>
     </div>
     <script>
     (function() {
@@ -318,7 +318,15 @@ _DASHBOARD_TEMPLATE = """<!DOCTYPE html>
 
       function render() {
         const container = document.getElementById('std-graph');
-        if (!container || typeof cytoscape === 'undefined') return;
+        if (!container) { console.error('std-graph container not found'); return; }
+        if (typeof cytoscape === 'undefined') {
+          container.innerHTML = '<p style="padding:40px;color:#f85149">Cytoscape.js failed to load from CDN. Check your network connection.</p>';
+          return;
+        }
+        if (!rulesData.length) {
+          container.innerHTML = '<p style="padding:40px;color:#8b949e">No standards rules found. Run <code>kkg audit --list</code> to verify.</p>';
+          return;
+        }
         container.innerHTML = '';
         const cy = cytoscape({
           container,
