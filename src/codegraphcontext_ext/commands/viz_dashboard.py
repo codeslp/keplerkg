@@ -55,6 +55,7 @@ _DASHBOARD_TEMPLATE = """<!DOCTYPE html>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Antic&family=Antic+Didone&family=Antic+Slab&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/cytoscape@3.28.1/dist/cytoscape.min.js"></script>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   /* Antic type system:
@@ -281,7 +282,6 @@ _DASHBOARD_TEMPLATE = """<!DOCTYPE html>
       </div>
       <div id="std-graph" style="flex:1;background:#0d1117"></div>
     </div>
-    <script src="https://unpkg.com/cytoscape@3.28.1/dist/cytoscape.min.js"></script>
     <script>
     (function() {
       const rulesData = __STANDARDS_JSON__;
@@ -412,11 +412,8 @@ _DASHBOARD_TEMPLATE = """<!DOCTYPE html>
         a.download='kkg-standards.toml';a.click();
       });
 
-      // Initial render on tab click
-      let stdRendered=false;
-      document.querySelector('[data-pane="pane-standards"]')?.addEventListener('click',()=>{
-        if(!stdRendered){buildCategoryCheckboxes();render();stdRendered=true;}
-      });
+      // Expose init for the main tab-switch handler
+      window._stdInit = function() { buildCategoryCheckboxes(); render(); };
     })();
     </script>
   </div>
@@ -459,6 +456,7 @@ const advancedBtn = document.getElementById("emb-advanced-btn");
 const embIframe = document.getElementById("emb-iframe");
 let embLoaded = false;
 let embAdvanced = false;
+let stdLoaded = false;
 
 function loadEmbIframe() {
   embIframe.src = embAdvanced ? "projector/?advanced=1" : "projector/";
@@ -489,6 +487,10 @@ tabs.forEach(tab => {
     promoteDataSrcdoc(paneEl);
     if (tab.dataset.pane === "pane-embeddings" && !embLoaded) {
       loadEmbIframe();
+    }
+    if (tab.dataset.pane === "pane-standards" && !stdLoaded) {
+      if (window._stdInit) window._stdInit();
+      stdLoaded = true;
     }
   });
 });

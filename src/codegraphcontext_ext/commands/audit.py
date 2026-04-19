@@ -11,6 +11,7 @@ Output: JSON with violations, counts, and hard_zero status.
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any, Optional
@@ -33,6 +34,69 @@ SCHEMA_FILE = "audit.json"
 SUMMARY = "Run code-quality standards against the graph and report violations."
 
 _DEFAULT_STANDARDS_DIR = Path(__file__).resolve().parent.parent.parent.parent / "standards"
+
+
+# ---------------------------------------------------------------------------
+# Scope resolution — which files are in scope for this audit run?
+# ---------------------------------------------------------------------------
+
+def _resolve_scope_files(scope: str) -> set[str] | None:
+    """Return the set of files in scope, or None for 'all' (no filtering).
+
+    Scopes:
+      - 'all' → None (run against everything)
+      - 'diff' → git diff --name-only (unstaged + staged changes)
+      - 'session' → git diff HEAD --name-only (all changes since last commit)
+      - 'lane' → same as session (lane isolation is via btrain locks)
+    """
+    if scope == "all":
+        return None
+
+    if scope in ("diff", "session", "lane"):
+        try:
+            # Staged + unstaged
+            out = subprocess.check_output(
+                ["git", "diff", "HEAD", "--name-only"],
+                text=True,
+                timeout=5,
+            )
+            files = {f.strip() for f in out.splitlines() if f.strip()}
+            # Also include untracked
+            out2 = subprocess.check_output(
+                ["git", "ls-files", "--others", "--exclude-standard"],
+                text=True,
+                timeout=5,
+            )
+            files |= {f.strip() for f in out2.splitlines() if f.strip()}
+            return files
+        except (subprocess.SubprocessError, FileNotFoundError):
+            return None  # Fall back to all
+
+    # function:<uid> — not filtered at file level
+    return None
+
+
+def _filter_violations_by_scope(
+    advisories: list[dict[str, Any]],
+    scope_files: set[str] | None,
+) -> list[dict[str, Any]]:
+    """Remove offenders whose file is not in scope. Drop advisories with zero offenders."""
+    if scope_files is None:
+        return advisories
+
+    filtered = []
+    for adv in advisories:
+        scoped_offenders = [
+            o for o in adv.get("offenders", [])
+            if o.get("path") and any(
+                o["path"].endswith(f) or f in o["path"]
+                for f in scope_files
+            )
+        ]
+        if scoped_offenders:
+            adv = {**adv, "offenders": scoped_offenders}
+            filtered.append(adv)
+    return filtered
 
 
 def _find_standards_dir() -> Path:
@@ -120,6 +184,11 @@ def build_audit_payload(
         results.append(result)
         if result.fired:
             advisories.append(result.to_advisory())
+
+    # Scope filtering — only report violations on files that are in scope
+    scope_files = _resolve_scope_files(scope)
+    if scope_files is not None:
+        advisories = _filter_violations_by_scope(advisories, scope_files)
 
     warn_count = sum(1 for a in advisories if a["severity"] == "warn")
     hard_count = sum(1 for a in advisories if a["severity"] == "hard")
