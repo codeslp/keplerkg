@@ -55,7 +55,6 @@ _DASHBOARD_TEMPLATE = """<!DOCTYPE html>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Antic&family=Antic+Didone&family=Antic+Slab&display=swap" rel="stylesheet">
-<script src="https://unpkg.com/cytoscape@3.28.1/dist/cytoscape.min.js"></script>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   /* Antic type system:
@@ -240,7 +239,7 @@ _DASHBOARD_TEMPLATE = """<!DOCTYPE html>
       <section class="emb-explainer" id="std-explainer" aria-label="Standards guide">
         <div class="emb-explainer__bar">
           <div class="emb-explainer__lede">
-            <strong>Each node is a quality rule.</strong> Rules are grouped by <em>category</em> &mdash; click any rule to see what it detects, the graph evidence that proves it, and how to change its severity.
+            <strong>Toggle rules on or off.</strong> Each row is a quality rule backed by a <em>graph query</em> &mdash; not regex, not heuristics. Change severity with the dropdown, or disable rules you don&rsquo;t need. Export your config as TOML when done.
           </div>
           <div class="emb-explainer__controls">
             <button type="button" id="std-explainer-toggle" class="emb-explainer__chevron" aria-expanded="true" aria-controls="std-explainer-body" title="Hide tips"><span class="chev">&#9662;</span></button>
@@ -248,211 +247,164 @@ _DASHBOARD_TEMPLATE = """<!DOCTYPE html>
         </div>
         <div class="emb-explainer__body" id="std-explainer-body">
           <div>
-            <h3>What you&rsquo;re looking at</h3>
-            <p><strong>Large circles</strong> are <em>categories</em> &mdash; coupling, complexity, compliance, etc. They group related rules.</p>
-            <p><strong>Small circles</strong> are individual <em>rules</em>. Their color shows severity:</p>
-            <p><span style="color:#f85149">&bull;</span> <strong>Red</strong> = blocker/hard (blocks merge) &nbsp; <span style="color:#f0883e">&bull;</span> <strong>Orange</strong> = critical &nbsp; <span style="color:#d29922">&bull;</span> <strong>Yellow</strong> = major/warn &nbsp; <span style="color:#58a6ff">&bull;</span> <strong>Blue</strong> = minor &nbsp; <span style="color:#484f58">&bull;</span> <strong>Gray</strong> = info</p>
+            <h3>How to use</h3>
+            <p><strong>Toggle switch</strong> turns a rule on or off.</p>
+            <p><strong>Severity dropdown</strong> controls what happens when the rule fires: <span style="color:#f85149">hard</span> blocks merges, <span style="color:#d29922">warn</span> shows a reminder.</p>
+            <p><strong>Click a row</strong> to expand its evidence &mdash; the graph pattern that proves the finding.</p>
           </div>
           <div>
-            <h3>How to configure</h3>
-            <p><strong>Click a rule</strong> &rarr; the sidebar shows its summary, evidence, and a severity dropdown. Set it to <kbd>Off</kbd> to disable it or <kbd>Blocker</kbd> to make it a hard gate.</p>
-            <p><strong>Category checkboxes</strong> (left sidebar) toggle entire groups. Uncheck &ldquo;dead_code&rdquo; to hide all dead-code rules at once.</p>
-            <p><strong>Profile selector</strong> switches presets: <em>Default</em> (3 hard rules), <em>Strict</em> (complexity + coupling blockers), <em>SOC 2</em> (compliance-focused), <em>Minimal</em> (coupling only).</p>
+            <h3>Profiles</h3>
+            <p><strong>Default</strong> &mdash; 3 hard rules (circular imports, test-in-prod, private access). Everything else warns.</p>
+            <p><strong>Strict</strong> &mdash; promotes complexity + coupling to blockers.</p>
+            <p><strong>SOC 2</strong> &mdash; enables compliance category, promotes auth/secrets to blockers.</p>
+            <p><strong>Minimal</strong> &mdash; coupling rules only.</p>
           </div>
           <div>
-            <h3>Saving your config</h3>
-            <p><strong>Export Config</strong> (bottom of sidebar) downloads a <kbd>.toml</kbd> file. Paste it into your project&rsquo;s <code>[cgraph.standards]</code> section:</p>
-            <p style="font-size:10px;color:#7ee787;font-family:monospace">kkg.toml &nbsp;or&nbsp; .btrain/project.toml</p>
-            <p>The config controls which rules run, at what severity, and which ones block merges. Changes take effect on the next <kbd>kkg audit</kbd> run.</p>
+            <h3>Saving</h3>
+            <p><strong>Export Config</strong> downloads a <kbd>.toml</kbd> snippet. Paste into <code>[cgraph.standards]</code> in your project config.</p>
+            <p>Config takes effect on the next <kbd>kkg audit</kbd> run, including enforcement hooks.</p>
           </div>
         </div>
       </section>
-    <div style="display:flex;flex:1;min-height:0">
-      <div id="std-sidebar" style="width:280px;min-width:280px;overflow-y:auto;padding:16px;background:#0d1117;border-right:1px solid #21262d">
-        <h3 style="font-size:14px;color:#58a6ff;margin-bottom:12px">Rule Configuration</h3>
-        <div style="margin-bottom:12px">
-          <label style="font-size:11px;color:#8b949e;text-transform:uppercase;letter-spacing:0.1em">Profile</label>
-          <select id="std-profile" style="display:block;width:100%;margin-top:4px;padding:6px 8px;background:#161b22;color:#c9d1d9;border:1px solid #30363d;border-radius:4px;font-size:12px">
-            <option value="default">Default</option>
-            <option value="strict">Strict</option>
-            <option value="soc2">SOC 2</option>
-            <option value="minimal">Minimal</option>
-          </select>
-        </div>
-        <div style="margin-bottom:12px">
-          <label style="font-size:11px;color:#8b949e;text-transform:uppercase;letter-spacing:0.1em">Categories</label>
-          <div id="std-categories" style="margin-top:4px"></div>
-        </div>
-        <div style="margin-bottom:12px">
-          <label style="font-size:11px;color:#8b949e;text-transform:uppercase;letter-spacing:0.1em">Legend</label>
-          <div style="margin-top:6px;font-size:11px;line-height:2">
-            <span style="display:inline-block;width:10px;height:10px;background:#f85149;border-radius:50%;margin-right:4px"></span> Blocker/Hard
-            <span style="display:inline-block;width:10px;height:10px;background:#f0883e;border-radius:50%;margin-right:4px;margin-left:8px"></span> Critical
-            <span style="display:inline-block;width:10px;height:10px;background:#d29922;border-radius:50%;margin-right:4px;margin-left:8px"></span> Major/Warn
-            <span style="display:inline-block;width:10px;height:10px;background:#58a6ff;border-radius:50%;margin-right:4px;margin-left:8px"></span> Minor
-            <span style="display:inline-block;width:10px;height:10px;background:#484f58;border-radius:50%;margin-right:4px;margin-left:8px"></span> Info
-          </div>
-        </div>
-        <div id="std-detail" style="margin-top:16px;padding:12px;background:#161b22;border-radius:6px;font-size:12px;display:none">
-          <h4 id="std-detail-title" style="color:#58a6ff;margin-bottom:8px"></h4>
-          <div id="std-detail-body" style="color:#8b949e;line-height:1.6"></div>
-          <div style="margin-top:8px">
-            <label style="font-size:11px;color:#8b949e">Severity override:</label>
-            <select id="std-detail-override" style="margin-top:2px;padding:4px 6px;background:#0d1117;color:#c9d1d9;border:1px solid #30363d;border-radius:3px;font-size:11px">
-              <option value="">Default</option>
-              <option value="blocker">Blocker</option>
-              <option value="critical">Critical</option>
-              <option value="major">Major</option>
-              <option value="minor">Minor</option>
-              <option value="info">Info</option>
-              <option value="off">Off</option>
-            </select>
-          </div>
-        </div>
-        <button id="std-export" style="margin-top:16px;width:100%;padding:8px;background:#238636;color:#fff;border:none;border-radius:6px;font-size:12px;cursor:pointer">Export Config (TOML)</button>
+      <div style="padding:8px 16px;display:flex;align-items:center;gap:12px;background:#0d1117;border-bottom:1px solid #21262d;flex-shrink:0">
+        <label style="font-size:11px;color:#8b949e">Profile:</label>
+        <select id="std-profile" style="padding:4px 8px;background:#161b22;color:#c9d1d9;border:1px solid #30363d;border-radius:4px;font-size:12px">
+          <option value="default">Default</option>
+          <option value="strict">Strict</option>
+          <option value="soc2">SOC 2</option>
+          <option value="minimal">Minimal</option>
+        </select>
+        <span style="flex:1"></span>
+        <span style="font-size:11px;color:#8b949e" id="std-summary"></span>
+        <button id="std-export" style="padding:5px 12px;background:#238636;color:#fff;border:none;border-radius:4px;font-size:11px;cursor:pointer">Export TOML</button>
       </div>
-      <div id="std-graph" style="flex:1;min-height:400px;background:#0d1117;position:relative"></div>
-    </div>
+      <div style="flex:1;overflow-y:auto;padding:0" id="std-table-wrap">
+        <table style="width:100%;border-collapse:collapse;font-size:12px" id="std-table">
+          <thead style="position:sticky;top:0;background:#0d1117;z-index:1">
+            <tr style="border-bottom:2px solid #30363d;text-align:left">
+              <th style="padding:8px 12px;width:40px">On</th>
+              <th style="padding:8px 8px">Rule</th>
+              <th style="padding:8px 8px">Category</th>
+              <th style="padding:8px 8px;width:100px">Severity</th>
+              <th style="padding:8px 12px">Summary</th>
+            </tr>
+          </thead>
+          <tbody id="std-tbody"></tbody>
+        </table>
+      </div>
     </div>
     <script>
     (function() {
       const rulesData = __STANDARDS_JSON__;
-      const severityColors = {hard:'#f85149',blocker:'#f85149',critical:'#f0883e',warn:'#d29922',major:'#d29922',minor:'#58a6ff',info:'#484f58'};
-      const categoryColors = {coupling:'#f0883e',complexity:'#d29922',dead_code:'#484f58',clarity:'#58a6ff',inheritance:'#d2a8ff',compliance:'#f85149',patterns:'#7ee787'};
+      const sevColors = {hard:'#f85149',warn:'#d29922'};
+      const catColors = {coupling:'#f0883e',complexity:'#d29922',dead_code:'#484f58',clarity:'#58a6ff',inheritance:'#d2a8ff',compliance:'#f85149'};
       let overrides = {};
-      let disabledCategories = new Set();
+      let disabled = new Set();
 
-      function buildGraph() {
-        const elements = [];
-        const categories = new Set();
-        rulesData.forEach(r => categories.add(r.category));
-
-        // Category nodes
-        categories.forEach(cat => {
-          elements.push({data:{id:'cat_'+cat,label:cat.replace(/_/g,' '),type:'category'},classes:'category'});
-        });
-
-        // Rule nodes
-        rulesData.forEach(r => {
-          const sev = overrides[r.id] || r.severity;
-          if (sev === 'off' || disabledCategories.has(r.category)) return;
-          elements.push({
-            data:{id:r.id,label:r.id.replace(/^CGQ-[A-Z]\d+_?/,'').replace(/_/g,' ')||r.id,
-                  severity:sev,category:r.category,summary:r.summary,evidence:r.evidence||'',
-                  suggestion:r.suggestion||'',thresholds:JSON.stringify(r.thresholds||{})},
-            classes:'rule'
-          });
-          elements.push({data:{source:'cat_'+r.category,target:r.id}});
-        });
-
-        return elements;
-      }
-
-      function render() {
-        const container = document.getElementById('std-graph');
-        if (!container) { console.error('std-graph container not found'); return; }
-        if (typeof cytoscape === 'undefined') {
-          container.innerHTML = '<p style="padding:40px;color:#f85149">Cytoscape.js failed to load from CDN. Check your network connection.</p>';
-          return;
-        }
-        if (!rulesData.length) {
-          container.innerHTML = '<p style="padding:40px;color:#8b949e">No standards rules found. Run <code>kkg audit --list</code> to verify.</p>';
-          return;
-        }
-        container.innerHTML = '';
-        const cy = cytoscape({
-          container,
-          elements: buildGraph(),
-          style: [
-            {selector:'node.category',style:{'label':'data(label)','text-valign':'center','text-halign':'center',
-              'background-color':function(ele){return categoryColors[ele.data('id').replace('cat_','')]||'#30363d'},
-              'color':'#fff','font-size':'11px','width':60,'height':60,'text-wrap':'wrap','text-max-width':'55px',
-              'font-family':'Antic, sans-serif','border-width':2,'border-color':'#30363d'}},
-            {selector:'node.rule',style:{'label':'data(label)','text-valign':'center','text-halign':'center',
-              'background-color':function(ele){return severityColors[ele.data('severity')]||'#484f58'},
-              'color':'#fff','font-size':'9px','width':40,'height':40,'text-wrap':'wrap','text-max-width':'38px',
-              'font-family':'Antic, sans-serif','border-width':1,'border-color':'#21262d','opacity':0.9}},
-            {selector:'edge',style:{'line-color':'#21262d','width':1,'curve-style':'bezier','opacity':0.5}},
-            {selector:':selected',style:{'border-color':'#58a6ff','border-width':3}}
-          ],
-          layout:{name:'cose',padding:40,nodeRepulsion:function(){return 8000},idealEdgeLength:function(){return 80},animate:false},
-          minZoom:0.3,maxZoom:3
-        });
-
-        cy.on('tap','node.rule',function(evt){
-          const d = evt.target.data();
-          document.getElementById('std-detail').style.display='block';
-          document.getElementById('std-detail-title').textContent=d.id;
-          document.getElementById('std-detail-body').innerHTML=
-            '<p><strong>'+d.summary+'</strong></p>'+
-            '<p style="margin-top:6px">Severity: <span style="color:'+(severityColors[d.severity]||'#8b949e')+'">'+d.severity+'</span></p>'+
-            '<p style="margin-top:4px">Category: '+d.category+'</p>'+
-            (d.thresholds!=='{}'?'<p style="margin-top:4px">Thresholds: <code>'+d.thresholds+'</code></p>':'')+
-            (d.evidence?'<p style="margin-top:6px;font-style:italic;color:#6e7681">Evidence: '+d.evidence+'</p>':'')+
-            (d.suggestion?'<p style="margin-top:4px;color:#7ee787">'+d.suggestion+'</p>':'');
-          document.getElementById('std-detail-override').value=overrides[d.id]||'';
-        });
-
-        return cy;
-      }
-
-      // Category checkboxes
-      function buildCategoryCheckboxes() {
+      function renderTable() {
+        const tbody = document.getElementById('std-tbody');
+        if (!tbody) return;
+        tbody.innerHTML = '';
         const cats = [...new Set(rulesData.map(r=>r.category))].sort();
-        const div = document.getElementById('std-categories');
-        if (!div) return;
-        div.innerHTML = '';
+        let warnCount=0, hardCount=0, offCount=0;
+
         cats.forEach(cat => {
-          const label = document.createElement('label');
-          label.style.cssText='display:block;font-size:12px;padding:2px 0;cursor:pointer';
-          const cb = document.createElement('input');
-          cb.type='checkbox';cb.checked=!disabledCategories.has(cat);
-          cb.style.marginRight='6px';
-          cb.addEventListener('change',()=>{
-            if(cb.checked) disabledCategories.delete(cat); else disabledCategories.add(cat);
-            render();
+          // Category header row
+          const catRow = document.createElement('tr');
+          catRow.style.cssText='background:#161b22;cursor:default';
+          catRow.innerHTML='<td colspan="5" style="padding:8px 12px;font-weight:600;color:'+(catColors[cat]||'#8b949e')+';font-size:11px;text-transform:uppercase;letter-spacing:0.1em;border-bottom:1px solid #21262d">'+cat.replace(/_/g,' ')+'</td>';
+          tbody.appendChild(catRow);
+
+          rulesData.filter(r=>r.category===cat).forEach(r => {
+            const isOff = disabled.has(r.id) || overrides[r.id]==='off';
+            const sev = isOff ? 'off' : (overrides[r.id] || r.severity);
+            if(sev==='hard') hardCount++; else if(sev==='warn') warnCount++; if(isOff) offCount++;
+
+            const tr = document.createElement('tr');
+            tr.style.cssText='border-bottom:1px solid #21262d;'+(isOff?'opacity:0.4':'');
+            tr.innerHTML=
+              '<td style="padding:6px 12px;text-align:center"><label style="cursor:pointer"><input type="checkbox" data-rule="'+r.id+'" '+(isOff?'':'checked')+' style="accent-color:#238636"></label></td>'+
+              '<td style="padding:6px 8px;color:#e6edf3;font-family:monospace;font-size:11px">'+r.id+'</td>'+
+              '<td style="padding:6px 8px"><span style="color:'+(catColors[r.category]||'#8b949e')+'">'+r.category.replace(/_/g,' ')+'</span></td>'+
+              '<td style="padding:6px 8px"><select data-sev="'+r.id+'" style="padding:2px 4px;background:#0d1117;color:'+(sevColors[sev]||'#8b949e')+';border:1px solid #30363d;border-radius:3px;font-size:11px">'+
+                '<option value="hard"'+(sev==='hard'?' selected':'')+'>hard</option>'+
+                '<option value="warn"'+(sev==='warn'?' selected':'')+'>warn</option>'+
+              '</select></td>'+
+              '<td style="padding:6px 8px;color:#8b949e">'+r.summary+'</td>';
+
+            // Expandable evidence row
+            const evRow = document.createElement('tr');
+            evRow.style.cssText='display:none;background:#161b22';
+            evRow.innerHTML='<td></td><td colspan="4" style="padding:8px 12px;font-size:11px;line-height:1.6;color:#6e7681">'+
+              (r.evidence?'<strong style="color:#58a6ff">Evidence:</strong> '+r.evidence+'<br>':'')+
+              (r.suggestion?'<strong style="color:#7ee787">Suggestion:</strong> '+r.suggestion+'<br>':'')+
+              (r.thresholds&&Object.keys(r.thresholds).length?'<strong>Thresholds:</strong> '+JSON.stringify(r.thresholds):'')+
+              '</td>';
+
+            tr.addEventListener('click',function(e){
+              if(e.target.tagName==='INPUT'||e.target.tagName==='SELECT') return;
+              evRow.style.display=evRow.style.display==='none'?'table-row':'none';
+            });
+            tr.style.cursor='pointer';
+            tbody.appendChild(tr);
+            tbody.appendChild(evRow);
           });
-          label.appendChild(cb);
-          label.appendChild(document.createTextNode(cat.replace(/_/g,' ')));
-          div.appendChild(label);
+        });
+
+        // Update summary
+        const sum = document.getElementById('std-summary');
+        if(sum) sum.textContent=hardCount+' hard \u00b7 '+warnCount+' warn \u00b7 '+offCount+' off \u00b7 '+rulesData.length+' total';
+
+        // Wire toggle checkboxes
+        tbody.querySelectorAll('input[data-rule]').forEach(cb=>{
+          cb.addEventListener('change',function(){
+            if(this.checked) { disabled.delete(this.dataset.rule); delete overrides[this.dataset.rule]; }
+            else { disabled.add(this.dataset.rule); overrides[this.dataset.rule]='off'; }
+            renderTable();
+          });
+        });
+
+        // Wire severity dropdowns
+        tbody.querySelectorAll('select[data-sev]').forEach(sel=>{
+          sel.addEventListener('change',function(){
+            overrides[this.dataset.sev]=this.value;
+            renderTable();
+          });
         });
       }
-
-      // Override handler
-      document.getElementById('std-detail-override')?.addEventListener('change',function(){
-        const title=document.getElementById('std-detail-title')?.textContent;
-        if(!title) return;
-        if(this.value) overrides[title]=this.value; else delete overrides[title];
-        render();
-      });
 
       // Profile handler
       document.getElementById('std-profile')?.addEventListener('change',function(){
-        // Reset and apply preset
-        overrides={};disabledCategories=new Set();
-        // Minimal example — real presets could be injected as JSON
-        if(this.value==='minimal') disabledCategories=new Set(['complexity','dead_code','clarity','inheritance','compliance']);
-        if(this.value==='soc2'){disabledCategories=new Set(['complexity','dead_code','clarity','inheritance']);overrides['CGQ-H01']='blocker';overrides['CGQ-H04']='blocker';}
-        if(this.value==='strict'){['CGQ-A05','CGQ-A06','CGQ-B01'].forEach(id=>overrides[id]='blocker');}
-        buildCategoryCheckboxes();render();
+        overrides={};disabled=new Set();
+        if(this.value==='minimal'){
+          rulesData.forEach(r=>{if(r.category!=='coupling'){disabled.add(r.id);overrides[r.id]='off';}});
+        }
+        if(this.value==='soc2'){
+          rulesData.forEach(r=>{if(r.category!=='coupling'&&r.category!=='compliance'){disabled.add(r.id);overrides[r.id]='off';}});
+          ['auth_bypass','sensitive_data_unprotected','hardcoded_secret_in_graph','admin_action_no_audit_trail'].forEach(id=>overrides[id]='hard');
+        }
+        if(this.value==='strict'){
+          ['class_too_large','function_cyclomatic_complexity','excessive_fan_out'].forEach(id=>overrides[id]='hard');
+        }
+        renderTable();
       });
 
       // Export TOML
       document.getElementById('std-export')?.addEventListener('click',function(){
-        let toml='[cgraph.standards]\\nprofile = "'+
-          (document.getElementById('std-profile')?.value||'default')+'"\\n';
-        const activeCats=[...new Set(rulesData.map(r=>r.category))].filter(c=>!disabledCategories.has(c));
-        toml+='categories = ['+activeCats.map(c=>'"'+c+'"').join(', ')+']\\n';
-        if(Object.keys(overrides).length){
-          toml+='\\n[cgraph.standards.overrides]\\n';
-          Object.entries(overrides).forEach(([k,v])=>{toml+=k+' = "'+v+'"\\n';});
+        const profile=document.getElementById('std-profile')?.value||'default';
+        let lines=['[cgraph.standards]','profile = "'+profile+'"'];
+        const activeCats=[...new Set(rulesData.map(r=>r.category))].filter(c=>!rulesData.every(r=>r.category!==c||disabled.has(r.id)));
+        lines.push('categories = ['+activeCats.map(c=>'"'+c+'"').join(', ')+']');
+        const ovr=Object.entries(overrides).filter(([,v])=>v);
+        if(ovr.length){
+          lines.push('','[cgraph.standards.overrides]');
+          ovr.forEach(([k,v])=>lines.push(k+' = "'+v+'"'));
         }
-        const blob=new Blob([toml.replace(/\\\\n/g,'\\n')],{type:'text/plain'});
-        const a=document.createElement('a');a.href=URL.createObjectURL(blob);
-        a.download='kkg-standards.toml';a.click();
+        const blob=new Blob([lines.join('\\n')],{type:'text/plain'});
+        const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='kkg-standards.toml';a.click();
       });
 
-      // Collapse / expand the standards explainer
+      // Collapse / expand the explainer
       const stdExplainer = document.getElementById('std-explainer');
       const stdExplainerToggle = document.getElementById('std-explainer-toggle');
       if (stdExplainerToggle && stdExplainer) {
@@ -463,8 +415,7 @@ _DASHBOARD_TEMPLATE = """<!DOCTYPE html>
         });
       }
 
-      // Expose init for the main tab-switch handler
-      window._stdInit = function() { buildCategoryCheckboxes(); render(); };
+      window._stdInit = function() { renderTable(); };
     })();
     </script>
   </div>
