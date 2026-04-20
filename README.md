@@ -19,18 +19,24 @@ All outputs are JSON with stable schemas under `schemas/`. Agents parse them dir
 
 ## Validated by dogfooding
 
-We ran KeplerKG on its own codebase and measured the results ([full research paper on the website](https://github.com/codeslp/keplerkg), reproducible scripts in `research/experiments/dogfooding/`):
+We ran KeplerKG on its own codebase and measured the results (reproducible scripts in `research/experiments/dogfooding/`):
 
-| Claim | Result | How we measured |
+| Validated claim | Result | How we measured |
 |-------|--------|-----------------|
-| **Token-efficient context** | **67.4% reduction** — review-packet uses 37K tokens vs 115K for raw diff across 15 commits | tiktoken cl100k_base exact token counting |
-| **Massive context compression** | **482x smaller** — `kkg search` returns ~760 tokens vs 366K for reading all source files | 15 code-understanding queries across 5 approaches |
-| **Finds what line-by-line tools can't** | **323 graph-exclusive findings** — circular imports, unreferenced symbols, cross-file access violations | Compared kkg audit vs radon + pylint on the same codebase |
+| **Token-efficient context** | **67.4% reduction** — review-packet uses 37K tokens vs 115K for raw diff across 15 commits | tiktoken cl100k_base exact token counting (Exp 3A) |
+| **Context compression** | **~760 tokens** per query vs 366K for reading all source files (token count only — answer quality evaluation pending) | 15 code-understanding queries, 5 approaches (Exp 3B Phase 1) |
+| **Finds what line-by-line tools can't** | **323 graph-exclusive findings** — circular imports, unreferenced symbols, cross-file access violations | Compared kkg audit vs radon + pylint on the same codebase (Exp 2B) |
+
+Structural accuracy (Exp 1A) and search relevance (Exp 1B) experiments ran but have known path-normalization issues documented in the findings. Follow-up runs planned.
 
 Reproduce the experiments yourself:
 
 ```bash
+git clone https://github.com/codeslp/keplerkg.git && cd keplerkg
+python -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"
 pip install -r research/experiments/dogfooding/requirements-experiments.txt
+kkg index && kkg embed
 cd research/experiments/dogfooding && make all
 ```
 
@@ -259,7 +265,11 @@ tests/                       # 575+ tests
 
 **Graph store:** KuzuDB (embedded, no server). 18 node tables, 7 relationship groups, HNSW indexes for ANN search.
 
+**Node uid format:** `{name}{absolute_path}{line_number}` — e.g., `authenticate/Users/dev/project/src/auth.py42`. Search results include both `file` (`relative_path:line`) and `relative_path` (`relative_path`) fields for programmatic consumers.
+
 **Agent integration:** Every command emits structured JSON to stdout with a `kind` discriminator and stable schema. Agents pipe command output directly into their context — no parsing needed.
+
+**Setup validation:** Run `kkg doctor` to check backend, DB access, graph health, CALLS edges, and embeddings in one command.
 
 **Standalone-safe:** KeplerKG works without btrain. The config layer falls back to sensible defaults when no `.btrain/project.toml` exists.
 

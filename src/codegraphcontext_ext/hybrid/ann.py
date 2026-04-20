@@ -63,6 +63,7 @@ def _rows_to_results(result: Any, table: str) -> list[dict[str, Any]]:
             "uid": row[0],
             "name": row[1],
             "file": f"{row[2]}:{row[3]}" if row[2] and row[3] else row[2],
+            "relative_path": row[2] or "",
             "table": table,
             "score": round(score, 4),
         })
@@ -100,6 +101,7 @@ def _linear_scan(
             "uid": row[0],
             "name": row[1],
             "file": f"{row[2]}:{row[3]}" if row[2] and row[3] else row[2],
+            "relative_path": row[2] or "",
             "table": table,
             "score": round(score, 4),
         })
@@ -113,6 +115,74 @@ def _l2_distance(left: list[float], right: list[float]) -> float:
     if dims == 0:
         return float("inf")
     return math.sqrt(sum((left[i] - right[i]) ** 2 for i in range(dims)))
+
+
+def search_scoped(
+    conn: Any,
+    query_vector: list[float],
+    *,
+    k: int = 8,
+    allowed_uids: set[str],
+    tables: tuple[str, ...] | None = None,
+) -> list[dict[str, Any]]:
+    """ANN search ranked over an allowed UID set.
+
+    Fetches embeddings for the allowed nodes and ranks them by L2
+    distance to the query vector.  This avoids the global top-N
+    window problem where the best in-scope hit could be ranked
+    beyond any inflated-k cutoff.
+    """
+    if not allowed_uids:
+        return []
+    target_tables = tables or EMBEDDABLE_TABLES
+    all_results: list[dict[str, Any]] = []
+    for table in target_tables:
+        all_results.extend(
+            _linear_scan_scoped(conn, table, query_vector, allowed_uids)
+        )
+    all_results.sort(key=lambda r: r["score"], reverse=True)
+    return all_results[:k]
+
+
+def _linear_scan_scoped(
+    conn: Any,
+    table: str,
+    query_vector: list[float],
+    allowed_uids: set[str],
+) -> list[dict[str, Any]]:
+    """Fetch embeddings for allowed UIDs and score them."""
+    query = (
+        f"MATCH (n:`{table}`) "
+        f"WHERE n.`{EMBEDDING_COLUMN}` IS NOT NULL "
+        f"RETURN n.uid AS uid, n.name AS name, "
+        f"n.path AS file, n.line_number AS line_number, "
+        f"n.`{EMBEDDING_COLUMN}` AS embedding"
+    )
+    try:
+        result = conn.execute(query)
+    except Exception:
+        return []
+
+    scored: list[dict[str, Any]] = []
+    while result.has_next():
+        row = result.get_next()
+        uid = row[0]
+        if uid not in allowed_uids:
+            continue
+        embedding = row[4]
+        if not embedding:
+            continue
+        distance = _l2_distance(query_vector, embedding)
+        score = 1.0 / (1.0 + distance)
+        scored.append({
+            "uid": uid,
+            "name": row[1],
+            "file": f"{row[2]}:{row[3]}" if row[2] and row[3] else row[2],
+            "relative_path": row[2] or "",
+            "table": table,
+            "score": round(score, 4),
+        })
+    return scored
 
 
 def cosine_similarity(a: list[float], b: list[float]) -> float:

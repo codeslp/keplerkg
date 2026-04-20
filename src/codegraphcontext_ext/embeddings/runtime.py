@@ -64,10 +64,20 @@ def resolve_embedding_config(
 
 
 def resolve_requested_backend() -> str:
-    """Resolve the backend choice without triggering upstream fallback side effects."""
+    """Resolve the backend choice without triggering upstream fallback side effects.
 
+    Checks (in order): CGC_RUNTIME_DB_TYPE env → DEFAULT_DATABASE env →
+    DEFAULT_DATABASE from ~/.codegraphcontext/.env config file → probe
+    installed backends.
+    """
     runtime_db = os.environ.get("CGC_RUNTIME_DB_TYPE")
     explicit_db = runtime_db or os.environ.get("DEFAULT_DATABASE")
+    if not explicit_db:
+        try:
+            from codegraphcontext.cli.config_manager import get_config_value
+            explicit_db = get_config_value("DEFAULT_DATABASE")
+        except Exception:
+            pass
     if explicit_db:
         return explicit_db.lower()
 

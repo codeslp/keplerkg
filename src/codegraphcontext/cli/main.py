@@ -132,7 +132,7 @@ def mcp_setup():
     - Cline, RooCode, Amazon Q Developer
     - OpenCode (prints stdio config + link to vendor docs)
     
-    Works with FalkorDB by default (no database setup needed).
+    Works with KuzuDB by default (no database setup needed).
     """
     console.print("\n[bold cyan]MCP Client Setup[/bold cyan]")
     console.print("Configure your IDE or CLI tool to use CodeGraphContext.\n")
@@ -158,7 +158,7 @@ def mcp_start():
     except ValueError as e:
         # This typically happens if credentials are still not found after all checks.
         console.print(f"[bold red]Configuration Error:[/bold red] {e}")
-        console.print("Please run `cgc neo4j setup` or use FalkorDB (default).")
+        console.print("Please run `cgc neo4j setup` or use KuzuDB (default).")
     except KeyboardInterrupt:
         # Handle graceful shutdown on Ctrl+C.
         console.print("\n[bold yellow]Server stopped by user.[/bold yellow]")
@@ -219,7 +219,7 @@ def neo4j_setup():
     - Hosted (Neo4j AuraDB or remote instance)
     - Connect to existing Neo4j instance
     
-    Note: This is optional. CodeGraphContext works with FalkorDB by default.
+    Note: This is optional. CodeGraphContext works with KuzuDB by default.
     """
     console.print("\n[bold cyan]Neo4j Database Setup[/bold cyan]")
     console.print("Configure Neo4j database connection for CodeGraphContext.\n")
@@ -269,12 +269,12 @@ def context_list():
 @context_app.command("create")
 def context_create(
     name: str = typer.Argument(..., help="Name of the new context"),
-    database: str = typer.Option(None, "--database", "-d", help="Database backend (falkordb, kuzudb, neo4j). Defaults to DEFAULT_DATABASE from config."),
+    database: str = typer.Option(None, "--database", "-d", help="Database backend (kuzudb, neo4j, falkordb, or falkordb-remote). Defaults to DEFAULT_DATABASE from config."),
     db_path: str = typer.Option(None, "--db-path", help="Explicit path for the DB (defaults to ~/.codegraphcontext/contexts/<name>/db)"),
 ):
     """Create a new logical context."""
     if database is None:
-        database = config_manager.get_config_value("DEFAULT_DATABASE") or "falkordb"
+        database = config_manager.get_config_value("DEFAULT_DATABASE") or "kuzudb"
     config_manager.create_context(name, database, db_path)
 
 @context_app.command("delete")
@@ -405,8 +405,13 @@ def _load_credentials():
             default_db = _mgr.get_backend_type()   # e.g. 'falkordb' / 'kuzudb'
         except Exception:
             # Factory failed entirely — still show a best-guess
-            from codegraphcontext.core import _is_falkordb_available
-            default_db = "falkordb" if _is_falkordb_available() else "kuzudb"
+            from codegraphcontext.core import _is_falkordb_available, _is_kuzudb_available
+            if _is_kuzudb_available():
+                default_db = "kuzudb"
+            elif _is_falkordb_available():
+                default_db = "falkordb"
+            else:
+                default_db = "neo4j"
 
     if default_db == "neo4j":
         has_neo4j_creds = all([
@@ -486,21 +491,21 @@ def config_reset():
         console.print("[yellow]Reset cancelled[/yellow]")
 
 @config_app.command("db")
-def config_db(backend: str = typer.Argument(..., help="Database backend: 'neo4j', 'falkordb', 'falkordb-remote', or 'kuzudb'")):
+def config_db(backend: str = typer.Argument(..., help="Database backend: 'kuzudb', 'neo4j', 'falkordb', or 'falkordb-remote'")):
     """
     Quickly switch the default database backend.
     
     Shortcut for 'cgc config set DEFAULT_DATABASE <backend>'.
     
     Examples:
+        cgc config db kuzudb
         cgc config db neo4j
         cgc config db falkordb
-        cgc config db kuzudb
     """
     backend = backend.lower()
     if backend not in ['falkordb', 'falkordb-remote', 'neo4j', 'kuzudb']:
         console.print(f"[bold red]Invalid backend: {backend}[/bold red]")
-        console.print("Must be 'falkordb', 'falkordb-remote', 'neo4j', or 'kuzudb'")
+        console.print("Must be 'kuzudb', 'neo4j', 'falkordb', or 'falkordb-remote'")
         raise typer.Exit(code=1)
     
     updated = config_manager.set_config_value("DEFAULT_DATABASE", backend)
@@ -853,7 +858,11 @@ def doctor():
     console.print("\n[bold]2. Checking Database Connection...[/bold]")
     try:
         _load_credentials()
-        default_db = config.get("DEFAULT_DATABASE", "falkordb")
+        default_db = (
+            os.environ.get("CGC_RUNTIME_DB_TYPE")
+            or os.environ.get("DEFAULT_DATABASE")
+            or config.get("DEFAULT_DATABASE", "kuzudb")
+        ).lower()
         console.print(f"   Default database: {default_db}")
         
         if default_db == "neo4j":
@@ -880,8 +889,14 @@ def doctor():
                 console.print(f"   [red]✗[/red] KuzuDB is not installed")
                 console.print(f"       Run: pip install kuzu")
                 all_checks_passed = False
+        elif default_db == "falkordb-remote":
+            host = os.environ.get("FALKORDB_HOST")
+            if host:
+                console.print(f"   [green]✓[/green] FalkorDB Remote host configured: {host}")
+            else:
+                console.print(f"   [red]✗[/red] DEFAULT_DATABASE=falkordb-remote but FALKORDB_HOST is not set")
+                all_checks_passed = False
         else:
-            # FalkorDB
             try:
                 import falkordb
                 console.print(f"   [green]✓[/green] FalkorDB Lite is installed")
@@ -955,6 +970,46 @@ def doctor():
     else:
         console.print(f"   [yellow]⚠[/yellow] cgc command not in PATH (using python -m cgc)")
     
+    # 6. Check KeplerKG graph health (nodes, CALLS edges, embeddings)
+    console.print("\n[bold]6. Checking Graph Health (KeplerKG)...[/bold]")
+    try:
+        from codegraphcontext_ext.io.kuzu import get_kuzu_connection
+        conn = get_kuzu_connection()
+
+        result = conn.execute("MATCH (f:Function) RETURN count(f)")
+        func_count = result.get_next()[0]
+        result = conn.execute("MATCH (c:Class) RETURN count(c)")
+        class_count = result.get_next()[0]
+
+        if func_count > 0:
+            console.print(f"   [green]✓[/green] Graph populated: {func_count} functions, {class_count} classes")
+        else:
+            console.print(f"   [yellow]⚠[/yellow] Graph is empty — run: kkg index")
+            all_checks_passed = False
+
+        result = conn.execute("MATCH ()-[c:CALLS]->() RETURN count(c)")
+        calls_count = result.get_next()[0]
+        if calls_count > 0:
+            console.print(f"   [green]✓[/green] CALLS edges: {calls_count}")
+        else:
+            console.print(
+                f"   [yellow]⚠[/yellow] 0 CALLS edges — blast-radius, impact, execution-flow will be empty.\n"
+                f"       Enable SCIP: set SCIP_INDEXER=true in ~/.codegraphcontext/.env, then kkg index --force"
+            )
+
+        result = conn.execute(
+            "MATCH (f:Function) WHERE f.embedding IS NOT NULL RETURN count(f)"
+        )
+        emb_count = result.get_next()[0]
+        if emb_count > 0:
+            console.print(f"   [green]✓[/green] Embeddings: {emb_count} functions embedded")
+        else:
+            console.print(f"   [yellow]⚠[/yellow] No embeddings — run: kkg embed")
+            all_checks_passed = False
+
+    except Exception as e:
+        console.print(f"   [dim]Skipped graph checks (KuzuDB not accessible: {e})[/dim]")
+
     # Final summary
     console.print("\n" + "=" * 60)
     if all_checks_passed:
@@ -965,6 +1020,7 @@ def doctor():
         console.print("  • For Neo4j issues: Run 'cgc neo4j setup'")
         console.print("  • For missing packages: pip install codegraphcontext")
         console.print("  • For config issues: Run 'cgc config reset'")
+        console.print("  • For graph issues: Run 'kkg index && kkg embed'")
     console.print("=" * 60 + "\n")
 
 
@@ -1006,6 +1062,24 @@ def index(
         reindex_helper(path, context)
     else:
         index_helper(path, context)
+
+    # Post-index check: warn if zero CALLS edges (graph-based features degraded)
+    try:
+        from codegraphcontext_ext.io.kuzu import get_kuzu_connection
+        conn = get_kuzu_connection()
+        result = conn.execute("MATCH ()-[c:CALLS]->() RETURN count(c)")
+        calls_count = result.get_next()[0]
+        if calls_count == 0:
+            console.print(
+                "\n[yellow]Warning: 0 CALLS edges in the graph.[/yellow]\n"
+                "  Graph-based features (blast-radius, impact, execution-flow,\n"
+                "  fan-out audit rules) will return empty results.\n"
+                "  To extract call relationships, enable SCIP indexing:\n"
+                "    Set SCIP_INDEXER=true in ~/.codegraphcontext/.env\n"
+                "    Then run: kkg index --force\n"
+            )
+    except Exception:
+        pass  # Don't block index on diagnostic failures
 
 @app.command()
 def clean(
@@ -2364,7 +2438,7 @@ def main(
         None, 
         "--database", 
         "-db", 
-        help="[Global] Temporarily override database backend (falkordb, falkordb-remote, neo4j, or kuzudb) for any command"
+        help="[Global] Temporarily override database backend (kuzudb, neo4j, falkordb, or falkordb-remote) for any command"
     ),
     visual: bool = typer.Option(
         False,
@@ -2415,7 +2489,7 @@ def main(
         console.print("🛠️  [bold]For CLI Toolkit Mode (direct usage):[/bold]")
         console.print("   • [cyan]cgc index .[/cyan] - Index your current directory")
         console.print("   • [cyan]cgc list[/cyan] - List indexed repositories\n")
-        console.print("📊 [bold]Using Neo4j instead of FalkorDB?[/bold]")
+        console.print("📊 [bold]Using Neo4j instead of KuzuDB?[/bold]")
         console.print("     Run [cyan]cgc neo4j setup[/cyan] (or [cyan]cgc n[/cyan]) to configure Neo4j\n")
         console.print("📈 [bold]Want visual graph output?[/bold]")
         console.print("     Add [cyan]-V[/cyan] or [cyan]--visual[/cyan] to any analyze/find command\n")
