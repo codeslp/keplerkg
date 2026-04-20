@@ -122,6 +122,7 @@ def build_audit_payload(
     category: str | None = None,
     require_hard_zero: bool = False,
     profile: str | None = None,
+    library: bool = False,
 ) -> dict[str, Any]:
     """Build the audit response payload.
 
@@ -143,6 +144,10 @@ def build_audit_payload(
         _apply_preset(std_cfg)
 
     rules = load_rules(std_dir)
+
+    # Library mode: skip rules that overfire on library codebases
+    if library:
+        rules = [r for r in rules if not r.library_exempt]
 
     # Apply category filter (from config or CLI)
     active_categories = [category] if category else std_cfg.categories
@@ -542,6 +547,11 @@ def audit_command(
         "--format",
         help="Output format: json, summary.",
     ),
+    library: bool = typer.Option(
+        False,
+        "--library",
+        help="Library mode: skip rules that overfire on library code (e.g. unreferenced_public_function).",
+    ),
     project: Optional[str] = typer.Option(
         None,
         "--project",
@@ -577,6 +587,7 @@ def audit_command(
         category=category,
         require_hard_zero=require_hard_zero,
         profile=profile,
+        library=library,
     )
 
     if fmt == "summary":

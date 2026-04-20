@@ -40,6 +40,7 @@ class StandardRule:
     evidence: str = ""
     category: str = ""
     detection_method: str = "cypher"  # "cypher" | "embedding"
+    library_exempt: bool = False  # skip this rule in library mode
 
     @property
     def is_hard(self) -> bool:
@@ -186,6 +187,7 @@ def _parse_rule_file(path: Path) -> StandardRule:
         evidence=data.get("evidence", ""),
         category=data.get("category", ""),
         detection_method=data.get("detection_method", "cypher"),
+        library_exempt=bool(data.get("library_exempt", False)),
     )
 
 

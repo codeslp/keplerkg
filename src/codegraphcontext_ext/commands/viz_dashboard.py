@@ -310,6 +310,9 @@ __LOADING_CSS__
 <body>
 <div id="nav">
   <h1>KeplerKG</h1>
+  <select id="project-switcher" title="Switch project" style="background:#1c2128;color:#c9d1d9;border:1px solid #30363d;padding:4px 8px;font-size:12px;font-family:inherit;cursor:pointer;margin-left:8px;">
+    <option value="">__CURRENT_PROJECT__</option>
+  </select>
   <div class="stats">__NODE_COUNT__ nodes &middot; __EDGE_COUNT__ edges &middot; __EMB_COUNT__ embeddings</div>
   <div class="tab-bar" id="tab-bar">
     <button class="tab active" data-pane="pane-2d">2D Graph</button>
@@ -1490,6 +1493,32 @@ aboutOverlay.addEventListener("click", (e) => {
   if (e.target === aboutOverlay) aboutOverlay.style.display = "none";
 });
 
+/* ── project switcher ──────── */
+(function() {
+  const sel = document.getElementById("project-switcher");
+  if (!sel) return;
+  fetch("/api/projects")
+    .then(r => r.json())
+    .then(projects => {
+      sel.innerHTML = "";
+      projects.forEach(p => {
+        const opt = document.createElement("option");
+        opt.value = p.slug;
+        opt.textContent = p.slug + (p.current ? " (active)" : "") + " — " + p.size_mb + " MB";
+        if (p.current) opt.selected = true;
+        sel.appendChild(opt);
+      });
+      sel.addEventListener("change", () => {
+        const slug = sel.value;
+        const msg = "To switch to " + slug + ", restart with:\\n\\nkkg viz-dashboard --project " + slug + "\\n\\nCopy to clipboard?";
+        if (confirm(msg)) {
+          navigator.clipboard.writeText("kkg viz-dashboard --project " + slug).catch(() => {});
+        }
+      });
+    })
+    .catch(() => { sel.style.display = "none"; });
+})();
+
 /* ── iframe load detection: fade out loading overlays ──────── */
 (function() {
   var iframe2d = document.getElementById("iframe-2d");
@@ -1572,6 +1601,7 @@ def _dashboard_html(
     taxonomy_json: str = "null",
     *,
     layout: str,
+    project_slug: str = "default",
 ) -> str:
     """Build the dashboard chrome.  The Embeddings tab iframes to `projector/`,
     which is served as a sibling directory by the HTTP server."""
@@ -1583,6 +1613,7 @@ def _dashboard_html(
     iframe_3d = _html.escape(inner_3d, quote=True)
 
     out = _DASHBOARD_TEMPLATE
+    out = out.replace("__CURRENT_PROJECT__", project_slug)
     out = out.replace("__NODE_COUNT__", str(len(graph["nodes"])))
     out = out.replace("__EDGE_COUNT__", str(len(graph["edges"])))
     out = out.replace("__EMB_COUNT__", str(emb_count))
@@ -1894,6 +1925,7 @@ def _prepare_dashboard_serve_dir(
     *,
     layout: str,
     limit: int = 500,
+    project_slug: str = "default",
 ) -> Path:
     """Create a tempdir with dashboard index.html + projector/ subdir.
 
@@ -1926,6 +1958,7 @@ def _prepare_dashboard_serve_dir(
         violations_json,
         tax_json,
         layout=layout,
+        project_slug=project_slug,
     )
     (serve_dir / "index.html").write_text(html, encoding="utf-8")
 
@@ -2006,9 +2039,10 @@ def viz_dashboard_command(
             emb_nodes,
             layout=layout,
             limit=limit,
+            project_slug=target.slug,
         )
         bound_port = find_free_port(port or None)
-        server = build_server(serve_dir, bound_port)
+        server = build_server(serve_dir, bound_port, current_project=target.slug)
         url = f"http://127.0.0.1:{bound_port}/"
 
         typer.echo(emit_json({

@@ -113,7 +113,7 @@ def find_free_port(preferred: Optional[int] = None) -> int:
 
 
 class _QuietHandler(http.server.SimpleHTTPRequestHandler):
-    """SimpleHTTPRequestHandler with no-cache headers + quiet stdout.
+    """SimpleHTTPRequestHandler with no-cache headers, quiet stdout, and API endpoints.
 
     No-cache headers matter here: Chrome otherwise caches `http://127.0.0.1`
     responses aggressively, and when the dev restarts the server (new tempdir,
@@ -121,6 +121,25 @@ class _QuietHandler(http.server.SimpleHTTPRequestHandler):
     don't apply.  We're always serving fresh files, so send the headers that
     tell the browser to fetch them.
     """
+
+    # Set by build_server via the factory closure
+    _project_list: list[dict] | None = None
+
+    def do_GET(self):  # noqa: N802
+        if self.path == "/api/projects":
+            self._serve_project_list()
+        else:
+            super().do_GET()
+
+    def _serve_project_list(self):
+        """Return JSON list of available KuzuDB project slugs."""
+        data = self._project_list or []
+        body = json.dumps(data).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
 
     def end_headers(self):
         self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
@@ -132,10 +151,38 @@ class _QuietHandler(http.server.SimpleHTTPRequestHandler):
         return
 
 
-def build_server(directory: Path, port: int) -> socketserver.TCPServer:
+def _discover_projects() -> list[dict]:
+    """List available KuzuDB project stores."""
+    import os
+    db_root = Path(os.environ.get("CGRAPH_DB_ROOT", "/Volumes/zombie/cgraph/db"))
+    if not db_root.is_dir():
+        return []
+    projects = []
+    for d in sorted(db_root.iterdir()):
+        if d.is_dir() and not d.name.startswith("test-") and not d.name.startswith("."):
+            kuzu_path = d / "kuzudb"
+            if kuzu_path.exists():
+                projects.append({
+                    "slug": d.name,
+                    "path": str(kuzu_path),
+                    "size_mb": round(sum(f.stat().st_size for f in kuzu_path.rglob("*") if f.is_file()) / 1048576, 1) if kuzu_path.is_dir() else round(kuzu_path.stat().st_size / 1048576, 1),
+                })
+    return projects
+
+
+def build_server(directory: Path, port: int, *, current_project: str = "") -> socketserver.TCPServer:
     """Return a TCPServer rooted at *directory* bound to 127.0.0.1:*port*."""
+    project_list = _discover_projects()
+    # Mark the current project
+    for p in project_list:
+        p["current"] = (p["slug"] == current_project)
+
     def handler_factory(*args, **kwargs):
-        return _QuietHandler(*args, directory=str(directory), **kwargs)
+        handler = _QuietHandler(*args, directory=str(directory), **kwargs)
+        return handler
+
+    # Inject project list into the handler class (shared across requests)
+    _QuietHandler._project_list = project_list
 
     socketserver.TCPServer.allow_reuse_address = True
     return socketserver.TCPServer(("127.0.0.1", port), handler_factory)

@@ -28,6 +28,63 @@ COMMAND_NAME = "search"
 SCHEMA_FILE = "context.json"
 SUMMARY = "Semantic search: ANN vector search + graph neighborhood expansion."
 
+# Maximum lines of source code to include per seed function/class
+_SNIPPET_MAX_LINES = 30
+
+
+def _read_snippet(path: str, start_line: int, max_lines: int = _SNIPPET_MAX_LINES) -> str | None:
+    """Read a source code snippet starting at the given line number.
+
+    Returns the first *max_lines* lines of the function/class body,
+    or None if the file can't be read.
+    """
+    if not path:
+        return None
+    from pathlib import Path as _Path
+    try:
+        p = _Path(path.split(":")[0] if ":" in path else path)
+        if not p.is_file():
+            return None
+        lines = p.read_text(errors="replace").splitlines()
+        # start_line is 1-based
+        idx = max(0, start_line - 1) if start_line else 0
+        snippet = lines[idx : idx + max_lines]
+        return "\n".join(snippet)
+    except (OSError, ValueError):
+        return None
+
+
+def _enrich_seeds_with_snippets(seeds: list[dict]) -> list[dict]:
+    """Add a 'snippet' field to each seed with the first N lines of source."""
+    for seed in seeds:
+        path = seed.get("relative_path") or seed.get("file", "")
+        # Extract line number from "path:line" format
+        line = 1
+        if ":" in path:
+            parts = path.rsplit(":", 1)
+            path = parts[0]
+            try:
+                line = int(parts[1])
+            except ValueError:
+                pass
+        # Also try the raw file field which has absolute paths
+        raw_file = seed.get("file", "")
+        if ":" in raw_file:
+            raw_path = raw_file.rsplit(":", 1)[0]
+            try:
+                line = int(raw_file.rsplit(":", 1)[1])
+            except ValueError:
+                pass
+        else:
+            raw_path = raw_file
+
+        snippet = _read_snippet(raw_path, line)
+        if snippet is None and path:
+            snippet = _read_snippet(path, line)
+        if snippet:
+            seed["snippet"] = snippet
+    return seeds
+
 
 def _resolve_community_uids(conn: Any, community_id: int) -> set[str]:
     """Get UIDs belonging to a Louvain community (0-indexed)."""
@@ -188,6 +245,9 @@ def context_command(
         payload = _build_context_payload(query, [], {"callers": [], "callees": [], "imports": []})
         typer.echo(emit_json(payload))
         raise typer.Exit(code=0)
+
+    # Enrich seeds with source code snippets
+    seeds = _enrich_seeds_with_snippets(seeds)
 
     # Traverse from seeds
     seed_uids = [s["uid"] for s in seeds]
