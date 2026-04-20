@@ -1,0 +1,104 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://codeslp.dev/cgraph/schemas/execution-flow.json",
+  "title": "cgraph execution-flow response",
+  "description": "Forward call-chain trace from a named symbol through the code graph.",
+  "type": "object",
+  "required": ["ok", "kind", "schema_version", "symbol", "roots", "nodes", "edges", "advisories", "summary", "truncated"],
+  "properties": {
+    "ok": { "type": "boolean" },
+    "kind": { "const": "execution_flow" },
+    "schema_version": { "type": "string", "pattern": "^\\d+\\.\\d+$" },
+    "project": { "type": ["string", "null"] },
+    "error": { "type": ["string", "null"] },
+    "symbol": {
+      "type": "string",
+      "description": "The root symbol name that was traced."
+    },
+    "kind_filter": {
+      "type": ["string", "null"],
+      "description": "Node type filter applied, or null."
+    },
+    "roots": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/node" },
+      "description": "Graph nodes matching the symbol (entry points of the flow)."
+    },
+    "nodes": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/flow_node" },
+      "description": "All nodes in the execution flow tree (roots + callees at each depth)."
+    },
+    "edges": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/edge" },
+      "description": "Directed CALLS edges in the flow tree."
+    },
+    "advisories": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/advisory" }
+    },
+    "summary": {
+      "type": "object",
+      "required": ["roots", "total_nodes", "total_edges", "max_depth_reached", "depth_distribution"],
+      "properties": {
+        "roots": { "type": "integer", "minimum": 0 },
+        "total_nodes": { "type": "integer", "minimum": 0 },
+        "total_edges": { "type": "integer", "minimum": 0 },
+        "max_depth_reached": { "type": "integer", "minimum": 0 },
+        "depth_distribution": {
+          "type": "object",
+          "additionalProperties": { "type": "integer", "minimum": 0 },
+          "description": "Node count per depth level (keys are depth as strings)."
+        }
+      },
+      "additionalProperties": false
+    },
+    "truncated": { "type": "boolean" }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "node": {
+      "type": "object",
+      "required": ["uid", "name", "kind"],
+      "properties": {
+        "uid": { "type": "string" },
+        "name": { "type": ["string", "null"] },
+        "file": { "type": ["string", "null"] },
+        "kind": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "flow_node": {
+      "type": "object",
+      "required": ["uid", "name", "kind", "depth"],
+      "properties": {
+        "uid": { "type": "string" },
+        "name": { "type": ["string", "null"] },
+        "file": { "type": ["string", "null"] },
+        "kind": { "type": "string" },
+        "depth": { "type": "integer", "minimum": 0, "description": "BFS depth from root (0 = root itself)." }
+      },
+      "additionalProperties": false
+    },
+    "edge": {
+      "type": "object",
+      "required": ["source", "target"],
+      "properties": {
+        "source": { "type": "string" },
+        "target": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "advisory": {
+      "type": "object",
+      "required": ["level", "kind", "detail"],
+      "properties": {
+        "level": { "enum": ["warn", "info"] },
+        "kind": { "type": "string", "enum": ["symbol_not_found", "truncated", "no_graph"] },
+        "detail": { "type": "string" }
+      },
+      "additionalProperties": false
+    }
+  }
+}

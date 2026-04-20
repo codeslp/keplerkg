@@ -17,6 +17,23 @@ AI coding agents today burn most of their context window reading raw files to un
 
 All outputs are JSON with stable schemas under `schemas/`. Agents parse them directly — no scraping, no heuristics.
 
+## Validated by dogfooding
+
+We ran KeplerKG on its own codebase and measured the results ([full research paper on the website](https://github.com/codeslp/keplerkg), reproducible scripts in `research/experiments/dogfooding/`):
+
+| Claim | Result | How we measured |
+|-------|--------|-----------------|
+| **Token-efficient context** | **67.4% reduction** — review-packet uses 37K tokens vs 115K for raw diff across 15 commits | tiktoken cl100k_base exact token counting |
+| **Massive context compression** | **482x smaller** — `kkg search` returns ~760 tokens vs 366K for reading all source files | 15 code-understanding queries across 5 approaches |
+| **Finds what line-by-line tools can't** | **323 graph-exclusive findings** — circular imports, unreferenced symbols, cross-file access violations | Compared kkg audit vs radon + pylint on the same codebase |
+
+Reproduce the experiments yourself:
+
+```bash
+pip install -r research/experiments/dogfooding/requirements-experiments.txt
+cd research/experiments/dogfooding && make all
+```
+
 ## Quick start
 
 ```bash
@@ -74,24 +91,22 @@ Notes:
 - DB-touching extension commands (`search`, `embed`, `audit`, `blast-radius`, `review-packet`, `viz-*`, `export-embeddings`, `drift-check`) honor `--project`.
 - On Kuzu builds that reject `CREATE HNSW INDEX`, semantic search falls back to a linear embedding scan so new project stores stay usable.
 
-## Near-term Agent CLI Roadmap
+## Agent CLI Contract (Phase 2.5 — Complete)
 
-The next critical CLI work is not another command family; it is making the
-existing CLI more self-describing for agents and wrappers.
+Every command emits a canonical JSON envelope with reserved keys (`ok`, `kind`,
+`schema_version`, `project`, `error`).  Agents parse one contract, not
+per-command quirks.
 
-- **Canonical JSON envelope** across commands so agents can rely on one
-  machine contract instead of command-by-command quirks.
-- **`kkg manifest --json`** to enumerate commands, schemas, `--project`
-  support, required env/prereqs, and output modes.
-- **Contract-test split** so help/schema/envelope regressions are caught
-  without needing a live Kuzu store.
-- **`kkg repl`** with sticky project/profile context after the envelope +
-  manifest stabilize.
-- **Agent-facing skill/registry packaging** after the CLI contract is pinned.
-
-This is the main lesson we are taking from agent-native CLI projects like
-CLI-Anything: treat discoverability and stable machine contracts as product
-features, not just docs.
+- **`kkg manifest --json`** — enumerate commands, schemas, `--project`
+  support, required env/prereqs, output modes, and KuzuDB dependency.
+- **`kkg repl`** — interactive session with sticky `--project`, audit
+  profile, query history, and command dispatch.
+- **Contract tests** — 29 backend-free tests cover envelope schema,
+  `make_envelope`, manifest schema, and command metadata without a live graph.
+- **Agent skills** — `kkg-query` and `kkg-audit` skill definitions live in
+  `.claude/skills/` (gitignored; local to each developer's Claude Code
+  environment). See the skill YAML source in the repo wiki or create them
+  locally via `/skill-creator`.
 
 ## Commands
 
@@ -103,18 +118,24 @@ features, not just docs.
 | `kkg review-packet` | Reviewer JSON: touched nodes, callers, callees, advisories | 5-20x vs. raw diff |
 | `kkg blast-radius --files <paths>` | Transitive caller/callee expansion + lock overlap detection | Catches what `git diff` misses |
 | `kkg drift-check --files <paths>` | Detect graph-neighborhood changes outside a lane | Catches silent upstream drift |
+| `kkg impact --symbol <name>` | Symbol-oriented blast radius — BFS callers/callees | Focused impact analysis |
+| `kkg execution-flow --symbol <name>` | Forward call-chain trace through CALLS edges | Call tree visualization |
+| `kkg clusters` | Surface Louvain communities from the code graph | Module grouping discovery |
+| `kkg entrypoints` | Entry-point scoring from decorators + in-degree | API surface enumeration |
 | `kkg advise <situation>` | Situational tip lookup (lock_overlap, drift, etc.) | Pre-formatted recommendations |
 
 ### Code quality & standards
 
 | Command | What it does |
 |---------|-------------|
-| `kkg audit` | Run 12 quality rules against the graph — coupling, complexity, dead code, clarity, inheritance |
+| `kkg audit` | Run 24 quality rules against the graph — coupling, complexity, dead code, clarity, inheritance, compliance |
 | `kkg audit --profile soc2` | Run with SOC 2 compliance preset (auth-bypass, logging gaps, secrets) |
 | `kkg audit --list` | List all registered standards and their current severity |
 | `kkg audit --explain <id>` | Show a rule's definition, thresholds, evidence, and exemptions |
 | `kkg audit --scope diff` | Only check files you just changed (for PostToolUse hooks) |
 | `kkg audit --require-hard-zero` | Exit 2 if any hard violation fires (for CI gates) |
+| `kkg audit --calibration-report` | Show metric distributions and candidate thresholds for tuning |
+| `kkg health` | A-F letter grade from audit data |
 
 ### Indexing & embedding
 
@@ -122,7 +143,7 @@ features, not just docs.
 |---------|-------------|
 | `kkg index` | Parse repo into KuzuDB graph (18 node types, 7 edge types) |
 | `kkg embed` | Batch-embed functions and classes (local Jina v2, 768-dim) |
-| `kkg sync-check` | Report upstream commits not yet merged |
+| `kkg sync-check` | Report upstream commits not yet merged (see cadence below) |
 
 ### Visualization
 
@@ -142,15 +163,17 @@ features, not just docs.
 
 ## Standards & enforcement
 
-KeplerKG ships 12 code-quality rules that query the graph for structural problems linters can't catch:
+KeplerKG ships 24 code-quality rules that query the graph for structural problems linters can't catch:
 
 | Category | Rules | What they detect |
 |----------|-------|-----------------|
-| **Coupling** | circular_imports, test_import_in_prod, cross_file_private_access, excessive_fan_out | Import cycles, test/prod boundary violations, private API misuse |
-| **Complexity** | function_cyclomatic_complexity, function_too_long, class_too_large, parameter_count | Functions and classes that are too complex |
-| **Dead code** | unreferenced_public_function, unreferenced_public_class | Public symbols with zero callers in the graph |
-| **Clarity** | missing_docstring_public | Public API without documentation |
-| **Inheritance** | deep_inheritance | Inheritance chains deeper than 4 levels |
+| **Coupling** (4) | circular_imports, cross_file_private_access, excessive_fan_out, test_import_in_prod | Import cycles, private API misuse, high fan-out, test/prod boundary violations |
+| **Complexity** (4) | function_cyclomatic_complexity, function_too_long, class_too_large, parameter_count | Functions and classes that are too complex |
+| **Compliance** (8) | auth_bypass, unlogged_endpoint, sensitive_data_unprotected, hardcoded_secret_in_graph, admin_action_no_audit_trail, rate_limit_missing, separation_of_duties_violation, error_handler_leaks_internals | SOC 2 mapped compliance rules |
+| **Naming** (4) | inconsistent_naming, misleading_name, module_content_mismatch, suggest_better_name | Embedding-backed naming analysis |
+| **Dead code** (2) | unreferenced_public_function, unreferenced_public_class | Public symbols with zero callers in the graph |
+| **Clarity** (1) | missing_docstring_public | Public API without documentation |
+| **Inheritance** (1) | deep_inheritance | Inheritance chains deeper than 4 levels |
 
 Every rule is backed by a Cypher query against the knowledge graph — not regex, not heuristics. The `evidence` field in each rule documents exactly what graph pattern proves the finding.
 
@@ -177,6 +200,24 @@ KeplerKG integrates with Claude Code hooks to enforce standards automatically:
 - **CI gate** — `kkg audit --require-hard-zero` on PRs (exit 2 on hard violations)
 
 Copy `scripts/hooks/settings.example.json` to `.claude/settings.json` to enable.
+
+### Sync-check cadence
+
+`kkg sync-check` reports upstream commits not yet merged into your working
+branch.  It resolves the source checkout via `--source-dir` or the
+`[cgraph].source_checkout` key in `.btrain/project.toml`.
+
+Recommended cadence:
+
+| When | Command | Why |
+|------|---------|-----|
+| Before starting a new lane | `kkg sync-check` | Catch drift before you lock files |
+| Before handoff (`pre-handoff` skill) | `kkg sync-check` | Flag upstream changes reviewers should know about |
+| Weekly (or after major upstream merges) | `kkg sync-check --source-dir /path/to/fork` | Keep fork in sync |
+| After `kkg index` | `kkg sync-check` | Verify the graph reflects the latest code |
+
+For automated cadence, wire `kkg sync-check` into a CI step or a
+`PostToolUse` hook that runs on `git pull` / `git merge`.
 
 ### Visual configuration
 
@@ -213,7 +254,7 @@ src/
 standards/                   # 12 YAML rule definitions + _exemptions.yaml
 schemas/                     # JSON Schema for every command output
 scripts/hooks/               # Claude Code enforcement hook scripts
-tests/                       # 375 tests
+tests/                       # 575+ tests
 ```
 
 **Graph store:** KuzuDB (embedded, no server). 18 node tables, 7 relationship groups, HNSW indexes for ANN search.

@@ -88,4 +88,6 @@ viz-embeddings.html
 viz-graph.html
 
 # Private strategy + research notes — local-only, not for the public repo.
-/research/
+# Track the reproducible experiment suite; ignore everything else under research/.
+/research/*
+!/research/experiments/

@@ -16,6 +16,18 @@ These capabilities are live in version **0.4.2**.
 - **SCIP indexing:** Available as an opt-in beta for richer symbol indexing.
 - **CLI:** 55+ commands, including `cgc query` for Cypher and `cgc find` for name-based search.
 
+## ASAP — Dogfooding-Driven Improvements
+
+Issues surfaced by the [dogfooding validation experiments](https://github.com/codeslp/keplerkg/tree/main/research/experiments/dogfooding). These affect every new user applying KeplerKG to a codebase.
+
+- **`kkg doctor` command:** Validate backend, DB access, embeddings, and PATH in one command. (Critical — three onboarding blockers hit before experiments could run.)
+- **Zero-CALLS-edge warning:** `kkg index` should warn when no call relationships are extracted and suggest enabling SCIP. (High — graph-based features silently degrade without CALLS edges.)
+- **Unified backend config loading:** The ext layer's `resolve_requested_backend()` should respect `.codegraphcontext/.env` instead of probing installed backends. (High — causes split-brain where config says kuzudb but ext detects falkordb.)
+- **`relative_path` in search results:** Add a `relative_path` field to search output alongside the existing `file` field. (Medium — programmatic consumers need standard paths.)
+- **Document uid format:** Publish the `{name}{abs_path}{line}` uid format. Consider normalizing to `relative_path::name`. (Medium — integration code currently reverse-engineers the format.)
+- **AST-based call extraction fallback:** Extract basic call relationships from the AST when SCIP is not available. (Short-term — covers simple cases without requiring SCIP tooling.)
+- **Single `--target` flag:** Replace the `--project` + `--source-dir` split with a single `--target /path/to/repo` that derives both. (Short-term — reduces cross-project confusion.)
+
 ## In Progress
 
 Work underway in active development.
@@ -23,6 +35,7 @@ Work underway in active development.
 - **Advanced language query toolkits:** Deeper, language-aware query helpers on top of the graph.
 - **Streaming for large results:** Better handling of very large query result sets.
 - **More parser tests:** Broader coverage and regression tests across the Tree-sitter parsers.
+- **Dogfooding experiment follow-ups:** Fix path normalization in 1B, scope alignment in 1A, cross-project validation on Flask.
 
 ## Planned
 

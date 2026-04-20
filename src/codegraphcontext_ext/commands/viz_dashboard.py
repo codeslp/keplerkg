@@ -17,8 +17,12 @@ from __future__ import annotations
 
 import html as _html
 import json
+import os
+import re
+import shutil
 import sys
 import tempfile
+from collections import Counter
 from pathlib import Path
 from typing import Any, Optional
 
@@ -30,12 +34,15 @@ from ..io.json_stdout import emit_json
 from ..io.kuzu import get_kuzu_connection
 from ..project import PROJECT_OPTION_HELP, activate_project
 from ..viz_server import (
+    DATA_SUBDIR,
+    VENDOR_FILES,
     build_server,
     copy_vendored_projector,
     find_free_port,
     serve_until_interrupted,
     write_projector_data,
 )
+from ..loading_animation import LOADING_CSS, LOADING_JS, loader_html
 from .viz_graph import (
     _LAYOUTS,
     _fetch_graph,
@@ -174,6 +181,16 @@ _DASHBOARD_TEMPLATE = """<!DOCTYPE html>
   .emb-explainer__body kbd { display: inline-block; padding: 0 5px; font-size: 10px;
                               background: #0d1117; border: 1px solid #30363d;
                               color: #e6edf3; font-family: ui-monospace, SFMono-Regular, monospace; }
+  .emb-explainer__panel { padding: 10px 12px; border: 1px solid #21262d; background: #11161d;
+                          transition: border-color 0.12s, background 0.12s, box-shadow 0.12s; }
+  .emb-explainer__panel.active { border-color: #58a6ff; background: #161b22;
+                                 box-shadow: inset 0 0 0 1px rgba(88,166,255,0.22); }
+  .emb-explainer__panel p:last-child { margin-bottom: 0; }
+  .emb-explainer__eyebrow { display: inline-block; margin-bottom: 6px; font-size: 10px;
+                            letter-spacing: 0.08em; text-transform: uppercase; color: #58a6ff; }
+  .emb-explainer__badge { display: inline-flex; align-items: center; padding: 4px 10px;
+                          font-size: 11px; color: #58a6ff; background: #0d1117;
+                          border: 1px solid #30363d; }
   /* Collapsed ribbon: hide tips + lede, tighten the bar to just the button row. */
   .emb-explainer.collapsed .emb-explainer__body { display: none; }
   .emb-explainer.collapsed .emb-explainer__lede { display: none; }
@@ -287,6 +304,7 @@ _DASHBOARD_TEMPLATE = """<!DOCTYPE html>
     width: 1px;
     background: #30363d;
   }
+__LOADING_CSS__
 </style>
 </head>
 <body>
@@ -308,12 +326,15 @@ _DASHBOARD_TEMPLATE = """<!DOCTYPE html>
        its srcdoc is stashed as data-srcdoc and promoted on first tab
        click by the JS below, where the iframe is actually visible. -->
   <div class="pane active" id="pane-2d">
+    __LOADER_2D__
     <iframe id="iframe-2d" srcdoc="__IFRAME_2D__"></iframe>
   </div>
   <div class="pane" id="pane-3d">
+    __LOADER_3D__
     <iframe id="iframe-3d" data-srcdoc="__IFRAME_3D__"></iframe>
   </div>
   <div class="pane" id="pane-embeddings">
+    __LOADER_EMB__
     <div class="embeddings-wrap">
       <section class="emb-explainer" id="emb-explainer" aria-label="Embedding projector guide">
         <div class="emb-explainer__bar">
@@ -359,6 +380,7 @@ _DASHBOARD_TEMPLATE = """<!DOCTYPE html>
     </div>
   </div>
   <div class="pane" id="pane-standards">
+    __LOADER_STD__
     <div style="display:flex;flex-direction:column;width:100%;height:100%;position:absolute;inset:0;font-family:'Antic',sans-serif;color:#c9d1d9">
       <!-- Sub-tab bar -->
       <div style="display:flex;align-items:center;gap:0;background:#0d1117;border-bottom:2px solid #30363d;flex-shrink:0;padding:0 12px">
@@ -437,7 +459,18 @@ _DASHBOARD_TEMPLATE = """<!DOCTYPE html>
       const rulesData = __STANDARDS_JSON__;
       const violationsData = __VIOLATIONS_JSON__;
       const sevColors = {hard:'#f85149',warn:'#d29922'};
-      const catColors = {coupling:'#f0883e',complexity:'#d29922',dead_code:'#484f58',clarity:'#58a6ff',inheritance:'#d2a8ff',compliance:'#f85149'};
+      const catColors = {coupling:'#f0883e',complexity:'#d29922',dead_code:'#484f58',clarity:'#58a6ff',inheritance:'#d2a8ff',compliance:'#f85149',naming:'#a5d6ff'};
+
+      function sevPill(sev) {
+        const bg = sevColors[sev] || '#8b949e';
+        return '<span style="display:inline-block;padding:1px 7px;border-radius:4px;font-size:10px;font-weight:600;letter-spacing:0.03em;color:#fff;background:'+bg+'">'+((sev||'').toUpperCase())+'</span>';
+      }
+      function catPill(cat, count) {
+        const c = catColors[cat] || '#8b949e';
+        const label = (cat||'').replace(/_/g,' ');
+        return '<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:4px;font-size:11px;color:'+c+';border:1px solid '+c+'33;background:'+c+'11">'
+          + label + (count != null ? ' <strong>'+count+'</strong>' : '') + '</span>';
+      }
       let overrides = {};
       let disabled = new Set();
       let collapsedCats = new Set();
@@ -564,8 +597,22 @@ _DASHBOARD_TEMPLATE = """<!DOCTYPE html>
         }
 
         let totalOffenders = 0;
-        violationsData.forEach(v => { totalOffenders += (v.offenders||[]).length; });
+        const catCounts = {};
+        violationsData.forEach(v => {
+          totalOffenders += (v.offenders||[]).length;
+          const rule = rulesData.find(r => r.id === v.standard_id) || {};
+          const cat = rule.category || 'other';
+          catCounts[cat] = (catCounts[cat]||0) + (v.offenders||[]).length;
+        });
         if (countEl) countEl.textContent = totalOffenders + ' violation' + (totalOffenders!==1?'s':'') + ' across ' + violationsData.length + ' rule' + (violationsData.length!==1?'s':'');
+
+        // Category summary bar
+        const catBar = document.createElement('div');
+        catBar.style.cssText = 'display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px;padding:10px 12px;background:#161b22;border:1px solid #21262d;border-radius:6px';
+        Object.keys(catCounts).sort().forEach(cat => {
+          catBar.innerHTML += catPill(cat, catCounts[cat]);
+        });
+        body.appendChild(catBar);
 
         violationsData.forEach(v => {
           const rule = rulesData.find(r => r.id === v.standard_id) || {};
@@ -575,11 +622,10 @@ _DASHBOARD_TEMPLATE = """<!DOCTYPE html>
           // Header bar
           const header = document.createElement('div');
           header.style.cssText = 'display:flex;align-items:center;padding:10px 14px;background:#161b22;cursor:pointer;gap:10px';
-          const sevDot = '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:'+(sevColors[v.severity]||'#8b949e')+'"></span>';
           const arrow = document.createElement('span');
           arrow.textContent = '\u25B6'; arrow.style.cssText = 'font-size:10px;color:#484f58;transition:transform 0.15s';
-          header.innerHTML = sevDot + '<strong style="color:#e6edf3;font-size:12px">' + v.standard_id + '</strong>' +
-            '<span style="font-size:11px;color:'+(catColors[rule.category]||'#8b949e')+'">'+((rule.category||'').replace(/_/g,' '))+'</span>' +
+          header.innerHTML = sevPill(v.severity) + '<strong style="color:#e6edf3;font-size:12px">' + v.standard_id + '</strong>' +
+            catPill(rule.category) +
             '<span style="flex:1"></span>' +
             '<span style="font-size:11px;color:#f0883e">' + (v.offenders||[]).length + ' offender' + ((v.offenders||[]).length!==1?'s':'') + '</span>';
           header.prepend(arrow);
@@ -658,7 +704,8 @@ _DASHBOARD_TEMPLATE = """<!DOCTYPE html>
           const catRow = document.createElement('tr');
           catRow.style.cssText='background:#161b22;cursor:pointer';
           const catArrow = isCollapsed ? '\u25B6' : '\u25BC';
-          catRow.innerHTML='<td colspan="6" style="padding:8px 12px;font-weight:600;color:'+(catColors[cat]||'#8b949e')+';font-size:11px;text-transform:uppercase;letter-spacing:0.1em;border-bottom:1px solid #21262d"><span style="font-size:9px;margin-right:6px;color:#484f58">'+catArrow+'</span>'+cat.replace(/_/g,' ')+'</td>';
+          const catRuleCount = rulesData.filter(r=>r.category===cat).length;
+          catRow.innerHTML='<td colspan="6" style="padding:8px 12px;border-bottom:1px solid #21262d"><span style="font-size:9px;margin-right:6px;color:#484f58">'+catArrow+'</span>'+catPill(cat, catRuleCount)+'</td>';
           catRow.addEventListener('click', () => {
             if (collapsedCats.has(cat)) collapsedCats.delete(cat); else collapsedCats.add(cat);
             renderTable();
@@ -689,7 +736,7 @@ _DASHBOARD_TEMPLATE = """<!DOCTYPE html>
             tr.innerHTML=
               '<td style="padding:6px 12px;text-align:center"><label style="cursor:pointer"><input type="checkbox" data-rule="'+r.id+'" '+(isOff?'':'checked')+' style="accent-color:#238636"></label></td>'+
               '<td style="padding:6px 8px;color:#e6edf3;font-family:monospace;font-size:11px">'+r.id+'</td>'+
-              '<td style="padding:6px 8px"><span style="color:'+(catColors[r.category]||'#8b949e')+'">'+r.category.replace(/_/g,' ')+'</span></td>'+
+              '<td style="padding:6px 8px">'+catPill(r.category)+'</td>'+
               '<td style="padding:6px 8px"><select data-sev="'+r.id+'" style="padding:2px 4px;background:#0d1117;color:'+(sevColors[sev]||'#8b949e')+';border:1px solid #30363d;border-radius:3px;font-size:11px">'+
                 '<option value="hard"'+(sev==='hard'?' selected':'')+'>hard</option>'+
                 '<option value="warn"'+(sev==='warn'?' selected':'')+'>warn</option>'+
@@ -763,6 +810,7 @@ _DASHBOARD_TEMPLATE = """<!DOCTYPE html>
   </div>
   <!-- ═══ TAXONOMY TAB ═══ -->
   <div class="pane" id="pane-taxonomy">
+    __LOADER_TAX__
     <div style="display:flex;flex-direction:column;width:100%;height:100%;position:absolute;inset:0;font-family:'Antic',sans-serif;color:#c9d1d9">
       <div style="display:flex;align-items:center;gap:0;background:#0d1117;border-bottom:2px solid #30363d;flex-shrink:0;padding:0 12px">
         <button class="tab active" data-tax-pane="tax-structure" style="padding:8px 16px;font-size:13px;color:#58a6ff;background:transparent;border:none;border-bottom:2px solid #58a6ff;cursor:pointer;margin-bottom:-2px">Structure</button>
@@ -772,6 +820,37 @@ _DASHBOARD_TEMPLATE = """<!DOCTYPE html>
         <input id="tax-search" type="text" placeholder="Search nodes..." style="padding:4px 8px;background:#161b22;color:#c9d1d9;border:1px solid #30363d;font-size:12px;width:160px;font-family:inherit">
         <span id="tax-stats" style="font-size:11px;color:#8b949e;margin-left:12px"></span>
       </div>
+      <section class="emb-explainer" id="tax-explainer" aria-label="Taxonomy graph guide">
+        <div class="emb-explainer__bar">
+          <div class="emb-explainer__lede" id="tax-explainer-lede">
+            <strong>Structure</strong> shows the containment map from repository and directories down to files and symbols, so you can trace where code lives before you drill into relationships.
+          </div>
+          <div class="emb-explainer__controls">
+            <span class="emb-explainer__badge" id="tax-explainer-current">Structure</span>
+            <button type="button" id="tax-explainer-toggle" class="emb-explainer__chevron" aria-expanded="true" aria-controls="tax-explainer-body" title="Hide tips"><span class="chev">&#9662;</span></button>
+          </div>
+        </div>
+        <div class="emb-explainer__body" id="tax-explainer-body">
+          <article class="emb-explainer__panel active" data-tax-explainer-panel="tax-structure">
+            <span class="emb-explainer__eyebrow">Structure</span>
+            <p><strong>Containment map.</strong> Read the repo as nested containers: repo → directories → files → symbols.</p>
+            <p><strong>Use it for</strong> locating where a feature sits, checking file ownership, and narrowing depth before you inspect details.</p>
+            <p><strong>Interaction</strong> Use the depth slider to peel layers back and tap a node to isolate its subtree.</p>
+          </article>
+          <article class="emb-explainer__panel" data-tax-explainer-panel="tax-inheritance">
+            <span class="emb-explainer__eyebrow">Inheritance</span>
+            <p><strong>Type hierarchy.</strong> This view shows `INHERITS` and `IMPLEMENTS` edges between classes, interfaces, traits, and structs.</p>
+            <p><strong>Use it for</strong> spotting deep hierarchies, shared base types, and where interface contracts fan out into concrete implementations.</p>
+            <p><strong>Interaction</strong> Tap a node to keep its immediate inheritance neighborhood bright while the rest of the graph fades back.</p>
+          </article>
+          <article class="emb-explainer__panel" data-tax-explainer-panel="tax-communities">
+            <span class="emb-explainer__eyebrow">Communities</span>
+            <p><strong>Semantic neighborhoods.</strong> Communities cluster symbols that are tightly connected structurally and semantically.</p>
+            <p><strong>Use it for</strong> identifying feature slices, bridge-heavy modules, and cross-boundary seams that may need cleanup.</p>
+            <p><strong>Interaction</strong> Compare community cards, cross-edge counts, and highlighted nodes to see which clusters are cohesive versus leaky.</p>
+          </article>
+        </div>
+      </section>
 
       <!-- STRUCTURE SUB-TAB -->
       <div id="tax-structure" style="flex:1;position:relative">
@@ -793,6 +872,7 @@ _DASHBOARD_TEMPLATE = """<!DOCTYPE html>
         <div id="tax-communities-cy" style="position:absolute;inset:0;background:#0d1117"></div>
         <div id="tax-comm-stats" style="position:absolute;top:12px;right:12px;background:rgba(13,17,23,0.85);padding:8px 12px;border:1px solid #30363d;font-size:11px;color:#8b949e"></div>
         <div id="tax-comm-legend" style="position:absolute;top:12px;left:12px;background:rgba(13,17,23,0.85);padding:8px 12px;border:1px solid #30363d;font-size:10px;color:#8b949e;display:flex;flex-direction:column;gap:2px;max-height:40%;overflow-y:auto"></div>
+        <div id="tax-comm-profiles" style="position:absolute;right:12px;bottom:12px;width:360px;max-width:calc(100% - 24px);max-height:52%;overflow-y:auto;background:rgba(13,17,23,0.9);border:1px solid #30363d;padding:10px 12px;display:flex;flex-direction:column;gap:10px"></div>
       </div>
     </div>
 
@@ -809,6 +889,31 @@ _DASHBOARD_TEMPLATE = """<!DOCTYPE html>
         Repository:28, Directory:22, File:16, Module:14,
         Class:14, Function:10, Variable:8, Interface:14,
       };
+      const TAX_EXPLAINER_COPY = {
+        'tax-structure': {
+          label: 'Structure',
+          lede: '<strong>Structure</strong> shows the containment map from repository and directories down to files and symbols, so you can trace where code lives before you drill into relationships.',
+        },
+        'tax-inheritance': {
+          label: 'Inheritance',
+          lede: '<strong>Inheritance</strong> isolates the type hierarchy, making it easier to read parent-child contracts, implementations, and deep base-class chains.',
+        },
+        'tax-communities': {
+          label: 'Communities',
+          lede: '<strong>Communities</strong> groups nodes into semantic and structural neighborhoods so you can spot cohesive feature slices and leaky cross-boundary bridges.',
+        },
+      };
+
+      function updateTaxonomyExplainer(paneId) {
+        const meta = TAX_EXPLAINER_COPY[paneId] || TAX_EXPLAINER_COPY['tax-structure'];
+        const ledeEl = document.getElementById('tax-explainer-lede');
+        const currentEl = document.getElementById('tax-explainer-current');
+        if (ledeEl) ledeEl.innerHTML = meta.lede;
+        if (currentEl) currentEl.textContent = meta.label;
+        document.querySelectorAll('[data-tax-explainer-panel]').forEach(panel => {
+          panel.classList.toggle('active', panel.dataset.taxExplainerPanel === paneId);
+        });
+      }
 
       // ── Sub-tab switching ──
       document.querySelectorAll('[data-tax-pane]').forEach(btn => {
@@ -820,8 +925,10 @@ _DASHBOARD_TEMPLATE = """<!DOCTYPE html>
           document.getElementById('tax-structure').style.display = btn.dataset.taxPane==='tax-structure'?'block':'none';
           document.getElementById('tax-inheritance').style.display = btn.dataset.taxPane==='tax-inheritance'?'block':'none';
           document.getElementById('tax-communities').style.display = btn.dataset.taxPane==='tax-communities'?'flex':'none';
+          updateTaxonomyExplainer(btn.dataset.taxPane);
         });
       });
+      updateTaxonomyExplainer('tax-structure');
 
       // ── Lazy Cytoscape loader ──
       function loadScript(src, cb) {
@@ -829,11 +936,32 @@ _DASHBOARD_TEMPLATE = """<!DOCTYPE html>
         s.src = src; s.onload = cb; document.head.appendChild(s);
       }
 
+      function escapeTaxHtml(value) {
+        return String(value ?? '').replace(/[&<>"']/g, ch => ({
+          '&': '&amp;',
+          '<': '&lt;',
+          '>': '&gt;',
+          '"': '&quot;',
+          "'": '&#39;',
+        }[ch]));
+      }
+
       function initTaxonomyViews() {
         if (typeof cytoscapeDagre !== 'undefined') cytoscape.use(cytoscapeDagre);
         initStructureView();
         initInheritanceView();
         initCommunitiesView();
+
+        const taxExplainer = document.getElementById('tax-explainer');
+        const taxExplainerToggle = document.getElementById('tax-explainer-toggle');
+        if (taxExplainer && taxExplainerToggle && !taxExplainer.dataset.boundToggle) {
+          taxExplainerToggle.addEventListener('click', () => {
+            const collapsed = taxExplainer.classList.toggle('collapsed');
+            taxExplainerToggle.setAttribute('aria-expanded', String(!collapsed));
+            taxExplainerToggle.setAttribute('title', collapsed ? 'Show tips' : 'Hide tips');
+          });
+          taxExplainer.dataset.boundToggle = 'true';
+        }
       }
 
       // ── Structure view ──
@@ -1015,10 +1143,13 @@ _DASHBOARD_TEMPLATE = """<!DOCTYPE html>
 
         const statsEl = document.getElementById('tax-comm-stats');
         const legendEl = document.getElementById('tax-comm-legend');
+        const profilesEl = document.getElementById('tax-comm-profiles');
         const s = data.stats;
+        const couplingRatio = s.total_edges > 0 ? (s.cross_community_edges / s.total_edges * 100).toFixed(1) : '0.0';
         statsEl.innerHTML = s.communities + ' communities &middot; ' + s.total_nodes + ' nodes &middot; ' +
           s.structural_edges + ' structural &middot; ' + s.semantic_edges + ' semantic &middot; ' +
-          s.cross_community_edges + ' cross-boundary';
+          '<span style="color:'+(parseFloat(couplingRatio)>30?'#f85149':'#7ee787')+'">' +
+          s.cross_community_edges + ' cross-boundary (' + couplingRatio + '% coupling)</span>';
 
         // Build community color map
         const nodeToComm = {};
@@ -1026,12 +1157,86 @@ _DASHBOARD_TEMPLATE = """<!DOCTYPE html>
           c.members.forEach(m => { nodeToComm[m.uid] = c.id; });
         });
 
-        // Legend
-        legendEl.innerHTML = data.communities.map(c =>
-          '<div><span style="display:inline-block;width:8px;height:8px;background:' +
-          COMM_PALETTE[c.id % COMM_PALETTE.length] + ';margin-right:6px"></span>' +
-          'Community ' + c.id + ' (' + c.size + ')</div>'
-        ).join('');
+        // Community size map for node scaling
+        const commSizeMap = {};
+        data.communities.forEach(c => { commSizeMap[c.id] = c.size; });
+        const maxCommSize = Math.max(...data.communities.map(c => c.size), 1);
+
+        // Per-community cross-edge counts
+        const commCrossCount = {};
+        (data.cross_edges || []).forEach(e => {
+          commCrossCount[e.source_community] = (commCrossCount[e.source_community]||0) + 1;
+          commCrossCount[e.target_community] = (commCrossCount[e.target_community]||0) + 1;
+        });
+
+        // Legend with coupling density
+        legendEl.innerHTML = data.communities.map(c => {
+          const cross = commCrossCount[c.id] || 0;
+          const densityTag = cross > 0 ? ' <span style="color:#f0883e;font-size:10px">' + cross + ' cross</span>' : '';
+          return '<div style="display:flex;align-items:center;gap:4px;margin-bottom:2px">' +
+            '<span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:' +
+            COMM_PALETTE[c.id % COMM_PALETTE.length] + '"></span>' +
+            '<span>C' + c.id + '</span>' +
+            '<span style="color:#8b949e;font-size:10px">(' + c.size + ' nodes)</span>' +
+            densityTag + '</div>';
+        }).join('');
+
+        function renderCommunityProfiles() {
+          if (!profilesEl) return;
+          const cards = data.communities.map(c => {
+            const profile = c.profile || {};
+            const dominant = (profile.dominant_types || []).map(item =>
+              '<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 7px;border:1px solid #30363d;color:#c9d1d9;background:#161b22;font-size:10px">' +
+              escapeTaxHtml(item.type) + ' <strong style="color:#58a6ff">' + escapeTaxHtml(item.count) + '</strong></span>'
+            ).join('');
+            const hotspots = (profile.hotspots || []).map(item =>
+              '<div style="display:flex;justify-content:space-between;gap:8px;font-size:10px;color:#8b949e">' +
+              '<code style="color:#9ecbff;background:none">' + escapeTaxHtml(item.path) + '</code>' +
+              '<span>' + escapeTaxHtml(item.count) + '</span></div>'
+            ).join('');
+            const members = (profile.sample_members || []).map(item =>
+              '<div style="font-size:10px;color:#8b949e;display:flex;justify-content:space-between;gap:8px">' +
+              '<span><strong style="color:#e6edf3">' + escapeTaxHtml(item.name) + '</strong> <span style="color:#58a6ff">' + escapeTaxHtml(item.type) + '</span></span>' +
+              '<code style="color:#6e7681;background:none">' + escapeTaxHtml(item.path) + '</code></div>'
+            ).join('');
+            const rationale = (profile.rationale || []).map(item =>
+              '<div style="padding:8px 9px;border:1px solid #21262d;background:#0d1117">' +
+              '<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">' +
+              '<span style="display:inline-block;padding:1px 6px;background:#f0883e22;color:#f0883e;border:1px solid #f0883e55;font-size:10px;font-weight:600">' + escapeTaxHtml(item.tag) + '</span>' +
+              '<strong style="color:#e6edf3;font-size:10px">' + escapeTaxHtml(item.symbol) + '</strong>' +
+              '<span style="color:#6e7681;font-size:10px">' + escapeTaxHtml(item.path) + (item.line ? ':' + escapeTaxHtml(item.line) : '') + '</span>' +
+              '</div>' +
+              '<div style="font-size:11px;line-height:1.45;color:#c9d1d9">' + escapeTaxHtml(item.text) + '</div>' +
+              '</div>'
+            ).join('');
+            const shapeColor = profile.shape === 'bridge-heavy' ? '#f85149' : '#7ee787';
+            return '<article data-community-card="' + c.id + '" style="padding:10px;border:1px solid #30363d;background:#11161d;display:flex;flex-direction:column;gap:8px;cursor:pointer">' +
+              '<div style="display:flex;align-items:center;gap:8px">' +
+              '<span style="display:inline-block;width:11px;height:11px;border-radius:2px;background:' + COMM_PALETTE[c.id % COMM_PALETTE.length] + '"></span>' +
+              '<strong style="color:#e6edf3">Community ' + c.id + '</strong>' +
+              '<span style="font-size:10px;color:#8b949e">' + c.size + ' nodes</span>' +
+              '<span style="margin-left:auto;font-size:10px;color:' + shapeColor + '">' + escapeTaxHtml(profile.shape || 'mixed') + '</span>' +
+              '</div>' +
+              '<div style="font-size:11px;line-height:1.45;color:#9ba6b3">' + escapeTaxHtml(profile.summary || 'Community summary unavailable.') + '</div>' +
+              '<div style="display:flex;justify-content:space-between;font-size:10px;color:#8b949e">' +
+              '<span>' + (profile.cross_edge_count || 0) + ' cross edges</span>' +
+              '<span>' + ((profile.rationale || []).length) + ' WHY/HACK/NOTE hits</span></div>' +
+              '<div><div style="font-size:10px;color:#58a6ff;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.08em">Types</div>' +
+              '<div style="display:flex;flex-wrap:wrap;gap:6px">' + (dominant || '<span style="font-size:10px;color:#6e7681">No typed members</span>') + '</div></div>' +
+              '<div><div style="font-size:10px;color:#58a6ff;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.08em">Hotspots</div>' +
+              '<div style="display:flex;flex-direction:column;gap:3px">' + (hotspots || '<span style="font-size:10px;color:#6e7681">No file paths recorded</span>') + '</div></div>' +
+              '<div><div style="font-size:10px;color:#58a6ff;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.08em">Representative symbols</div>' +
+              '<div style="display:flex;flex-direction:column;gap:3px">' + (members || '<span style="font-size:10px;color:#6e7681">No symbol samples yet</span>') + '</div></div>' +
+              '<div><div style="font-size:10px;color:#58a6ff;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.08em">Rationale comments (WHY/HACK/NOTE)</div>' +
+              '<div style="display:flex;flex-direction:column;gap:6px">' + (rationale || '<div style="font-size:10px;color:#6e7681">No WHY/HACK/NOTE comments captured for this community yet.</div>') + '</div></div>' +
+              '</article>';
+          }).join('');
+          profilesEl.innerHTML =
+            '<div style="display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #21262d;padding-bottom:6px">' +
+            '<strong style="color:#e6edf3;font-size:12px">Community profiles</strong>' +
+            '<span style="font-size:10px;color:#8b949e">click a card or node to focus</span></div>' +
+            cards;
+        }
 
         // Build Cytoscape elements — nodes colored by community
         const nodeSet = new Set();
@@ -1067,17 +1272,36 @@ _DASHBOARD_TEMPLATE = """<!DOCTYPE html>
               },
               'label': 'data(label)', 'font-size': 9, 'color': '#8b949e',
               'text-halign': 'center', 'text-valign': 'bottom',
-              'width': 10, 'height': 10,
+              'width': function(ele) {
+                var s = commSizeMap[ele.data('community')] || 1;
+                return 6 + Math.round(14 * s / maxCommSize);
+              },
+              'height': function(ele) {
+                var s = commSizeMap[ele.data('community')] || 1;
+                return 6 + Math.round(14 * s / maxCommSize);
+              },
             }},
             { selector: 'edge', style: {
               'line-color': function(ele) {
+                var src = nodeToComm[ele.data('source')];
+                var tgt = nodeToComm[ele.data('target')];
+                if (src !== undefined && tgt !== undefined && src !== tgt) return '#f85149';
                 if (ele.data('provenance') === 'inferred') return '#d29922';
                 return '#30363d';
               },
               'width': function(ele) {
-                return ele.data('provenance') === 'inferred' ? 2 : 1;
+                var src = nodeToComm[ele.data('source')];
+                var tgt = nodeToComm[ele.data('target')];
+                if (src !== undefined && tgt !== undefined && src !== tgt) return 2;
+                return ele.data('provenance') === 'inferred' ? 1.5 : 1;
               },
-              'opacity': 0.4, 'curve-style': 'straight',
+              'opacity': function(ele) {
+                var src = nodeToComm[ele.data('source')];
+                var tgt = nodeToComm[ele.data('target')];
+                if (src !== undefined && tgt !== undefined && src !== tgt) return 0.7;
+                return 0.3;
+              },
+              'curve-style': 'straight',
             }},
             { selector: '.faded', style: { opacity: 0.06 }},
             { selector: '.hit', style: { opacity: 1, 'z-index': 10 }},
@@ -1087,9 +1311,7 @@ _DASHBOARD_TEMPLATE = """<!DOCTYPE html>
           minZoom: 0.1, maxZoom: 4,
         });
 
-        // Click community node → highlight its community
-        cy.on('tap', 'node', function(e) {
-          const comm = e.target.data('community');
+        function setFocusedCommunity(comm) {
           cy.elements().removeClass('faded hit');
           cy.elements().addClass('faded');
           cy.nodes().filter(n => n.data('community') === comm).removeClass('faded').addClass('hit');
@@ -1098,8 +1320,42 @@ _DASHBOARD_TEMPLATE = """<!DOCTYPE html>
             const tgt = nodeToComm[edge.data('target')];
             return src === comm || tgt === comm;
           }).removeClass('faded').addClass('hit');
+          if (profilesEl) {
+            profilesEl.querySelectorAll('[data-community-card]').forEach(card => {
+              const active = Number(card.dataset.communityCard) === comm;
+              card.style.borderColor = active ? '#58a6ff' : '#30363d';
+              card.style.background = active ? '#161b22' : '#11161d';
+            });
+            const selected = profilesEl.querySelector('[data-community-card="' + comm + '"]');
+            if (selected) selected.scrollIntoView({block:'nearest'});
+          }
+        }
+
+        function clearFocusedCommunity() {
+          cy.elements().removeClass('faded hit');
+          if (profilesEl) {
+            profilesEl.querySelectorAll('[data-community-card]').forEach(card => {
+              card.style.borderColor = '#30363d';
+              card.style.background = '#11161d';
+            });
+          }
+        }
+
+        renderCommunityProfiles();
+        if (profilesEl) {
+          profilesEl.querySelectorAll('[data-community-card]').forEach(card => {
+            card.addEventListener('click', () => {
+              setFocusedCommunity(Number(card.dataset.communityCard));
+            });
+          });
+        }
+
+        // Click community node → highlight its community
+        cy.on('tap', 'node', function(e) {
+          const comm = e.target.data('community');
+          setFocusedCommunity(comm);
         });
-        cy.on('tap', function(e) { if (e.target === cy) cy.elements().removeClass('faded hit'); });
+        cy.on('tap', function(e) { if (e.target === cy) clearFocusedCommunity(); });
       }
 
       // ── Lazy init entry point ──
@@ -1126,6 +1382,13 @@ _DASHBOARD_TEMPLATE = """<!DOCTYPE html>
     <h2>KeplerKG</h2>
     <h3>Purpose</h3>
     <p>KeplerKG exists to make the creation of knowledge graphs and embeddings for institutional knowledge of all kinds &mdash; code is the pilot domain, not the ceiling. The code-graph work is a beachhead; the generalised goal is turning any corpus (documentation, meeting transcripts, ticket histories, process wikis) into a navigable graph and embedding space that surfaces structure, similarity, and drift automatically.</p>
+    <h3>Validated by Dogfooding</h3>
+    <ul>
+      <li><strong>67.4% token reduction</strong> &mdash; review-packet vs raw diff across 15 real commits</li>
+      <li><strong>482x context compression</strong> &mdash; kkg search (~760 tokens) vs reading all files (366K tokens)</li>
+      <li><strong>323 graph-exclusive findings</strong> &mdash; issues invisible to line-by-line tools (pylint, radon)</li>
+    </ul>
+    <p style="font-size:0.85em;color:#888;">Reproducible experiments: <code>research/experiments/dogfooding/</code></p>
     <h3>Future Plans</h3>
     <ul>
       <li>Generalise beyond source code to institutional corpora (docs, meeting notes, ticket histories, process wikis)</li>
@@ -1148,6 +1411,9 @@ _DASHBOARD_TEMPLATE = """<!DOCTYPE html>
     </div>
   </div>
 </div>
+<script>
+__LOADING_JS__
+</script>
 <script>
 const tabs = document.querySelectorAll("#tab-bar .tab");
 const panes = document.querySelectorAll(".pane");
@@ -1223,6 +1489,76 @@ aboutClose.addEventListener("click", () => { aboutOverlay.style.display = "none"
 aboutOverlay.addEventListener("click", (e) => {
   if (e.target === aboutOverlay) aboutOverlay.style.display = "none";
 });
+
+/* ── iframe load detection: fade out loading overlays ──────── */
+(function() {
+  var iframe2d = document.getElementById("iframe-2d");
+  var iframe3d = document.getElementById("iframe-3d");
+  var embIframeEl = document.getElementById("emb-iframe");
+
+  function onIframeReady(iframe, paneId) {
+    if (!iframe) return;
+    /* srcdoc iframes fire load once populated */
+    iframe.addEventListener("load", function() {
+      if (window._kkgLoaded) window._kkgLoaded(paneId);
+    });
+  }
+  onIframeReady(iframe2d, "pane-2d");
+  onIframeReady(iframe3d, "pane-3d");
+  onIframeReady(embIframeEl, "pane-embeddings");
+
+  /* Standards: synchronous init — safe to dismiss loader immediately. */
+  var origStdInit = window._stdInit;
+  if (origStdInit) {
+    window._stdInit = function() {
+      origStdInit();
+      if (window._kkgLoaded) window._kkgLoaded("pane-standards");
+    };
+  }
+  /* Taxonomy: _taxInit loads Cytoscape scripts asynchronously, then calls
+     initTaxonomyViews().  We must wait for initTaxonomyViews to actually
+     run before dismissing the loader — not just _taxInit returning.
+
+     The observer + fallback timer are NOT started at page load — they are
+     deferred to when _taxInit is first invoked (i.e. when the user clicks
+     the Taxonomy tab).  This prevents the 12s fallback from expiring on
+     a tab the user never opened. */
+  var origTaxInit = window._taxInit;
+  if (origTaxInit) {
+    window._taxInit = function() {
+      origTaxInit();
+      /* Now that _taxInit has been called, start watching for render. */
+      var taxPane = document.getElementById("pane-taxonomy");
+      if (!taxPane) { if (window._kkgLoaded) window._kkgLoaded("pane-taxonomy"); return; }
+      var taxContainers = taxPane.querySelectorAll("[id$='-cy']");
+      if (taxContainers.length === 0) { if (window._kkgLoaded) window._kkgLoaded("pane-taxonomy"); return; }
+      var taxDismissed = false;
+      var observer = new MutationObserver(function() {
+        if (taxDismissed) return;
+        for (var i = 0; i < taxContainers.length; i++) {
+          if (taxContainers[i].querySelector("canvas")) {
+            taxDismissed = true;
+            observer.disconnect();
+            if (window._kkgLoaded) window._kkgLoaded("pane-taxonomy");
+            return;
+          }
+        }
+      });
+      for (var i = 0; i < taxContainers.length; i++) {
+        observer.observe(taxContainers[i], { childList: true, subtree: true });
+      }
+      /* Fallback: if no canvas appears within 12s after tab activation
+         (script load failure, empty data, etc.), dismiss anyway. */
+      setTimeout(function() {
+        if (!taxDismissed) {
+          taxDismissed = true;
+          observer.disconnect();
+          if (window._kkgLoaded) window._kkgLoaded("pane-taxonomy");
+        }
+      }, 12000);
+    };
+  }
+})();
 </script>
 </body>
 </html>"""
@@ -1255,6 +1591,15 @@ def _dashboard_html(
     out = out.replace("__STANDARDS_JSON__", standards_json)
     out = out.replace("__VIOLATIONS_JSON__", violations_json)
     out = out.replace("__TAXONOMY_JSON__", taxonomy_json)
+
+    # Loading animation overlays
+    out = out.replace("__LOADING_CSS__", LOADING_CSS)
+    out = out.replace("__LOADING_JS__", LOADING_JS)
+    out = out.replace("__LOADER_2D__", loader_html("pane-2d"))
+    out = out.replace("__LOADER_3D__", loader_html("pane-3d"))
+    out = out.replace("__LOADER_EMB__", loader_html("pane-embeddings", "Loading embeddings\u2026"))
+    out = out.replace("__LOADER_STD__", loader_html("pane-standards", "Analyzing standards\u2026"))
+    out = out.replace("__LOADER_TAX__", loader_html("pane-taxonomy", "Building taxonomy\u2026"))
     return out
 
 
@@ -1300,11 +1645,255 @@ def _run_audit_for_viz(conn: Any) -> str:
         return "[]"
 
 
+_RATIONALE_TABLES = {
+    "Annotation",
+    "Class",
+    "Enum",
+    "Function",
+    "Interface",
+    "Macro",
+    "Property",
+    "Record",
+    "Struct",
+    "Trait",
+    "Union",
+    "Variable",
+}
+_RATIONALE_LINE_RE = re.compile(
+    r"^\s*(?:[#/*;!-]+\s*)?(WHY|HACK|NOTE)\s*[:\-]\s*(.+?)\s*$",
+    re.IGNORECASE,
+)
+
+
+def _short_path(path: str, *, parts: int = 2) -> str:
+    """Return a compact tail segment for long repo paths."""
+    raw = (path or "").replace("\\", "/").strip()
+    if not raw:
+        return "unknown"
+    chunks = [chunk for chunk in raw.split("/") if chunk]
+    if len(chunks) <= parts:
+        return "/".join(chunks)
+    return "/".join(chunks[-parts:])
+
+
+def _truncate_text(text: str, *, max_chars: int = 160) -> str:
+    """Collapse whitespace and cap long rationale snippets."""
+    compact = " ".join((text or "").split())
+    if len(compact) <= max_chars:
+        return compact
+    return compact[: max_chars - 3].rstrip() + "..."
+
+
+def _extract_rationale_comments(text: str, *, max_items: int = 6) -> list[dict[str, str]]:
+    """Extract WHY/HACK/NOTE comments from source or docstring text."""
+    if not text:
+        return []
+
+    notes: list[dict[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for raw_line in text.splitlines():
+        line = raw_line.strip().strip("*/").strip()
+        match = _RATIONALE_LINE_RE.match(line)
+        if not match:
+            continue
+        tag = match.group(1).upper()
+        snippet = _truncate_text(match.group(2).strip().strip("*/").strip())
+        if not snippet:
+            continue
+        key = (tag, snippet.lower())
+        if key in seen:
+            continue
+        seen.add(key)
+        notes.append({"tag": tag, "text": snippet})
+        if len(notes) >= max_items:
+            break
+    return notes
+
+
+def _fetch_symbol_context(conn: Any, member: dict[str, Any]) -> dict[str, Any] | None:
+    """Fetch source/docstring fields for a community member when available."""
+    table = member.get("type")
+    uid = member.get("uid")
+    if table not in _RATIONALE_TABLES or not uid:
+        return None
+
+    query = (
+        f"MATCH (n:`{table}`) WHERE n.uid = $uid "
+        "RETURN n.name, n.path, n.line_number, n.docstring, n.source LIMIT 1"
+    )
+    try:
+        result = conn.execute(query, uid=uid)
+    except Exception:
+        return None
+    if not result.has_next():
+        return None
+
+    row = result.get_next()
+    return {
+        "name": row[0] or member.get("name") or uid,
+        "path": row[1] or member.get("path") or "",
+        "line": row[2] or member.get("line") or 0,
+        "docstring": row[3] or "",
+        "source": row[4] or "",
+    }
+
+
+def _build_community_profile(
+    conn: Any,
+    community: dict[str, Any],
+    *,
+    cross_edge_count: int,
+) -> dict[str, Any]:
+    """Summarize a Louvain community for the taxonomy profile rail."""
+    members = sorted(
+        community.get("members", []),
+        key=lambda item: (
+            str(item.get("type") or ""),
+            str(item.get("path") or ""),
+            str(item.get("name") or ""),
+        ),
+    )
+    type_counts = Counter(str(member.get("type") or "unknown") for member in members)
+    path_counts = Counter(
+        _short_path(str(member.get("path") or ""))
+        for member in members
+        if member.get("path")
+    )
+
+    dominant_types = [
+        {"type": item_type, "count": count}
+        for item_type, count in type_counts.most_common(3)
+    ]
+    hotspots = [
+        {"path": item_path, "count": count}
+        for item_path, count in path_counts.most_common(3)
+    ]
+    sample_members = [
+        {
+            "name": member.get("name") or "(anonymous)",
+            "type": member.get("type") or "unknown",
+            "path": _short_path(str(member.get("path") or "")),
+        }
+        for member in members[:4]
+    ]
+
+    rationale: list[dict[str, Any]] = []
+    seen_rationale: set[tuple[str, str, str]] = set()
+    for member in members[:12]:
+        context = _fetch_symbol_context(conn, member)
+        if context is None:
+            continue
+        note_source = "\n".join(
+            part for part in (context["docstring"], context["source"]) if part
+        )
+        for note in _extract_rationale_comments(note_source, max_items=4):
+            key = (note["tag"], note["text"].lower(), context["name"])
+            if key in seen_rationale:
+                continue
+            seen_rationale.add(key)
+            rationale.append(
+                {
+                    "tag": note["tag"],
+                    "text": note["text"],
+                    "symbol": context["name"],
+                    "path": _short_path(context["path"]),
+                    "line": context["line"],
+                }
+            )
+            if len(rationale) >= 4:
+                break
+        if len(rationale) >= 4:
+            break
+
+    primary_type = dominant_types[0]["type"] if dominant_types else "mixed"
+    primary_hotspot = hotspots[0]["path"] if hotspots else "mixed paths"
+    size = int(community.get("size") or len(members))
+    summary = (
+        f"{primary_type} cluster centered on {primary_hotspot} with "
+        f"{cross_edge_count} cross-community edge(s)."
+    )
+
+    return {
+        "summary": summary,
+        "cross_edge_count": cross_edge_count,
+        "dominant_types": dominant_types,
+        "hotspots": hotspots,
+        "sample_members": sample_members,
+        "rationale": rationale,
+        "shape": "bridge-heavy" if cross_edge_count >= max(size, 1) else "contained",
+    }
+
+
+def _annotate_taxonomy_profiles(data: dict[str, Any], conn: Any) -> dict[str, Any]:
+    """Attach profile-card metadata to community records in taxonomy data."""
+    community_payload = data.get("communities")
+    if not isinstance(community_payload, dict):
+        return data
+
+    comm_list = community_payload.get("communities")
+    if not isinstance(comm_list, list):
+        return data
+
+    cross_counts: Counter[int] = Counter()
+    for edge in community_payload.get("cross_edges", []):
+        src = edge.get("source_community")
+        dst = edge.get("target_community")
+        if isinstance(src, int):
+            cross_counts[src] += 1
+        if isinstance(dst, int):
+            cross_counts[dst] += 1
+
+    for community in comm_list:
+        comm_id = int(community.get("id", -1))
+        community["profile"] = _build_community_profile(
+            conn,
+            community,
+            cross_edge_count=cross_counts.get(comm_id, 0),
+        )
+    return data
+
+
+def _load_taxonomy_json(conn: Any, *, limit: int) -> str:
+    """Fetch taxonomy data and enrich community payloads for the dashboard."""
+    from .viz_taxonomy import fetch_taxonomy_data
+
+    print("Fetching taxonomy data...", file=sys.stderr)
+    data = fetch_taxonomy_data(conn, limit=limit)
+    _annotate_taxonomy_profiles(data, conn)
+
+    structure_nodes = len(data.get("structure", {}).get("nodes", []))
+    inheritance_nodes = data.get("inheritance", {}).get("stats", {}).get(
+        "total_nodes", 0
+    )
+    community_payload = data.get("communities") or {}
+    community_count = community_payload.get("stats", {}).get("communities", 0)
+    print(
+        f"  taxonomy: {structure_nodes} structure nodes, "
+        f"{inheritance_nodes} inheritance nodes, "
+        f"{community_count} communities",
+        file=sys.stderr,
+    )
+    return json.dumps(data)
+
+
+def _copy_projector_bundle(dest: Path) -> None:
+    """Stage projector assets even when importlib resources lacks a file origin."""
+    try:
+        copy_vendored_projector(dest)
+        return
+    except Exception:
+        vendor_root = Path(__file__).resolve().parents[1] / "viz_assets" / "projector"
+        dest.mkdir(parents=True, exist_ok=True)
+        for name in VENDOR_FILES:
+            shutil.copy2(vendor_root / name, dest / name)
+
+
 def _prepare_dashboard_serve_dir(
     graph: dict[str, Any],
     emb_nodes: list[dict[str, Any]],
     *,
     layout: str,
+    limit: int = 500,
 ) -> Path:
     """Create a tempdir with dashboard index.html + projector/ subdir.
 
@@ -1325,19 +1914,24 @@ def _prepare_dashboard_serve_dir(
 
     tax_json = "null"
     try:
-        from .viz_taxonomy import taxonomy_json as _taxonomy_json
         tax_conn = get_kuzu_connection()
-        tax_json = _taxonomy_json(tax_conn, limit=limit)
+        tax_json = _load_taxonomy_json(tax_conn, limit=limit)
     except Exception:
         pass
 
-    html = _dashboard_html(graph, len(emb_nodes), standards_json, violations_json, tax_json, layout=layout)
+    html = _dashboard_html(
+        graph,
+        len(emb_nodes),
+        standards_json,
+        violations_json,
+        tax_json,
+        layout=layout,
+    )
     (serve_dir / "index.html").write_text(html, encoding="utf-8")
 
     projector_dir = serve_dir / "projector"
-    copy_vendored_projector(projector_dir)
-    from ..viz_server import DATA_SUBDIR as _DATA_SUBDIR
-    write_projector_data(projector_dir / _DATA_SUBDIR, emb_nodes)
+    _copy_projector_bundle(projector_dir)
+    write_projector_data(projector_dir / DATA_SUBDIR, emb_nodes)
 
     return serve_dir
 
@@ -1376,53 +1970,68 @@ def viz_dashboard_command(
     """
 
     target = activate_project(project)
+    previous_runtime_db = os.environ.get("CGC_RUNTIME_DB_TYPE")
+    # Project-aware dashboard invocations always target the activated Kuzu store,
+    # even when the caller's shell has a different global DEFAULT_DATABASE.
+    os.environ["CGC_RUNTIME_DB_TYPE"] = "kuzudb"
 
-    if layout not in _LAYOUTS:
-        raise typer.BadParameter(
-            f"unknown layout {layout!r}; expected one of {sorted(_LAYOUTS)}"
+    try:
+        if layout not in _LAYOUTS:
+            raise typer.BadParameter(
+                f"unknown layout {layout!r}; expected one of {sorted(_LAYOUTS)}"
+            )
+
+        backend_payload = probe_backend_support()
+        if not backend_payload["ok"]:
+            typer.echo(emit_json(backend_payload))
+            raise typer.Exit(code=1)
+
+        conn = get_kuzu_connection()
+
+        print("Fetching graph data...", file=sys.stderr)
+        graph = _fetch_graph(conn, limit=limit)
+        if not graph["nodes"]:
+            typer.echo(emit_json({
+                "ok": False,
+                "kind": "empty_graph",
+                "detail": "No nodes found. Run `kkg index` first.",
+            }))
+            raise typer.Exit(code=1)
+
+        print("Fetching embeddings...", file=sys.stderr)
+        emb_nodes = fetch_embedded_nodes(conn)
+
+        serve_dir = _prepare_dashboard_serve_dir(
+            graph,
+            emb_nodes,
+            layout=layout,
+            limit=limit,
+        )
+        bound_port = find_free_port(port or None)
+        server = build_server(serve_dir, bound_port)
+        url = f"http://127.0.0.1:{bound_port}/"
+
+        typer.echo(emit_json({
+            "ok": True,
+            "kind": "viz_dashboard_serving",
+            "nodes": len(graph["nodes"]),
+            "edges": len(graph["edges"]),
+            "embeddings": len(emb_nodes),
+            "layout": layout,
+            "project": target.slug,
+            "serve_dir": str(serve_dir),
+            "url": url,
+        }))
+        print(
+            f"\ncgraph dashboard: serving at {url}\n"
+            f"(Ctrl-C to stop)",
+            file=sys.stderr,
         )
 
-    backend_payload = probe_backend_support()
-    if not backend_payload["ok"]:
-        typer.echo(emit_json(backend_payload))
-        raise typer.Exit(code=1)
-
-    conn = get_kuzu_connection()
-
-    print("Fetching graph data...", file=sys.stderr)
-    graph = _fetch_graph(conn, limit=limit)
-    if not graph["nodes"]:
-        typer.echo(emit_json({
-            "ok": False,
-            "kind": "empty_graph",
-            "detail": "No nodes found. Run `kkg index` first.",
-        }))
-        raise typer.Exit(code=1)
-
-    print("Fetching embeddings...", file=sys.stderr)
-    emb_nodes = fetch_embedded_nodes(conn)
-
-    serve_dir = _prepare_dashboard_serve_dir(graph, emb_nodes, layout=layout)
-    bound_port = find_free_port(port or None)
-    server = build_server(serve_dir, bound_port)
-    url = f"http://127.0.0.1:{bound_port}/"
-
-    typer.echo(emit_json({
-        "ok": True,
-        "kind": "viz_dashboard_serving",
-        "nodes": len(graph["nodes"]),
-        "edges": len(graph["edges"]),
-        "embeddings": len(emb_nodes),
-        "layout": layout,
-        "project": target.slug,
-        "serve_dir": str(serve_dir),
-        "url": url,
-    }))
-    print(
-        f"\ncgraph dashboard: serving at {url}\n"
-        f"(Ctrl-C to stop)",
-        file=sys.stderr,
-    )
-
-    serve_until_interrupted(server, url, no_open=no_open, cleanup_dir=serve_dir)
-    raise typer.Exit(code=0)
+        serve_until_interrupted(server, url, no_open=no_open, cleanup_dir=serve_dir)
+        raise typer.Exit(code=0)
+    finally:
+        if previous_runtime_db is None:
+            os.environ.pop("CGC_RUNTIME_DB_TYPE", None)
+        else:
+            os.environ["CGC_RUNTIME_DB_TYPE"] = previous_runtime_db

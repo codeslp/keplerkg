@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "kkg hotspots",
+  "description": "Git churn x graph centrality risk analysis.",
+  "type": "object",
+  "required": ["ok", "kind", "schema_version", "hotspots", "stats"],
+  "additionalProperties": false,
+  "properties": {
+    "ok": { "type": "boolean" },
+    "kind": { "const": "hotspots" },
+    "schema_version": { "type": "string" },
+    "project": { "type": ["string", "null"] },
+    "error": { "type": ["string", "null"] },
+    "hotspots": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path", "churn", "centrality", "raw_score", "risk_score"],
+        "additionalProperties": false,
+        "properties": {
+          "path": { "type": "string" },
+          "churn": { "type": "integer", "minimum": 0 },
+          "centrality": { "type": "integer", "minimum": 0 },
+          "raw_score": { "type": "integer", "minimum": 0 },
+          "risk_score": { "type": "number", "minimum": 0, "maximum": 100 }
+        }
+      }
+    },
+    "stats": {
+      "type": "object",
+      "required": ["files_analyzed", "symbols_analyzed", "since_days"],
+      "additionalProperties": false,
+      "properties": {
+        "files_analyzed": { "type": "integer", "minimum": 0 },
+        "symbols_analyzed": { "type": "integer", "minimum": 0 },
+        "since_days": { "type": "integer", "minimum": 0 },
+        "max_churn": { "type": "integer", "minimum": 0 },
+        "max_centrality": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}

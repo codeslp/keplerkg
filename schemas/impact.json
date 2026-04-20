@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://codeslp.dev/cgraph/schemas/impact.json",
+  "title": "cgraph impact response",
+  "description": "Symbol-oriented impact analysis: callers and callees of a named function or class.",
+  "type": "object",
+  "required": ["ok", "kind", "schema_version", "symbol", "matches", "callers", "callees", "cross_module_impact", "advisories", "summary", "truncated"],
+  "properties": {
+    "ok": { "type": "boolean" },
+    "kind": { "const": "impact" },
+    "schema_version": { "type": "string", "pattern": "^\\d+\\.\\d+$" },
+    "project": { "type": ["string", "null"] },
+    "error": { "type": ["string", "null"] },
+    "symbol": {
+      "type": "string",
+      "description": "The symbol name that was analyzed."
+    },
+    "kind_filter": {
+      "type": ["string", "null"],
+      "description": "Node type filter applied (e.g. Function, Class), or null."
+    },
+    "matches": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/node" },
+      "description": "Graph nodes that matched the symbol name."
+    },
+    "callers": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/impact_node" },
+      "description": "Nodes that call into the matched symbols (BFS callers)."
+    },
+    "callees": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/impact_node" },
+      "description": "Nodes called by the matched symbols (BFS callees)."
+    },
+    "cross_module_impact": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Top-level module names imported by files containing matched symbols."
+    },
+    "advisories": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/advisory" }
+    },
+    "summary": {
+      "type": "object",
+      "required": ["matches", "callers", "callees", "cross_modules", "depth", "entrypoint_callers", "entrypoint_callees"],
+      "properties": {
+        "matches": { "type": "integer", "minimum": 0 },
+        "callers": { "type": "integer", "minimum": 0 },
+        "callees": { "type": "integer", "minimum": 0 },
+        "cross_modules": { "type": "integer", "minimum": 0 },
+        "depth": { "type": "integer", "minimum": 1 },
+        "entrypoint_callers": { "type": "integer", "minimum": 0, "description": "How many callers are framework entry points." },
+        "entrypoint_callees": { "type": "integer", "minimum": 0, "description": "How many callees are framework entry points." }
+      },
+      "additionalProperties": false
+    },
+    "truncated": { "type": "boolean" }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "node": {
+      "type": "object",
+      "required": ["uid", "name", "kind"],
+      "properties": {
+        "uid": { "type": "string" },
+        "name": { "type": ["string", "null"] },
+        "file": { "type": ["string", "null"] },
+        "kind": { "type": "string" },
+        "framework": { "type": "string", "description": "Detected framework (flask, fastapi, etc.) if this is an entry point." },
+        "entry_category": { "type": "string", "description": "Entry-point category (http, cli, worker, test, graphql)." }
+      },
+      "additionalProperties": false
+    },
+    "impact_node": {
+      "type": "object",
+      "required": ["uid", "name", "kind", "hops"],
+      "properties": {
+        "uid": { "type": "string" },
+        "name": { "type": ["string", "null"] },
+        "file": { "type": ["string", "null"] },
+        "kind": { "type": "string" },
+        "hops": { "type": "integer", "minimum": 1, "description": "BFS distance from the seed symbol." },
+        "framework": { "type": "string", "description": "Detected framework if this is an entry point." },
+        "entry_category": { "type": "string", "description": "Entry-point category (http, cli, worker, test, graphql)." }
+      },
+      "additionalProperties": false
+    },
+    "advisory": {
+      "type": "object",
+      "required": ["level", "kind", "detail"],
+      "properties": {
+        "level": { "enum": ["warn", "info"] },
+        "kind": { "type": "string", "enum": ["symbol_not_found", "truncated", "no_graph"] },
+        "detail": { "type": "string" }
+      },
+      "additionalProperties": false
+    }
+  }
+}

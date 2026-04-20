@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "kkg snapshot",
+  "description": "Point-in-time graph metrics snapshot for trend tracking.",
+  "type": "object",
+  "required": ["ok", "kind", "schema_version", "timestamp", "git", "nodes", "edges", "embeddings", "totals"],
+  "additionalProperties": false,
+  "properties": {
+    "ok": { "type": "boolean" },
+    "kind": { "const": "snapshot" },
+    "schema_version": { "type": "string" },
+    "project": { "type": ["string", "null"] },
+    "error": { "type": ["string", "null"] },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 UTC timestamp of the snapshot."
+    },
+    "git": {
+      "type": "object",
+      "required": ["sha", "branch"],
+      "additionalProperties": false,
+      "properties": {
+        "sha": { "type": ["string", "null"] },
+        "branch": { "type": ["string", "null"] }
+      }
+    },
+    "nodes": {
+      "type": "object",
+      "description": "Node counts keyed by type (e.g. Function, Class).",
+      "additionalProperties": { "type": "integer", "minimum": 0 }
+    },
+    "edges": {
+      "type": "object",
+      "description": "Edge counts keyed by type (e.g. CALLS, IMPORTS).",
+      "additionalProperties": { "type": "integer", "minimum": 0 }
+    },
+    "embeddings": {
+      "type": "object",
+      "description": "Embedding coverage per node type.",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["total", "embedded", "coverage_pct"],
+        "additionalProperties": false,
+        "properties": {
+          "total": { "type": "integer", "minimum": 0 },
+          "embedded": { "type": "integer", "minimum": 0 },
+          "coverage_pct": { "type": "number", "minimum": 0, "maximum": 100 }
+        }
+      }
+    },
+    "totals": {
+      "type": "object",
+      "required": ["nodes", "edges"],
+      "additionalProperties": false,
+      "properties": {
+        "nodes": { "type": "integer", "minimum": 0 },
+        "edges": { "type": "integer", "minimum": 0 },
+        "embedded": { "type": "integer", "minimum": 0 },
+        "embeddable": { "type": "integer", "minimum": 0 },
+        "embedding_coverage_pct": { "type": "number", "minimum": 0, "maximum": 100 }
+      }
+    }
+  }
+}

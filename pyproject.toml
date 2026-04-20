@@ -1,7 +1,7 @@
 [project]
 name = "codegraphcontext"
 version = "0.4.2"
-description = "An MCP server that indexes local code into a graph database to provide context to AI assistants."
+description = "Fast, token-efficient context for AI agents — knowledge graphs and embeddings that deliver 482x compression and find issues invisible to line-by-line tools."
 authors = [{ name = "Shashank Shekhar Singh", email = "shashankshekharsingh1205@gmail.com" }]
 readme = "README.md"
 license = { file = "LICENSE" }

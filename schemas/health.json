@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "kkg health",
+  "description": "A-F letter-grade health score computed from audit violations.",
+  "type": "object",
+  "required": ["ok", "kind", "schema_version", "score", "grade", "description", "audit_summary", "breakdown"],
+  "additionalProperties": false,
+  "properties": {
+    "ok": { "type": "boolean" },
+    "kind": { "const": "health" },
+    "schema_version": { "type": "string" },
+    "project": { "type": ["string", "null"] },
+    "error": { "type": ["string", "null"] },
+    "score": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100,
+      "description": "Composite health score (0-100)."
+    },
+    "grade": {
+      "type": "string",
+      "enum": ["A", "B", "C", "D", "F"],
+      "description": "Letter grade derived from the score."
+    },
+    "description": {
+      "type": "string",
+      "description": "Human-readable description of the grade."
+    },
+    "audit_summary": {
+      "type": "object",
+      "required": ["standards_evaluated", "hard", "warn", "total_offenders"],
+      "additionalProperties": false,
+      "properties": {
+        "standards_evaluated": { "type": "integer", "minimum": 0 },
+        "hard": { "type": "integer", "minimum": 0 },
+        "warn": { "type": "integer", "minimum": 0 },
+        "total_offenders": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "breakdown": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["rule", "severity", "offenders", "penalty"],
+        "additionalProperties": false,
+        "properties": {
+          "rule": { "type": "string" },
+          "severity": { "type": "string", "enum": ["warn", "hard"] },
+          "offenders": { "type": "integer", "minimum": 0 },
+          "penalty": { "type": "integer", "minimum": 0 }
+        }
+      }
+    }
+  }
+}
