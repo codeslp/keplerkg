@@ -2,29 +2,50 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://codeslp.dev/cgraph/schemas/audit.json",
   "title": "kkg audit response",
-  "type": "object",
-  "required": ["kind", "standards_evaluated", "advisories", "counts", "hard_zero"],
-  "properties": {
-    "ok": { "type": "boolean" },
-    "kind": { "type": "string", "enum": ["audit", "audit_list", "audit_explain"] },
-    "scope": { "type": "string" },
-    "standards_evaluated": { "type": "integer" },
-    "advisories": {
-      "type": "array",
-      "items": { "$ref": "#/$defs/advisory" }
-    },
-    "counts": {
-      "type": "object",
-      "properties": {
-        "warn": { "type": "integer" },
-        "hard": { "type": "integer" }
-      }
-    },
-    "hard_zero": { "type": "boolean" },
-    "error": { "type": ["string", "null"] }
-  },
-  "additionalProperties": false,
+  "oneOf": [
+    { "$ref": "#/$defs/audit_response" },
+    { "$ref": "#/$defs/calibration_response" }
+  ],
   "$defs": {
+    "audit_response": {
+      "type": "object",
+      "required": ["kind", "standards_evaluated", "advisories", "counts", "hard_zero"],
+      "properties": {
+        "ok": { "type": "boolean" },
+        "kind": { "type": "string", "enum": ["audit", "audit_list", "audit_explain"] },
+        "scope": { "type": "string" },
+        "standards_evaluated": { "type": "integer" },
+        "advisories": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/advisory" }
+        },
+        "counts": {
+          "type": "object",
+          "properties": {
+            "warn": { "type": "integer" },
+            "hard": { "type": "integer" }
+          }
+        },
+        "hard_zero": { "type": "boolean" },
+        "error": { "type": ["string", "null"] }
+      },
+      "additionalProperties": false
+    },
+    "calibration_response": {
+      "type": "object",
+      "required": ["kind", "rules_analyzed", "rules"],
+      "properties": {
+        "ok": { "type": "boolean" },
+        "kind": { "type": "string", "const": "audit_calibration" },
+        "rules_analyzed": { "type": "integer" },
+        "rules": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/calibration_rule" }
+        },
+        "error": { "type": ["string", "null"] }
+      },
+      "additionalProperties": false
+    },
     "advisory": {
       "type": "object",
       "required": ["kind", "severity", "standard_id", "offenders"],
@@ -49,6 +70,44 @@
         },
         "suggestion": { "type": "string" },
         "evidence": { "type": "string" }
+      }
+    },
+    "calibration_rule": {
+      "type": "object",
+      "required": ["id", "category", "severity", "current_thresholds", "population"],
+      "properties": {
+        "id": { "type": "string" },
+        "category": { "type": "string" },
+        "severity": { "type": "string", "enum": ["warn", "hard"] },
+        "current_thresholds": { "type": "object" },
+        "population": { "type": "integer" },
+        "distribution": {
+          "type": "object",
+          "properties": {
+            "min": { "type": "number" },
+            "p25": { "type": "number" },
+            "p50": { "type": "number" },
+            "p75": { "type": "number" },
+            "p90": { "type": "number" },
+            "p95": { "type": "number" },
+            "p99": { "type": "number" },
+            "max": { "type": "number" }
+          }
+        },
+        "violations_at_current": { "type": "object" },
+        "candidate_thresholds": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["percentile", "value", "violations_above"],
+            "properties": {
+              "percentile": { "type": "string" },
+              "value": { "type": "integer" },
+              "violations_above": { "type": "integer" }
+            }
+          }
+        },
+        "error": { "type": ["string", "null"] }
       }
     }
   }

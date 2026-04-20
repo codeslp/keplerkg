@@ -1,7 +1,7 @@
 [project]
 name = "codegraphcontext"
 version = "0.4.2"
-description = "Fast, token-efficient context for AI agents — knowledge graphs and embeddings that deliver 482x compression and find issues invisible to line-by-line tools."
+description = "KeplerKG — Fast, token-efficient context for AI agents — knowledge graphs and embeddings that deliver 482x compression and find issues invisible to line-by-line tools."
 authors = [{ name = "Shashank Shekhar Singh", email = "shashankshekharsingh1205@gmail.com" }]
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -57,6 +57,7 @@ dev = [
 [project.scripts]
 kkg = "codegraphcontext.cli.main:app"
 codegraphcontext = "codegraphcontext.cli.main:app"
+cgc = "codegraphcontext.cli.main:app"
 
 [tool.setuptools]
 package-dir = { "" = "src" }

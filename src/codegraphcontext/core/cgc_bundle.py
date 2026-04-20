@@ -1,6 +1,6 @@
 # src/codegraphcontext/core/cgc_bundle.py
 """
-This module handles the creation and loading of .cgc (CodeGraphContext Bundle) files.
+This module handles the creation and loading of .cgc (KeplerKG Bundle) files.
 
 A .cgc file is a portable, pre-indexed graph snapshot that can be distributed and loaded
 instantly without re-indexing. This enables:
@@ -539,7 +539,7 @@ class CGCBundle:
     
     def _create_readme(self, output_file: Path, metadata: Dict, stats: Optional[Dict]):
         """Create a human-readable README for the bundle."""
-        readme_content = f"""# CodeGraphContext Bundle
+        readme_content = f"""# KeplerKG Bundle
 
 ## Repository Information
 - **Repository**: {metadata.get('repo', 'Unknown')}

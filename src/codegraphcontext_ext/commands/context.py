@@ -18,7 +18,7 @@ from ..embeddings.runtime import (
     probe_backend_support,
     resolve_embedding_config,
 )
-from ..hybrid.ann import search as ann_search
+from ..hybrid.ann import search as ann_search, search_scoped
 from ..hybrid.traverse import traverse
 from ..io.json_stdout import emit_json
 from ..io.kuzu import get_kuzu_connection
@@ -27,6 +27,22 @@ from ..project import PROJECT_OPTION_HELP, activate_project
 COMMAND_NAME = "search"
 SCHEMA_FILE = "context.json"
 SUMMARY = "Semantic search: ANN vector search + graph neighborhood expansion."
+
+
+def _resolve_community_uids(conn: Any, community_id: int) -> set[str]:
+    """Get UIDs belonging to a Louvain community (0-indexed)."""
+    from ..topology.communities import build_combined_graph, detect_communities
+    G, _ = build_combined_graph(conn, include_semantic=False)
+    communities = detect_communities(G)
+    if 0 <= community_id < len(communities):
+        return communities[community_id]
+    return set()
+
+
+def _resolve_cluster_uids(conn: Any, cluster_id: int) -> set[str]:
+    """Get UIDs belonging to an HDBSCAN cluster."""
+    from ..topology.hdbscan_overlay import get_cluster_uids
+    return get_cluster_uids(conn, cluster_id)
 
 
 def _estimate_tokens(text: str) -> int:
@@ -76,6 +92,21 @@ def context_command(
         min=0,
         help="Number of graph hops to traverse from seed nodes.",
     ),
+    mode: str = typer.Option(
+        "global",
+        "--mode",
+        help="Search mode: global (all embeddings), community (Louvain), cluster (HDBSCAN).",
+    ),
+    community_id: Optional[int] = typer.Option(
+        None,
+        "--community-id",
+        help="Louvain community ID to scope results to (requires --mode community).",
+    ),
+    cluster_id: Optional[int] = typer.Option(
+        None,
+        "--cluster-id",
+        help="HDBSCAN cluster ID to scope results to (requires --mode cluster).",
+    ),
     provider: Optional[str] = typer.Option(
         None,
         "--provider",
@@ -101,6 +132,25 @@ def context_command(
     """Hybrid retrieval: find code relevant to a query via ANN + graph walk."""
     activate_project(project)
 
+    # Validate --mode and required/incompatible companion flags
+    valid_modes = ("global", "community", "cluster")
+    if mode not in valid_modes:
+        raise typer.BadParameter(
+            f"--mode must be one of {', '.join(valid_modes)}, got '{mode}'."
+        )
+    if mode == "global" and (community_id is not None or cluster_id is not None):
+        raise typer.BadParameter("--mode global does not accept --community-id or --cluster-id.")
+    if mode == "community":
+        if community_id is None:
+            raise typer.BadParameter("--mode community requires --community-id.")
+        if cluster_id is not None:
+            raise typer.BadParameter("--mode community does not accept --cluster-id.")
+    if mode == "cluster":
+        if cluster_id is None:
+            raise typer.BadParameter("--mode cluster requires --cluster-id.")
+        if community_id is not None:
+            raise typer.BadParameter("--mode cluster does not accept --community-id.")
+
     # Backend gate
     backend_payload = probe_backend_support()
     if not backend_payload["ok"]:
@@ -125,7 +175,14 @@ def context_command(
     # Connect and search
     conn = get_kuzu_connection()
 
-    seeds = ann_search(conn, query_vector, k=k)
+    if mode == "community" and community_id is not None:
+        allowed = _resolve_community_uids(conn, community_id)
+        seeds = search_scoped(conn, query_vector, k=k, allowed_uids=allowed)
+    elif mode == "cluster" and cluster_id is not None:
+        allowed = _resolve_cluster_uids(conn, cluster_id)
+        seeds = search_scoped(conn, query_vector, k=k, allowed_uids=allowed)
+    else:
+        seeds = ann_search(conn, query_vector, k=k)
 
     if not seeds:
         payload = _build_context_payload(query, [], {"callers": [], "callees": [], "imports": []})

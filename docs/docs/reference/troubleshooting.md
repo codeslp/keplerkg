@@ -2,7 +2,7 @@
 
 ## Common Issues
 
-### 1. "cgc: command not found"
+### 1. "kkg: command not found"
 **Cause:** The folder where `pip` installs scripts is not in your system PATH.
 **Fix:**
 *   **Linux/Mac:** Add `export PATH="$HOME/.local/bin:$PATH"` to your `.bashrc` or `.zshrc`.
@@ -12,7 +12,7 @@
 **Cause:** The Neo4j container is not running.
 **Fix:**
 ```bash
-docker start cgc-neo4j
+docker start neo4j-cgc
 ```
 
 ### 3. "Import Error: FalkorDB"
@@ -23,4 +23,4 @@ docker start cgc-neo4j
 
 ## Getting Help
 
-If these didn't solve it, please open an issue on [GitHub](https://github.com/CodeGraphContext/CodeGraphContext/issues) with the output of `cgc doctor`.
+If these didn't solve it, please open an issue on [GitHub](https://github.com/codeslp/keplerkg/issues) with the output of `kkg doctor`.

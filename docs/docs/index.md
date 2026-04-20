@@ -1,6 +1,6 @@
-# Welcome to CodeGraphContext
+# Welcome to KeplerKG
 
-CodeGraphContext (CGC) is a **Code Intelligence Engine**. It indexes your codebase into a graph database to provide deep semantic understanding for both developers (via CLI) and AI agents (via MCP).
+KeplerKG is a **code intelligence engine**. It indexes your codebase into a graph database to provide deep semantic understanding for both developers (via CLI) and AI agents (via MCP).
 
 ### :material-console: For Developers (CLI)
 Use powerful terminal commands to query call chains, find dependencies, and visual architectural graphs.
@@ -19,11 +19,11 @@ Customize databases, file limits, and more.
 
 ## 🏗️ Architecture
 
-CGC sits between your code and your tools. It's not just a script; it's a persistent system.
+KeplerKG sits between your code and your tools. It's not just a script; it's a persistent system.
 
-![CodeGraphContext Architecture](images/architecture.png)
+![KeplerKG Architecture](images/architecture.png)
 
-## 🚀 Why CodeGraphContext?
+## 🚀 Why KeplerKG?
 
 *   **Cut Debugging Time:** Stop manually grepping. Find the exact root cause in seconds, not hours.
 *   **Onboard Faster:** Help new developers understand complex logic without interrupting senior engineers.
@@ -46,14 +46,12 @@ We have organized the documentation to match your journey:
 ---
 
 ### Ready to Start?
-**[Install CodeGraphContext](getting-started/installation.md)**
+**[Install KeplerKG](getting-started/installation.md)**
 
 ### Learn the Concepts
 **[How Indexing Works](concepts/how_it_works.md)**
 
 ### Project Links
 
-*   **GitHub Repository**: [CodeGraphContext/CodeGraphContext](https://github.com/CodeGraphContext/CodeGraphContext)
-*   **Website**: [codegraphcontext.vercel.app](https://codegraphcontext.vercel.app)
+*   **GitHub Repository**: [codeslp/keplerkg](https://github.com/codeslp/keplerkg)
 *   **Maintainer**: Shashank
-

@@ -219,6 +219,58 @@ def cross_community_edges(
     return crossing
 
 
+def score_cross_community_surprise(
+    communities: list[set[str]],
+    cross_edges: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Score cross-community edges by architectural surprise.
+
+    Surprise = log2(expected_density / actual_density) for the community
+    pair, clamped to [0, 10].  High surprise means the edge connects
+    communities that share very few links relative to their size — a
+    potential architecture smell.
+
+    Adds ``surprise`` (float) to each cross-edge dict in-place and returns
+    the annotated list sorted by descending surprise.
+    """
+    if not communities or not cross_edges:
+        return cross_edges
+
+    # Count edges per community pair
+    pair_counts: dict[tuple[int, int], int] = {}
+    for edge in cross_edges:
+        pair = (
+            min(edge["source_community"], edge["target_community"]),
+            max(edge["source_community"], edge["target_community"]),
+        )
+        pair_counts[pair] = pair_counts.get(pair, 0) + 1
+
+    # Community sizes
+    comm_sizes = {i: len(c) for i, c in enumerate(communities)}
+
+    # Score each edge
+    for edge in cross_edges:
+        ca = edge["source_community"]
+        cb = edge["target_community"]
+        pair = (min(ca, cb), max(ca, cb))
+        size_a = comm_sizes.get(ca, 1)
+        size_b = comm_sizes.get(cb, 1)
+        possible = size_a * size_b
+        actual = pair_counts.get(pair, 1)
+
+        # Surprise: how sparse is this cross-boundary connection?
+        # density = actual / possible; surprise = -log2(density) capped at 10
+        density = actual / max(possible, 1)
+        if density <= 0:
+            surprise = 10.0
+        else:
+            surprise = min(10.0, max(0.0, -math.log2(density)))
+        edge["surprise"] = round(surprise, 2)
+
+    cross_edges.sort(key=lambda e: e.get("surprise", 0), reverse=True)
+    return cross_edges
+
+
 # ── Public API for dashboard ───────────────────────────────────────────
 
 def fetch_community_data(
@@ -269,6 +321,7 @@ def fetch_community_data(
     print(f"  found {len(communities)} communities", file=sys.stderr)
 
     cross = cross_community_edges(G, communities)
+    score_cross_community_surprise(communities, cross)
 
     # Build node→community map
     node_to_comm: dict[str, int] = {}

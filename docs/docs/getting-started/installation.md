@@ -16,15 +16,15 @@ pip install codegraphcontext
 
 ## Step 2: Database Setup
 
-CGC requires a graph database backend. Choose **ONE** path below.
+KeplerKG requires a graph database backend. Choose **ONE** path below.
 
 === "Option A: KùzuDB (Recommended & Default)"
     
     **Platforms:** Linux, macOS, Windows (WSL & Native).
 
-    **KùzuDB** is an embedded, lightweight graph database written in C++. It is the default for CodeGraphContext because it is extremely fast and requires no external services.
+    **KùzuDB** is an embedded, lightweight graph database written in C++. It is the default for KeplerKG because it is extremely fast and requires no external services.
     *   **Pros:** Requires zero configuration. Runs automatically in-memory or on-disk. No Docker needed.
-    *   **Cons:** No built-in Interactive Browser (unlike Neo4j). Use `cgc visualize` for graph views.
+    *   **Cons:** No built-in Interactive Browser (unlike Neo4j). Use `kkg visualize` for graph views.
 
     *This is the default out-of-the-box experience. You don't need to do anything else!*
 
@@ -50,26 +50,30 @@ CGC requires a graph database backend. Choose **ONE** path below.
 Let's make sure everything is talking to each other. Run the "Doctor" command (coming soon) or check the CLI help:
 
 ```bash
-cgc --help
+kkg --help
 ```
 
-You should see all the commands available for CodeGraphContext.
+You should see all the commands available for KeplerKG.
 
 ---
 
 ## Step 4: Configure AI Assistant (For MCP Users)
 
-If you plan to use CodeGraphContext with **Cursor**, **Claude**, **Windsurf**, or **Kiro**, you must configure the MCP server.
+If you plan to use KeplerKG with **Cursor**, **Claude**, **Windsurf**, or **Kiro**, you must configure the MCP server.
 
 1.  **Understand MCP Integration:**
-    *   CodeGraphContext runs as an MCP server. This means it provides "Tools" to your LLM.
-    *   To install it in Claude Desktop, for example, add it to your `claude_desktop_config.json`:
+    *   KeplerKG runs as an MCP server. This means it provides "Tools" to your LLM.
+    *   The easiest setup path is to run:
+    ```bash
+    kkg mcp setup
+    ```
+    *   If you add it manually, use a config like this:
     ```json
     {
       "mcpServers": {
-        "CodeGraphContext": {
-          "command": "cgc",
-          "args": ["mcp"]
+        "KeplerKG": {
+          "command": "kkg",
+          "args": ["mcp", "start"]
         }
       }
     }
@@ -77,7 +81,7 @@ If you plan to use CodeGraphContext with **Cursor**, **Claude**, **Windsurf**, o
 
 2.  **Using cursor:**
     *   Go to Cursor Settings > Features > MCP.
-    *   Add a new server: type `command`, name it `CodeGraphContext`, and command `cgc mcp`.
+    *   Add a new server: type `command`, name it `KeplerKG`, and command `kkg mcp start`.
 
 3.  **Refresh your AI Tool:**
     *   Restart your IDE / Claude Desktop.

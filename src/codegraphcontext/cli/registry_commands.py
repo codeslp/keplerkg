@@ -1,6 +1,6 @@
 # src/codegraphcontext/cli/registry_commands.py
 """
-CLI commands for interacting with the CodeGraphContext bundle registry.
+CLI commands for interacting with the KeplerKG bundle registry.
 Allows users to list, search, download, and request bundles from the command line.
 """
 
@@ -15,8 +15,8 @@ import time
 
 console = Console()
 
-GITHUB_ORG = "CodeGraphContext"
-GITHUB_REPO = "CodeGraphContext"
+GITHUB_ORG = "codeslp"
+GITHUB_REPO = "keplerkg"
 
 
 def fetch_available_bundles() -> List[Dict[str, Any]]:
@@ -114,7 +114,7 @@ def list_bundles(verbose: bool = False, unique: bool = False):
         console.print("[dim]Showing only most recent version per package. Use without --unique to see all versions.[/dim]")
     else:
         console.print("[dim]Use --unique to show only one version per package[/dim]")
-    console.print("[dim]Use 'cgc registry download <name>' to download a bundle[/dim]")
+    console.print("[dim]Use 'kkg registry download <name>' to download a bundle[/dim]")
 
 
 def search_bundles(query: str):
@@ -139,7 +139,7 @@ def search_bundles(query: str):
     
     if not matching_bundles:
         console.print(f"[yellow]No bundles found matching '{query}'[/yellow]")
-        console.print("[dim]Try a different search term or use 'cgc registry list' to see all bundles[/dim]")
+        console.print("[dim]Try a different search term or use 'kkg registry list' to see all bundles[/dim]")
         return
     
     # Create table
@@ -227,7 +227,7 @@ def download_bundle(name: str, output_dir: Optional[str] = None, auto_load: bool
             for suggestion in suggestions[:5]:  # Show top 5
                 console.print(f"  • {suggestion}")
         
-        console.print("\n[dim]Use 'cgc registry list' to see all available bundles[/dim]")
+        console.print("\n[dim]Use 'kkg registry list' to see all available bundles[/dim]")
         raise typer.Exit(code=1)
     
     # Get download URL
@@ -283,7 +283,7 @@ def download_bundle(name: str, output_dir: Optional[str] = None, auto_load: bool
         if auto_load:
             return str(output_path)
         else:
-            console.print(f"[dim]Load with: cgc load {output_path}[/dim]")
+            console.print(f"[dim]Load with: kkg load {output_path}[/dim]")
     
     except requests.exceptions.RequestException as e:
         console.print(f"[bold red]Download failed: {e}[/bold red]")
@@ -309,25 +309,22 @@ def request_bundle(repo_url: str, wait: bool = False):
     # For now, provide instructions to use the website
     # In the future, this could trigger the workflow via GitHub API
     console.print("\n[yellow]Note: Bundle generation requires GitHub authentication.[/yellow]")
-    console.print("[cyan]Please use one of these methods:[/cyan]\n")
+    console.print("[cyan]Use the repository workflow:[/cyan]\n")
     
-    console.print("1. [bold]Via Website (Recommended):[/bold]")
-    console.print(f"   Visit: https://codegraphcontext.vercel.app")
-    console.print(f"   Enter: {repo_url}")
-    console.print(f"   Click 'Generate Bundle'\n")
-    
-    console.print("2. [bold]Via GitHub Actions (Manual):[/bold]")
-    console.print(f"   Go to: https://github.com/{GITHUB_ORG}/{GITHUB_REPO}/actions")
+    console.print("1. [bold]Via GitHub Actions:[/bold]")
+    console.print(
+        f"   Go to: https://github.com/{GITHUB_ORG}/{GITHUB_REPO}/actions/workflows/generate-bundle-on-demand.yml"
+    )
     console.print(f"   Select: 'Generate Bundle On-Demand'")
     console.print(f"   Click: 'Run workflow'")
     console.print(f"   Enter: {repo_url}\n")
     
     console.print("[dim]Bundle generation typically takes 5-10 minutes.[/dim]")
-    console.print("[dim]Use 'cgc registry list' to check when it's available.[/dim]")
+    console.print("[dim]Use 'kkg registry list' to check when it's available.[/dim]")
     
     if wait:
         console.print("\n[yellow]Note: Automatic waiting not yet implemented.[/yellow]")
-        console.print("[dim]Please check back in 5-10 minutes and use 'cgc registry download <name>'[/dim]")
+        console.print("[dim]Please check back in 5-10 minutes and use 'kkg registry download <name>'[/dim]")
 
 
 def load_bundle_command(bundle_name: str, clear_existing: bool = False):
@@ -401,4 +398,3 @@ def load_bundle_command(bundle_name: str, clear_existing: bool = False):
     finally:
         if 'db_manager' in locals():
             db_manager.close_driver()
-

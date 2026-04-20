@@ -7,7 +7,9 @@ EXPECTED_METADATA = {
     "blast_radius": ("blast-radius", "blast-radius.json"),
     "context": ("search", "context.json"),
     "drift_check": ("drift-check", "drift-check.json"),
+    "hotspots": ("hotspots", "hotspots.json"),
     "review_packet": ("review-packet", "review-packet.json"),
+    "snapshot": ("snapshot", "snapshot.json"),
     "sync_check": ("sync-check", "sync-check.json"),
 }
 

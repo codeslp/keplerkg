@@ -1,13 +1,13 @@
 # Visualizing the Graph
 
-Sometimes a table of text is not enough—you need to see the map. CodeGraphContext ships a local visualization server and also offers a hosted explorer.
+Sometimes a table of text is not enough-you need to see the map. KeplerKG ships a local visualization server and includes repo-managed frontend surfaces for broader exploration.
 
-## Local server: `cgc visualize`
+## Local server: `kkg visualize`
 
 Run:
 
 ```bash
-cgc visualize
+kkg visualize
 ```
 
 This starts a **local FastAPI server** that serves a **React** visualization of your current graph. Open the URL printed in the terminal (typically `http://127.0.0.1` with a chosen port).
@@ -25,11 +25,11 @@ Use the in-app controls to switch modes and focus on the neighborhood you care a
 
 ## Hosted explorer
 
-You can also open the public site **[codegraphcontext.vercel.app/explore](https://codegraphcontext.vercel.app/explore)** to explore graphs in the browser (including flows that align with bundle and registry workflows).
+The repository includes standalone frontends under `site/` and `website/`, but the current GitHub Actions setup does **not** auto-deploy a hosted explorer. The reliable workflow today is local `kkg visualize`.
 
 ## Neo4j users: Neo4j Browser and Bloom
 
-If your **`DEFAULT_DATABASE`** (or config) points at **Neo4j**, you can still use **Neo4j Browser** (and **Neo4j Bloom** on Desktop) for Cypher-centric exploration. The local `cgc visualize` experience is backend-agnostic where supported; Neo4j-specific URLs and tools remain available when Neo4j is your active backend.
+If your **`DEFAULT_DATABASE`** (or config) points at **Neo4j**, you can still use **Neo4j Browser** (and **Neo4j Bloom** on Desktop) for Cypher-centric exploration. The local `kkg visualize` experience is backend-agnostic where supported; Neo4j-specific URLs and tools remain available when Neo4j is your active backend.
 
 ---
 

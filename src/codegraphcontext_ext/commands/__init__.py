@@ -1,6 +1,9 @@
 """Metadata for planned cgraph extension commands."""
 
-from . import advise, audit, blast_radius, context, drift_check, review_packet, sync_check
+from . import (
+    advise, audit, blast_radius, context, drift_check,
+    hotspots, review_packet, snapshot, sync_check,
+)
 
 COMMAND_MODULES = (
     advise,
@@ -8,7 +11,9 @@ COMMAND_MODULES = (
     blast_radius,
     context,
     drift_check,
+    hotspots,
     review_packet,
+    snapshot,
     sync_check,
 )
 

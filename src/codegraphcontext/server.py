@@ -365,7 +365,7 @@ class MCPServer:
             ):
                 names = [c["repo_name"] for c in self.discovered_child_contexts]
                 note = (
-                    "NOTE: No CodeGraphContext database was found at the current workspace root. "
+                    "NOTE: No KeplerKG database was found at the current workspace root. "
                     f"However, the following child directories have indexed databases: {names}. "
                     "Use the `switch_context` tool to connect to one, or "
                     "`discover_codegraph_contexts` for a deeper scan."
@@ -408,7 +408,7 @@ class MCPServer:
                         "result": {
                             "protocolVersion": "2025-03-26",
                             "serverInfo": {
-                                "name": "CodeGraphContext", "version": self._get_version(),
+                                "name": "KeplerKG", "version": self._get_version(),
                                 "systemPrompt": LLM_SYSTEM_PROMPT
                             },
                             "capabilities": {"tools": {"listTools": True}},

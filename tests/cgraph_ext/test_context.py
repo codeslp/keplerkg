@@ -8,7 +8,7 @@ from typer.testing import CliRunner
 
 from codegraphcontext_ext.cli import register_extensions
 from codegraphcontext_ext.embeddings import runtime
-from codegraphcontext_ext.hybrid.ann import search as ann_search
+from codegraphcontext_ext.hybrid.ann import search as ann_search, search_scoped
 from codegraphcontext_ext.hybrid.traverse import traverse
 from codegraphcontext_ext.commands.context import (
     _build_context_payload,
@@ -278,6 +278,191 @@ def test_context_command_rejects_non_kuzu(monkeypatch):
     assert result.exit_code == 1
     payload = _extract_json(result.output)
     assert payload["kind"] == "unsupported_backend"
+
+
+# --- search_scoped tests ---
+
+
+def test_search_scoped_filters_by_allowed_uids():
+    # scan_rows format: (uid, name, path, line_number, embedding_vector)
+    scan_rows = [
+        ("uid1", "fn_a", "a.py", 1, [0.1, 0.1, 0.1]),
+        ("uid2", "fn_b", "b.py", 2, [0.5, 0.5, 0.5]),
+        ("uid3", "fn_c", "c.py", 3, [0.1, 0.1, 0.2]),
+    ]
+    conn = _FakeConn(scan_rows=scan_rows)
+    results = search_scoped(
+        conn, [0.1, 0.1, 0.1], k=8,
+        allowed_uids={"uid1", "uid3"},
+        tables=("Function",),
+    )
+    result_uids = {r["uid"] for r in results}
+    assert "uid2" not in result_uids
+    assert result_uids == {"uid1", "uid3"}
+
+
+def test_search_scoped_empty_allowed():
+    scan_rows = [("uid1", "fn", "a.py", 1, [0.1, 0.1])]
+    conn = _FakeConn(scan_rows=scan_rows)
+    results = search_scoped(conn, [0.1, 0.1], k=8, allowed_uids=set())
+    assert results == []
+
+
+def test_search_scoped_respects_k():
+    scan_rows = [
+        (f"uid{i}", f"fn{i}", "a.py", i, [float(i) * 0.1, 0.0])
+        for i in range(20)
+    ]
+    conn = _FakeConn(scan_rows=scan_rows)
+    allowed = {f"uid{i}" for i in range(20)}
+    results = search_scoped(
+        conn, [0.1, 0.0], k=3,
+        allowed_uids=allowed,
+        tables=("Function",),
+    )
+    assert len(results) <= 3
+
+
+def test_search_scoped_finds_hit_beyond_global_topn():
+    """Regression: the best in-scope hit may be globally ranked beyond any
+    inflated-k window.  search_scoped must still find it because it scans
+    the allowed set directly rather than post-filtering global results."""
+    # 50 out-of-scope nodes very close to query vector
+    scan_rows = [
+        (f"noise{i}", f"noise_fn{i}", "noise.py", i, [0.1, 0.1, 0.1])
+        for i in range(50)
+    ]
+    # One in-scope node — also close to query but would be ranked 51st
+    # if we only post-filtered a global top-50.
+    scan_rows.append(("target", "target_fn", "target.py", 1, [0.1, 0.1, 0.1]))
+
+    conn = _FakeConn(scan_rows=scan_rows)
+    results = search_scoped(
+        conn, [0.1, 0.1, 0.1], k=3,
+        allowed_uids={"target"},
+        tables=("Function",),
+    )
+    assert len(results) == 1
+    assert results[0]["uid"] == "target"
+
+
+# --- CLI mode tests ---
+
+
+def test_context_command_with_cluster_mode(monkeypatch):
+    monkeypatch.setenv("DEFAULT_DATABASE", "kuzudb")
+    monkeypatch.setattr(runtime, "is_kuzudb_available", lambda: True)
+
+    # search_scoped uses _linear_scan_scoped which queries embeddings (scan_rows)
+    scan_rows = [
+        ("uid1", "fn_a", "a.py", 1, [0.1] * 768),
+        ("uid2", "fn_b", "b.py", 2, [0.9] * 768),
+    ]
+    fake_conn = _FakeConn(scan_rows=scan_rows)
+
+    with patch(
+        "codegraphcontext_ext.commands.context.get_kuzu_connection",
+        return_value=fake_conn,
+    ), patch(
+        "codegraphcontext_ext.commands.context.create_provider",
+        return_value=_MockProvider(),
+    ), patch(
+        "codegraphcontext_ext.commands.context._resolve_cluster_uids",
+        return_value={"uid1"},
+    ):
+        app = _context_app()
+        result = runner.invoke(app, [
+            "search", "auth flow", "--mode", "cluster", "--cluster-id", "0",
+        ])
+
+    assert result.exit_code == 0
+    payload = _extract_json(result.output)
+    seed_uids = {s["uid"] for s in payload["seeds"]}
+    # uid1 must be present (in allowed set), uid2 must be excluded
+    assert "uid1" in seed_uids
+    assert "uid2" not in seed_uids
+
+
+def test_context_command_with_community_mode(monkeypatch):
+    monkeypatch.setenv("DEFAULT_DATABASE", "kuzudb")
+    monkeypatch.setattr(runtime, "is_kuzudb_available", lambda: True)
+
+    scan_rows = [
+        ("uid1", "fn_a", "a.py", 1, [0.9] * 768),
+        ("uid2", "fn_b", "b.py", 2, [0.1] * 768),
+    ]
+    fake_conn = _FakeConn(scan_rows=scan_rows)
+
+    with patch(
+        "codegraphcontext_ext.commands.context.get_kuzu_connection",
+        return_value=fake_conn,
+    ), patch(
+        "codegraphcontext_ext.commands.context.create_provider",
+        return_value=_MockProvider(),
+    ), patch(
+        "codegraphcontext_ext.commands.context._resolve_community_uids",
+        return_value={"uid2"},
+    ):
+        app = _context_app()
+        result = runner.invoke(app, [
+            "search", "auth flow", "--mode", "community", "--community-id", "0",
+        ])
+
+    assert result.exit_code == 0
+    payload = _extract_json(result.output)
+    seed_uids = {s["uid"] for s in payload["seeds"]}
+    # uid2 must be present (in allowed set), uid1 must be excluded
+    assert "uid2" in seed_uids
+    assert "uid1" not in seed_uids
+
+
+def test_context_command_rejects_invalid_mode(monkeypatch):
+    monkeypatch.setenv("DEFAULT_DATABASE", "kuzudb")
+    app = _context_app()
+    result = runner.invoke(app, ["search", "test", "--mode", "bogus"])
+    assert result.exit_code != 0
+
+
+def test_context_command_rejects_cluster_mode_without_id(monkeypatch):
+    monkeypatch.setenv("DEFAULT_DATABASE", "kuzudb")
+    app = _context_app()
+    result = runner.invoke(app, ["search", "test", "--mode", "cluster"])
+    assert result.exit_code != 0
+
+
+def test_context_command_rejects_community_mode_without_id(monkeypatch):
+    monkeypatch.setenv("DEFAULT_DATABASE", "kuzudb")
+    app = _context_app()
+    result = runner.invoke(app, ["search", "test", "--mode", "community"])
+    assert result.exit_code != 0
+
+
+def test_context_command_rejects_global_with_community_id(monkeypatch):
+    monkeypatch.setenv("DEFAULT_DATABASE", "kuzudb")
+    app = _context_app()
+    result = runner.invoke(app, ["search", "test", "--mode", "global", "--community-id", "0"])
+    assert result.exit_code != 0
+
+
+def test_context_command_rejects_global_with_cluster_id(monkeypatch):
+    monkeypatch.setenv("DEFAULT_DATABASE", "kuzudb")
+    app = _context_app()
+    result = runner.invoke(app, ["search", "test", "--mode", "global", "--cluster-id", "0"])
+    assert result.exit_code != 0
+
+
+def test_context_command_rejects_cluster_with_community_id(monkeypatch):
+    monkeypatch.setenv("DEFAULT_DATABASE", "kuzudb")
+    app = _context_app()
+    result = runner.invoke(app, ["search", "test", "--mode", "cluster", "--cluster-id", "0", "--community-id", "1"])
+    assert result.exit_code != 0
+
+
+def test_context_command_rejects_community_with_cluster_id(monkeypatch):
+    monkeypatch.setenv("DEFAULT_DATABASE", "kuzudb")
+    app = _context_app()
+    result = runner.invoke(app, ["search", "test", "--mode", "community", "--community-id", "0", "--cluster-id", "1"])
+    assert result.exit_code != 0
 
 
 def test_context_command_registered():

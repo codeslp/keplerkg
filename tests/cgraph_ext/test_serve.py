@@ -12,9 +12,12 @@ import pytest
 from codegraphcontext_ext.config import CgraphConfig
 from codegraphcontext_ext.daemon.serve import (
     COMMAND_NAME,
+    LOCALHOST_COMMAND_NAME,
+    LOCALHOST_SUMMARY,
     SUMMARY,
     _dispatch,
     _handle_client,
+    _start_tcp_server,
     _run_server,
     default_socket_path,
 )
@@ -27,6 +30,8 @@ from codegraphcontext_ext.daemon.serve import (
 def test_command_metadata():
     assert COMMAND_NAME == "serve"
     assert isinstance(SUMMARY, str) and len(SUMMARY) > 0
+    assert LOCALHOST_COMMAND_NAME == "serve-localhost"
+    assert isinstance(LOCALHOST_SUMMARY, str) and len(LOCALHOST_SUMMARY) > 0
 
 
 # ---------------------------------------------------------------------------
@@ -145,6 +150,53 @@ async def test_server_round_trip(tmp_path):
         shutil.rmtree(short_dir, ignore_errors=True)
 
 
+@pytest.mark.asyncio
+async def test_localhost_server_retries_busy_port_and_serves_requests():
+    """The localhost server should skip a busy port and still start."""
+    import socket
+
+    blocker = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    blocker.bind(("127.0.0.1", 0))
+    blocker.listen(1)
+    busy_port = blocker.getsockname()[1]
+
+    with patch(
+        "codegraphcontext_ext.commands.advise.resolve_cgraph_config",
+        return_value=_DEFAULT_CONFIG,
+    ):
+        server, bound_port = await _start_tcp_server(
+            host="127.0.0.1",
+            port=busy_port,
+            retries=3,
+        )
+
+    try:
+        assert bound_port != busy_port
+
+        reader, writer = await asyncio.open_connection("127.0.0.1", bound_port)
+        writer.write(
+            (
+                json.dumps(
+                    {"cmd": "advise", "args": {"situation": "lock_overlap", "lane": "a"}}
+                )
+                + "\n"
+            ).encode()
+        )
+        await writer.drain()
+
+        raw = await asyncio.wait_for(reader.readline(), timeout=5.0)
+        response = json.loads(raw)
+        assert response["situation"] == "lock_overlap"
+        assert response["advisory_id"] is not None
+
+        writer.close()
+        await writer.wait_closed()
+    finally:
+        server.close()
+        await server.wait_closed()
+        blocker.close()
+
+
 # ---------------------------------------------------------------------------
 # CLI registration
 # ---------------------------------------------------------------------------
@@ -158,3 +210,4 @@ def test_serve_registered():
     register_extensions(app)
     command_names = [cmd.name for cmd in app.registered_commands]
     assert "serve" in command_names
+    assert "serve-localhost" in command_names

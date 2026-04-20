@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://codeslp.dev/cgraph/schemas/entrypoints.json",
+  "title": "cgraph entrypoints response",
+  "description": "Entry-point scoring: ranked code entities by decorator type and in-degree.",
+  "type": "object",
+  "required": ["ok", "kind", "schema_version", "entrypoints", "advisories", "summary"],
+  "properties": {
+    "ok": { "type": "boolean" },
+    "kind": { "const": "entrypoints" },
+    "schema_version": { "type": "string", "pattern": "^\\d+\\.\\d+$" },
+    "project": { "type": ["string", "null"] },
+    "error": { "type": ["string", "null"] },
+    "framework_filter": { "type": ["string", "null"] },
+    "entrypoints": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/entrypoint" },
+      "description": "Ranked list of entry points."
+    },
+    "advisories": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/advisory" }
+    },
+    "summary": {
+      "type": "object",
+      "required": ["total", "limit", "frameworks_detected"],
+      "properties": {
+        "total": { "type": "integer", "minimum": 0 },
+        "limit": { "type": "integer", "minimum": 1 },
+        "frameworks_detected": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "entrypoint": {
+      "type": "object",
+      "required": ["uid", "name", "kind", "score", "decorators"],
+      "properties": {
+        "uid": { "type": "string" },
+        "name": { "type": ["string", "null"] },
+        "file": { "type": ["string", "null"] },
+        "kind": { "type": "string" },
+        "score": { "type": "number", "minimum": 0 },
+        "decorators": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "in_degree": { "type": "integer", "minimum": 0 },
+        "framework": { "type": ["string", "null"] }
+      },
+      "additionalProperties": false
+    },
+    "advisory": {
+      "type": "object",
+      "required": ["level", "kind", "detail"],
+      "properties": {
+        "level": { "enum": ["warn", "info"] },
+        "kind": { "type": "string", "enum": ["no_graph", "truncated"] },
+        "detail": { "type": "string" }
+      },
+      "additionalProperties": false
+    }
+  }
+}

@@ -1,13 +1,13 @@
 # Prerequisites
 
-Before you install CodeGraphContext (CGC), it helps to see how the pieces fit. CGC is a **client–server style** system even on a laptop: a **Python engine**, a **graph database backend**, and **clients** (CLI and/or MCP).
+Before you install KeplerKG, it helps to see how the pieces fit. KeplerKG is a **client-server style** system even on a laptop: a **Python engine**, a **graph database backend**, and **clients** (CLI and/or MCP).
 
 ## The three roles
 
 1. **Engine (this package)** — Parses code, builds the graph, and talks to the database through a single abstraction API.
 2. **Database** — Stores nodes and relationships (“function A calls function B”, containment, imports, …).
 3. **Clients**
-   - **CLI** — `cgc` in the terminal.
+   - **CLI** — `kkg` in the terminal.
    - **MCP** — AI-capable editors (Cursor, VS Code, Claude Desktop, and other MCP hosts).
 
 ## System requirements
@@ -15,7 +15,7 @@ Before you install CodeGraphContext (CGC), it helps to see how the pieces fit. C
 | Requirement | Notes |
 | :---------- | :---- |
 | **OS** | Linux, macOS, or Windows (WSL is a good option on Windows). |
-| **Python** | **3.10+** for CGC generally. **FalkorDB Lite** (default embedded path on Unix) requires **Python 3.12+**. |
+| **Python** | **3.10+** for KeplerKG generally. **FalkorDB Lite** (default embedded path on Unix) requires **Python 3.12+**. |
 | **Memory** | At least **4 GB RAM** recommended; larger repos and graph stores benefit from more. |
 
 ## Database options
@@ -35,7 +35,7 @@ You do not need to manually install every backend—pick one flow during setup. 
 
 ## AI assistant (optional)
 
-To use CGC from an AI workflow you need an **MCP-capable client**. Examples:
+To use KeplerKG from an AI workflow you need an **MCP-capable client**. Examples:
 
 - [Cursor](https://cursor.sh)
 - [Visual Studio Code](https://code.visualstudio.com/)

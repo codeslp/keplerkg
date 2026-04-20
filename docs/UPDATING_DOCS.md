@@ -1,22 +1,29 @@
 # 📚 Documentation Update Guide
 
-This guide explains how to update the CodeGraphContext documentation website.
+This guide explains how to update the KeplerKG documentation and landing pages.
 
 ## 🏗️ Documentation Structure
 
-CodeGraphContext has **two separate web properties**:
+KeplerKG currently has **three** repo-managed web surfaces:
 
-### 1. **MkDocs Documentation** (Main Docs)
+### 1. **MkDocs Documentation** (Published Docs)
 - **Location**: `/docs/`
-- **URL**: https://CodeGraphContext.github.io/CodeGraphContext/
+- **Build Output**: `/docs/site/`
 - **Purpose**: Technical documentation, guides, API reference
 - **Technology**: MkDocs with Material theme
+- **Deployment**: `.github/workflows/deploy-root-docs.yml` builds `docs/site/` and publishes it to `gh-pages`
 
-### 2. **React Landing Page** (Marketing Site)
+### 2. **Static Landing Page** (Standalone HTML)
+- **Location**: `/site/`
+- **Purpose**: Lightweight marketing/research landing page
+- **Technology**: Static HTML/CSS/JS
+- **Deployment**: Not auto-deployed by the current GitHub Actions workflow
+
+### 3. **React Marketing App** (Alternate Frontend)
 - **Location**: `/website/`
-- **URL**: https://codegraphcontext.vercel.app/ (or similar)
-- **Purpose**: Marketing, features showcase, quick start
+- **Purpose**: React/Vite landing page and experiments
 - **Technology**: React + Vite + TypeScript
+- **Deployment**: Not auto-deployed by the current GitHub Actions workflow
 
 ---
 
@@ -72,13 +79,36 @@ docs/
 
 ```bash
 cd docs
-mkdocs build  # Generates static site in docs/site/
-mkdocs gh-deploy  # Deploys to GitHub Pages
+mkdocs build --clean  # Generates static site in docs/site/
 ```
+
+Pushes to `main` trigger `.github/workflows/deploy-root-docs.yml`, which publishes `docs/site/` to `gh-pages`. If you need a manual preview, run `mkdocs serve` locally instead of editing `docs/site/` by hand.
 
 ---
 
-## 🎨 Updating React Landing Page
+## 🎨 Updating Static Landing Page
+
+### Quick Start
+
+```bash
+cd site
+python3 -m http.server 8000
+# Preview at http://127.0.0.1:8000
+```
+
+### Key Files to Edit
+
+- **`site/index.html`** - Main landing page copy and layout
+- **`site/img/`** - Images used by the landing page
+
+### Deployment Notes
+
+- There is **no repo-managed auto-deploy** for `site/` today.
+- If you publish it, use a separate static host or deployment workflow.
+
+---
+
+## 🎨 Updating React Marketing App
 
 ### Quick Start
 
@@ -104,38 +134,35 @@ cd website
 npm run build  # Generates dist/ folder
 ```
 
+### Deployment Notes
+
+- There is **no repo-managed auto-deploy** for `website/` today.
+- Treat it as a local/build artifact unless your branch also wires up an external host.
+
 ---
 
-## ✅ Recent Changes
+## ✅ Publishing Checklist
 
-### What We Just Did
-
-1. ✅ Moved deployment docs from root to `docs/docs/deployment/`
-2. ✅ Updated `docs/mkdocs.yml` to include a **Deployment** section in `nav`
-3. ✅ Updated `website/src/components/Footer.tsx` to link to deployment docs
-4. ✅ Created `docs/docs/deployment/README.md` as navigation index
-
-### Next Steps to Publish
-
-1. **Test MkDocs locally**:
+1. **For docs changes**:
    ```bash
    cd docs
    mkdocs serve
-   # Visit http://127.0.0.1:8000 and check the "Deployment" section
    ```
+   Check navigation, links, and search locally.
 
-2. **Deploy to GitHub Pages**:
+2. **For `site/` changes**:
    ```bash
-   cd docs
-   mkdocs gh-deploy
+   cd site
+   python3 -m http.server 8000
    ```
+   Check the landing page in a browser.
 
-3. **Update React site** (if needed):
+3. **For `website/` changes**:
    ```bash
    cd website
    npm run build
-   # Deploy to Vercel/Netlify/etc.
    ```
+   Confirm the React build still passes.
 
 ---
 
@@ -143,7 +170,7 @@ npm run build  # Generates dist/ folder
 
 - **MkDocs Documentation**: https://www.mkdocs.org/
 - **Material Theme**: https://squidfunk.github.io/mkdocs-material/
-- **Current Docs Site**: https://CodeGraphContext.github.io/CodeGraphContext/
+- **Docs Deploy Workflow**: `.github/workflows/deploy-root-docs.yml`
 
 ---
 
@@ -151,5 +178,6 @@ npm run build  # Generates dist/ folder
 
 - **MkDocs** uses relative paths from `docs/docs/` directory
 - Use paths under `docs/docs/deployment/` for deployment markdown; link from other pages with relative paths (e.g. `deployment/README.md` from a page in `docs/docs/`).
-- The React site links to GitHub for docs (see Footer.tsx)
+- Do not hand-edit `docs/site/`; it is generated output from MkDocs.
+- `site/` and `website/` both require separate hosting if you want a live deployment.
 - TypeScript errors in `website/` are normal without `npm install`

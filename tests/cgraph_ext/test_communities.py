@@ -11,6 +11,7 @@ from codegraphcontext_ext.topology.communities import (
     cross_community_edges,
     detect_communities,
     fetch_community_data,
+    score_cross_community_surprise,
 )
 
 from .conftest import FakeResult
@@ -199,3 +200,69 @@ class TestFetchCommunityData:
         provenances = {e["provenance"] for e in data["edges"]}
         assert "extracted" in provenances
         assert "inferred" in provenances
+
+
+# ---------------------------------------------------------------------------
+# score_cross_community_surprise
+# ---------------------------------------------------------------------------
+
+
+class TestSurpriseScoring:
+    def test_empty_edges(self):
+        result = score_cross_community_surprise([], [])
+        assert result == []
+
+    def test_single_edge_between_large_communities(self):
+        """One edge between two 10-node communities → high surprise."""
+        comms = [set(f"a{i}" for i in range(10)), set(f"b{i}" for i in range(10))]
+        edges = [{
+            "source": "a0", "target": "b0", "type": "CALLS",
+            "provenance": "extracted", "source_community": 0, "target_community": 1,
+        }]
+        result = score_cross_community_surprise(comms, edges)
+        assert len(result) == 1
+        assert "surprise" in result[0]
+        # 1 edge out of 100 possible → -log2(1/100) ≈ 6.64
+        assert result[0]["surprise"] > 6.0
+
+    def test_many_edges_between_communities_low_surprise(self):
+        """Many edges between small communities → low surprise."""
+        comms = [{"a0", "a1"}, {"b0", "b1"}]
+        edges = [
+            {"source": "a0", "target": "b0", "type": "CALLS",
+             "provenance": "extracted", "source_community": 0, "target_community": 1},
+            {"source": "a1", "target": "b1", "type": "CALLS",
+             "provenance": "extracted", "source_community": 0, "target_community": 1},
+            {"source": "a0", "target": "b1", "type": "CALLS",
+             "provenance": "extracted", "source_community": 0, "target_community": 1},
+        ]
+        result = score_cross_community_surprise(comms, edges)
+        # 3 edges out of 4 possible → -log2(3/4) ≈ 0.42
+        assert all(e["surprise"] < 1.0 for e in result)
+
+    def test_sorted_descending_by_surprise(self):
+        """Result is sorted by surprise descending."""
+        comms = [set(f"a{i}" for i in range(10)), {"b0"}, {"c0", "c1"}]
+        edges = [
+            {"source": "a0", "target": "b0", "type": "CALLS",
+             "provenance": "extracted", "source_community": 0, "target_community": 1},
+            {"source": "c0", "target": "c1", "type": "CALLS",
+             "provenance": "extracted", "source_community": 2, "target_community": 2},
+            {"source": "a0", "target": "c0", "type": "CALLS",
+             "provenance": "extracted", "source_community": 0, "target_community": 2},
+        ]
+        # Only cross-community edges get scored (c0→c1 is same community, won't be in the list)
+        cross_only = [e for e in edges if e["source_community"] != e["target_community"]]
+        result = score_cross_community_surprise(comms, cross_only)
+        for i in range(len(result) - 1):
+            assert result[i]["surprise"] >= result[i + 1]["surprise"]
+
+    def test_surprise_capped_at_10(self):
+        """Very sparse connections cap at 10."""
+        comms = [set(f"a{i}" for i in range(100)), set(f"b{i}" for i in range(100))]
+        edges = [{
+            "source": "a0", "target": "b0", "type": "CALLS",
+            "provenance": "extracted", "source_community": 0, "target_community": 1,
+        }]
+        result = score_cross_community_surprise(comms, edges)
+        assert result[0]["surprise"] <= 10.0

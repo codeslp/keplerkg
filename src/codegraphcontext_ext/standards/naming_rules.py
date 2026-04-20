@@ -11,16 +11,16 @@ from __future__ import annotations
 
 import os
 from collections import defaultdict
-from typing import Any, Callable
+from typing import Any, Callable, Dict, List, Union
 
 from ..embeddings.schema import EMBEDDING_COLUMN, NAME_EMBEDDING_COLUMN
 from ..hybrid.ann import cosine_similarity
 
 # Type: (conn, thresholds) -> list of violation dicts
-RuleFunc = Callable[[Any, dict[str, int | float]], list[dict[str, Any]]]
+RuleFunc = Callable[[Any, Dict[str, Union[int, float]]], List[Dict[str, Any]]]
 
 # Registry keyed by rule id.
-EMBEDDING_RULES: dict[str, RuleFunc] = {}
+EMBEDDING_RULES: Dict[str, RuleFunc] = {}
 
 # Optional embedding provider — set by audit.py before execution.
 # Only needed by F03 (module_content_mismatch) to embed file names on the fly.

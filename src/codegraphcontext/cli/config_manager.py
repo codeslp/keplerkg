@@ -1,5 +1,5 @@
 """
-Configuration management for CodeGraphContext.
+Configuration management for KeplerKG.
 Handles reading, writing, and validating configuration settings.
 Also manages the context system (config.yaml) alongside the existing .env file.
 """
@@ -23,7 +23,8 @@ DATABASE_CREDENTIAL_KEYS = {"NEO4J_URI", "NEO4J_USERNAME", "NEO4J_PASSWORD", "NE
 
 # Default configuration values
 DEFAULT_CONFIG = {
-    "DEFAULT_DATABASE": "falkordb",
+    "DEFAULT_DATABASE": "kuzudb",
+    "KUZUDB_PATH": str(CONFIG_DIR / "global" / "db" / "kuzudb"),
     "FALKORDB_PATH": str(CONFIG_DIR / "global" / "db" / "falkordb"),
     "FALKORDB_SOCKET_PATH": str(CONFIG_DIR / "global" / "db" / "falkordb.sock"),
     "INDEX_VARIABLES": "true",
@@ -51,7 +52,8 @@ DEFAULT_CONFIG = {
 
 # Configuration key descriptions
 CONFIG_DESCRIPTIONS = {
-    "DEFAULT_DATABASE": "Default database backend (neo4j|falkordb|kuzudb)",
+    "DEFAULT_DATABASE": "Default database backend (kuzudb|neo4j|falkordb|falkordb-remote)",
+    "KUZUDB_PATH": "Path to KuzuDB database directory",
     "FALKORDB_PATH": "Path to FalkorDB database file",
     "FALKORDB_SOCKET_PATH": "Path to FalkorDB Unix socket",
     "INDEX_VARIABLES": "Index variable nodes in the graph (lighter graph if false)",
@@ -78,7 +80,7 @@ CONFIG_DESCRIPTIONS = {
 
 # Valid values for each config key
 CONFIG_VALIDATORS = {
-    "DEFAULT_DATABASE": ["neo4j", "falkordb", "falkordb-remote", "kuzudb"],
+    "DEFAULT_DATABASE": ["kuzudb", "neo4j", "falkordb", "falkordb-remote"],
     "INDEX_VARIABLES": ["true", "false"],
     "ALLOW_DB_DELETION": ["true", "false"],
     "DEBUG_LOGS": ["true", "false"],
@@ -267,7 +269,7 @@ def save_config(config: Dict[str, str], preserve_db_credentials: bool = True):
     
     try:
         with open(CONFIG_FILE, "w") as f:
-            f.write("# CodeGraphContext Configuration\n")
+            f.write("# KeplerKG Configuration\n")
             f.write(f"# Location: {CONFIG_FILE}\n\n")
             
             # Write database credentials first if they exist
@@ -360,7 +362,7 @@ def validate_config_value(key: str, value: str) -> tuple[bool, Optional[str]]:
         except Exception as e:
             return False, f"Cannot create log directory: {e}"
     
-    if key in ("FALKORDB_PATH", "FALKORDB_SOCKET_PATH"):
+    if key in ("KUZUDB_PATH", "FALKORDB_PATH", "FALKORDB_SOCKET_PATH"):
         # Validate path is writable
         db_path = Path(value)
         try:
@@ -423,7 +425,7 @@ _FIRST_RUN_MARKER = CONFIG_DIR / ".first_run_done"
 def _print_welcome_banner() -> None:
     """Print a one-time welcome message explaining the context system."""
     console.print()
-    console.print("[bold green]Welcome to CodeGraphContext![/bold green]")
+    console.print("[bold green]Welcome to KeplerKG![/bold green]")
     console.print()
     console.print("CGC organises your code graphs using [bold]contexts[/bold]:")
     console.print("  [cyan]global[/cyan]    - One shared graph for all projects (default)")
@@ -538,7 +540,7 @@ VALID_MODES = ["global", "per-repo", "named"]
 class ContextInfo:
     """Metadata for a single named context."""
     name: str
-    database: str = "falkordb"          # neo4j | falkordb | kuzudb
+    database: str = "kuzudb"            # kuzudb | neo4j | falkordb
     db_path: str = ""                    # resolved at init if empty
     repos: List[str] = field(default_factory=list)
     cgcignore_path: str = ""            # resolved at init if empty
@@ -599,7 +601,7 @@ def load_context_config() -> ContextConfig:
         contexts: Dict[str, ContextInfo] = {}
         for name, meta in raw.get("contexts", {}).items():
             meta = meta or {}
-            db = meta.get("database", "falkordb")
+            db = meta.get("database", "kuzudb")
             ctx = ContextInfo(
                 name=name,
                 database=db,
@@ -658,7 +660,7 @@ class ResolvedContext:
     """Result of resolve_context() — everything needed to instantiate the DB."""
     mode: str             # global | per-repo | named
     context_name: str     # empty for global / per-repo
-    database: str         # neo4j | falkordb | kuzudb
+    database: str         # kuzudb | neo4j | falkordb
     db_path: str          # absolute path to the DB directory
     cgcignore_path: str   # path to the applicable .cgcignore
     is_local: bool = False  # True when a local .codegraphcontext/ was found
@@ -698,7 +700,7 @@ def resolve_context(
     # --- 1. Explicit CLI flag ---
     if cli_context:
         ctx = cfg.contexts.get(cli_context)
-        db = ctx.database if ctx else "falkordb"
+        db = ctx.database if ctx else "kuzudb"
         db_path = ctx.db_path if ctx else _default_db_path(cli_context, db)
         cgcignore = (
             ctx.cgcignore_path
@@ -732,12 +734,12 @@ def resolve_context(
     if local_cgc is not None:
         # Read local config.yaml if present
         local_yaml = local_cgc / "config.yaml"
-        local_db = "falkordb"
+        local_db = "kuzudb"
         if local_yaml.exists():
             try:
                 with open(local_yaml) as f:
                     local_raw = yaml.safe_load(f) or {}
-                local_db = local_raw.get("database", "falkordb")
+                local_db = local_raw.get("database", "kuzudb")
             except Exception:
                 pass
         db_path = str(local_cgc / "db" / local_db)
@@ -756,7 +758,7 @@ def resolve_context(
     if mapping:
         mapped_ctx_path = Path(mapping["context_path"])
         if mapped_ctx_path.exists() and mapped_ctx_path.is_dir():
-            mapped_db = mapping.get("database", "falkordb")
+            mapped_db = mapping.get("database", "kuzudb")
             return ResolvedContext(
                 mode="per-repo",
                 context_name="",
@@ -770,7 +772,7 @@ def resolve_context(
     if cfg.mode == "named":
         ctx_name = cfg.default_context
         ctx = cfg.contexts.get(ctx_name) if ctx_name else None
-        db = ctx.database if ctx else "falkordb"
+        db = ctx.database if ctx else "kuzudb"
         db_path = ctx.db_path if ctx else _default_db_path(ctx_name, db) if ctx_name else ""
         if not db_path:
             # No default context set — fall through to global
@@ -790,7 +792,7 @@ def resolve_context(
             )
 
     # --- 4. Global fallback ---
-    db = load_config().get("DEFAULT_DATABASE", "falkordb")
+    db = load_config().get("DEFAULT_DATABASE", "kuzudb")
     return ResolvedContext(
         mode="global",
         context_name="",
@@ -806,7 +808,7 @@ def resolve_context(
 
 def create_context(
     name: str,
-    database: str = "falkordb",
+    database: str = "kuzudb",
     db_path: Optional[str] = None,
 ) -> bool:
     """Create a new named context. Returns True on success."""
@@ -946,13 +948,13 @@ def discover_child_contexts(
                 continue
             candidate = entry / ".codegraphcontext"
             if candidate.exists() and candidate.is_dir() and candidate.resolve() != global_dir:
-                local_db = "falkordb"
+                local_db = "kuzudb"
                 local_yaml = candidate / "config.yaml"
                 if local_yaml.exists():
                     try:
                         with open(local_yaml) as f:
                             raw = yaml.safe_load(f) or {}
-                        local_db = raw.get("database", "falkordb")
+                        local_db = raw.get("database", "kuzudb")
                     except Exception:
                         pass
                 results.append(DiscoveredContext(
@@ -1017,13 +1019,13 @@ def get_workspace_mapping(cwd: Path) -> Optional[Dict[str, str]]:
 def save_workspace_mapping(cwd: Path, context_path: Path) -> None:
     """Persist an association from *cwd* to a ``.codegraphcontext`` directory."""
     context_path = context_path.resolve()
-    local_db = "falkordb"
+    local_db = "kuzudb"
     local_yaml = context_path / "config.yaml"
     if local_yaml.exists():
         try:
             with open(local_yaml) as f:
                 raw = yaml.safe_load(f) or {}
-            local_db = raw.get("database", "falkordb")
+            local_db = raw.get("database", "kuzudb")
         except Exception:
             pass
 

@@ -39,7 +39,7 @@ def run_worker():
         
         if platform.system() == "Windows":
             raise RuntimeError(
-                "CodeGraphContext uses redislite/FalkorDB, which does not support Windows.\n"
+                "KeplerKG uses redislite/FalkorDB, which does not support Windows.\n"
                 "Please run the project using WSL or Docker."
             )
         

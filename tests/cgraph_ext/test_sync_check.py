@@ -31,7 +31,7 @@ def test_sync_check_cli_emits_success_payload(tmp_path: Path):
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
     validate_payload("sync-check.json", payload)
-    assert payload["upstream"] == "CodeGraphContext/CodeGraphContext"
+    assert payload["upstream"] == "KeplerKG/KeplerKG"
     assert payload["source_dir"] == str(repo)
     assert payload["behind_by"] == 2
     assert [commit["subject"] for commit in payload["new_commits"]] == [
@@ -150,7 +150,7 @@ def test_sync_check_reports_missing_remote_ref_when_branches_unfetched(tmp_path:
         "remote",
         "add",
         "upstream",
-        "https://github.com/CodeGraphContext/CodeGraphContext.git",
+        "https://github.com/KeplerKG/KeplerKG.git",
     )
     (repo / "demo.txt").write_text("x", encoding="utf-8")
     _run_git(repo, "add", "demo.txt")
@@ -204,7 +204,7 @@ def _init_sync_check_repo(tmp_path: Path) -> Path:
         "remote",
         "add",
         "upstream",
-        "https://github.com/CodeGraphContext/CodeGraphContext.git",
+        "https://github.com/KeplerKG/KeplerKG.git",
     )
 
     tracked_file = repo / "demo.txt"

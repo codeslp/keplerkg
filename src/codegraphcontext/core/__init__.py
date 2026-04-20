@@ -2,17 +2,17 @@
 """
 Core database management module.
 
-Supports Neo4j, FalkorDB Lite, remote FalkorDB, and KùzuDB backends.
+Supports KùzuDB, Neo4j, FalkorDB Lite, and remote FalkorDB backends.
 
 Explicit backend selection (see ``get_database_manager``):
 - ``CGC_RUNTIME_DB_TYPE`` — per-invocation override (CLI ``--database`` / MCP resolved context).
-- ``DEFAULT_DATABASE`` — configured default from ``cgc config db …`` / CodeGraphContext ``.env``.
+- ``DEFAULT_DATABASE`` — configured default from ``cgc config db …`` / KeplerKG ``.env``.
 
 When neither is set, implicit selection:
 - Remote FalkorDB if ``FALKORDB_HOST`` is set (explicit remote signal).
-- Else **Unix**: FalkorDB Lite when Python 3.12+ and ``falkordblite`` work; else KùzuDB if
-  installed; else Neo4j if credentials exist.
-- Else **Windows**: KùzuDB if installed; else Neo4j if credentials exist.
+- Else KùzuDB if installed.
+- Else **Unix**: FalkorDB Lite when Python 3.12+ and ``falkordblite`` work.
+- Else Neo4j if credentials exist.
 """
 import os
 import platform
@@ -58,9 +58,9 @@ def get_database_manager(db_path: Optional[str] = None) -> Union['DatabaseManage
 
     Selection logic:
     1. Runtime override: ``CGC_RUNTIME_DB_TYPE`` (CLI ``--database``, MCP context).
-    2. Configured default: ``DEFAULT_DATABASE`` (``cgc config db …``, CodeGraphContext ``.env``).
-    3. Implicit: ``FALKORDB_HOST`` → remote FalkorDB; else Unix → FalkorDB Lite when available,
-       then KùzuDB; Windows → KùzuDB first; Neo4j if configured.
+    2. Configured default: ``DEFAULT_DATABASE`` (``cgc config db …``, KeplerKG ``.env``).
+    3. Implicit: ``FALKORDB_HOST`` → remote FalkorDB; else KùzuDB; then Unix-only
+       FalkorDB Lite; Neo4j if configured.
     """
     from codegraphcontext.utils.debug_log import info_logger
 
@@ -120,25 +120,24 @@ def get_database_manager(db_path: Optional[str] = None) -> Union['DatabaseManage
         info_logger("Using remote FalkorDB (auto-detected via FALKORDB_HOST)")
         return FalkorDBRemoteManager()
 
-    # Implicit: FalkorDB Lite on Unix when available (typical embedded default there)
-    if _is_falkordb_available():
-        from .database_falkordb import FalkorDBManager, FalkorDBUnavailableError
-        try:
-            mgr = FalkorDBManager(db_path=db_path)
-            info_logger(f"Using FalkorDB Lite (default) at {db_path or 'default path'}")
-            return mgr
-        except FalkorDBUnavailableError as falkor_err:
-            info_logger(
-                f"FalkorDB Lite not functional in this environment ({falkor_err}). "
-                "Falling back to KùzuDB."
-            )
-            # fall through to KùzuDB below
-
-    # Implicit: KùzuDB (typical on Windows; Unix fallback when Falkor Lite unavailable)
+    # Implicit: KùzuDB is the preferred local backend.
     if _is_kuzudb_available():
         from .database_kuzu import KuzuDBManager
         info_logger(f"Using KùzuDB (default) at {db_path or 'default path'}")
         return KuzuDBManager(db_path=db_path)
+
+    # Implicit: FalkorDB Lite remains available as a Unix-only fallback.
+    if _is_falkordb_available():
+        from .database_falkordb import FalkorDBManager, FalkorDBUnavailableError
+        try:
+            mgr = FalkorDBManager(db_path=db_path)
+            info_logger(f"Using FalkorDB Lite (fallback) at {db_path or 'default path'}")
+            return mgr
+        except FalkorDBUnavailableError as falkor_err:
+            info_logger(
+                f"FalkorDB Lite not functional in this environment ({falkor_err}). "
+                "Continuing to the next backend."
+            )
 
     # Implicit: Neo4j when configured
     if _is_neo4j_configured():
@@ -147,7 +146,7 @@ def get_database_manager(db_path: Optional[str] = None) -> Union['DatabaseManage
         return DatabaseManager()
 
     error_msg = "No database backend available.\n"
-    error_msg += "Recommended: Install KùzuDB for zero-config ('pip install kuzu')\n"
+    error_msg += "Recommended: Install KùzuDB as the default local backend ('pip install kuzu')\n"
 
     if platform.system() != "Windows":
         error_msg += "Alternative: Install FalkorDB Lite ('pip install falkordblite')\n"

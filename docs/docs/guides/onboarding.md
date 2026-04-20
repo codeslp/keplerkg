@@ -1,6 +1,6 @@
 # Onboarding Guide
 
-Welcome to the CodeGraphContext source code! This guide is designed to help new contributors and maintainers understand exactly what each folder and file in the repository does. This detailed breakdown ensures you know where to look when debugging or adding new features to the core engine, CLI, or UI.
+Welcome to the KeplerKG source code. This guide is designed to help new contributors and maintainers understand exactly what each folder and file in the repository does. This detailed breakdown ensures you know where to look when debugging or adding new features to the core engine, CLI, or UI.
 
 ## Root Directory Structure
 
@@ -11,8 +11,7 @@ The root directory contains important configuration files for packaging, testing
 - `CONTRIBUTING.md` - Guidelines for how to contribute to the repository.
 - `docker-compose.yml` - Sets up Neo4j for testing and debugging.
 - `Dockerfile` - Builds the primary containerized application image.
-- `pyproject.toml` - The primary Python packaging and configuration file, defining dependencies, tools, and the CLI entry point (`cgc`).
-- `cgc_entry.py` - Root entry point script mapped within pyproject.toml to execute CLI commands.
+- `pyproject.toml` - The primary Python packaging and configuration file, defining dependencies, tools, and the CLI entry points (`kkg`, `codegraphcontext`, `cgc`).
 
 ---
 
@@ -20,7 +19,7 @@ The root directory contains important configuration files for packaging, testing
 
 ### `src/codegraphcontext/`
 This is the **Core Engine** containing all the Python logic to index, watch, and query code contexts.
-- **`cli/`**: Directory housing the command-line interface logic using **Typer**. All commands like `cgc index`, `cgc list`, and `cgc clean` live here.
+- **`cli/`**: Directory housing the command-line interface logic using **Typer**. All commands like `kkg index`, `kkg list`, and `kkg clean` live here.
 - **`core/`**: Core engine pieces including **database drivers and connection logic**. **FalkorDB** (Lite and remote) is the primary path on Unix/Python 3.12+; **KuzuDB** supports embedded use (including Windows/fallback); **Neo4j** is available for remote or production deployments.
 - **`tools/languages/`**: Collection of language-specific Tree-sitter implementations. Each module corresponds to a language (e.g., `python.py`, `javascript.py`) responsible for translating syntax ASTs into standard nodes/edges.
 - **`utils/`**: Shared helpers across the project (logging, environment validation).
@@ -43,13 +42,18 @@ The testing suite. It ensures no PR breaks the engine.
 
 ### `k8s/`
 Kubernetes manifests for enterprise, scaled-out deployments.
-- **`deployment.yaml` & `service.yaml`**: The descriptors that orchestrate running CGC within a Kubernetes cluster.
+- **`deployment.yaml` & `service.yaml`**: The descriptors that orchestrate running KeplerKG within a Kubernetes cluster.
 - **`neo4j-deployment.yaml`**: Standalone persistence layer setups.
 
 ### `website/`
 A self-contained React project responsible for generating the visual, exploratory graph view.
 - **`src/components/CodeGraphViewer.tsx`**: The main frontend react component utilizing `react-force-graph` to draw 3D/2D nodes dynamically.
-- **`api/`**: Interaction endpoints allowing the UI to ping a running `cgc visualize` host.
+- **`api/`**: Interaction endpoints allowing the UI to ping a running `kkg visualize` host.
+
+### `site/`
+A standalone static landing page for the KeplerKG marketing/research surface.
+- **`index.html`**: The single-page landing experience.
+- **`img/`**: Supporting visuals used by the landing page.
 
 ### `scripts/`
 A suite of bash and python automations for maintainers.
@@ -69,4 +73,4 @@ A directory used for tracking the core team's research goals, roadmap notes, and
 - **Want to change database connections?** Inspect drivers and related logic under `src/codegraphcontext/core/` and configuration (e.g. **`DEFAULT_DATABASE`**).
 - **UI Tweaks on the Visualizer?** Change `website/src/components/CodeGraphViewer.tsx` and run `npm run dev` in that folder.
 
-Enjoy contributing to CodeGraphContext! 
+Enjoy contributing to KeplerKG.

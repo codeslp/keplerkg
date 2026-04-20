@@ -13,8 +13,8 @@ from codegraphcontext_ext.commands.sync_check import (
     "remote_url, expected",
     [
         (
-            "https://github.com/CodeGraphContext/CodeGraphContext.git",
-            "CodeGraphContext/CodeGraphContext",
+            "https://github.com/KeplerKG/KeplerKG.git",
+            "KeplerKG/KeplerKG",
         ),
         ("https://github.com/codeslp/cgraph", "codeslp/cgraph"),
         ("https://github.com/codeslp/cgraph/", "codeslp/cgraph"),

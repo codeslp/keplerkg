@@ -18,6 +18,18 @@ DEFAULT_NEO4J_URI = "neo4j://localhost:7687"
 DEFAULT_NEO4J_USERNAME = "neo4j"
 DEFAULT_NEO4J_BOLT_PORT = 7687
 DEFAULT_NEO4J_HTTP_PORT = 7474
+CLI_BINARY_CANDIDATES = ("kkg", "codegraphcontext", "cgc")
+MODULE_ENTRYPOINT = "codegraphcontext"
+
+
+def _resolve_cli_command():
+    """Return the best available CLI invocation for KeplerKG."""
+    for cli_name in CLI_BINARY_CANDIDATES:
+        cli_path = shutil.which(cli_name)
+        if cli_path:
+            return cli_path, ["mcp", "start"], cli_name
+
+    return sys.executable, ["-m", MODULE_ENTRYPOINT, "mcp", "start"], f"python -m {MODULE_ENTRYPOINT}"
 
 def _save_neo4j_credentials(creds):
     """
@@ -45,28 +57,21 @@ def _save_neo4j_credentials(creds):
     console.print("\n[bold green]✅ Neo4j setup complete![/bold green]")
     console.print(f"[cyan]📝 Credentials saved to ~/.codegraphcontext/.env[/cyan]")
     console.print(f"[cyan]🔧 Default database set to 'neo4j'[/cyan]")
-    console.print("\n[dim]You can now use cgc commands with Neo4j:[/dim]")
-    console.print("[dim]  • cgc index .          - Index your code[/dim]")
-    console.print("[dim]  • cgc find function    - Search your codebase[/dim]")
-    console.print("\n[dim]To use cgc as an MCP server in your IDE, run:[/dim]")
-    console.print("[dim]  cgc mcp setup[/dim]")
+    _, _, cli_display = _resolve_cli_command()
+    console.print("\n[dim]You can now use KeplerKG commands with Neo4j:[/dim]")
+    console.print(f"[dim]  • {cli_display} index .                - Index your code[/dim]")
+    console.print(f"[dim]  • {cli_display} find name my_symbol   - Search your codebase[/dim]")
+    console.print("\n[dim]To use KeplerKG as an MCP server in your IDE, run:[/dim]")
+    console.print(f"[dim]  {cli_display} mcp setup[/dim]")
 
 
 def _generate_mcp_json(creds):
     """Generates and prints the MCP JSON configuration."""
-    cgc_path = shutil.which("cgc") or sys.executable
-
-    if "python" in Path(cgc_path).name:
-        # fallback to running as module if no cgc binary is found
-        command = cgc_path
-        args = ["-m", "cgc", "mcp", "start"]
-    else:
-        command = cgc_path
-        args = ["mcp","start"]
+    command, args, _ = _resolve_cli_command()
 
     mcp_config = {
         "mcpServers": {
-            "CodeGraphContext": {
+            "KeplerKG": {
                 "command": command,
                 "args": args,
                 "env": {
@@ -180,10 +185,11 @@ def _configure_ide(mcp_config):
         return
 
     if ide_choice == "OpenCode":
+        _, _, cli_display = _resolve_cli_command()
         _print_opencode_mcp_instructions(mcp_config)
         console.print(
             "\n[green]When you have pasted this into OpenCode, reload MCP and run "
-            "`cgc mcp start` from a terminal to verify the server starts cleanly.[/green]"
+            f"`{cli_display} mcp start` from a terminal to verify the server starts cleanly.[/green]"
         )
         return
 
@@ -308,7 +314,7 @@ def _configure_ide(mcp_config):
 
 
 def get_project_root() -> Path:
-    """Always return the directory where the user runs `cgc` (CWD)."""
+    """Always return the directory where the user runs the CLI (CWD)."""
     return Path.cwd()
 
 def run_command(command, console, shell=False, check=True, input_text=None):
@@ -347,7 +353,7 @@ def run_command(command, console, shell=False, check=True, input_text=None):
         return None
 
 def run_neo4j_setup_wizard():
-    """Guides the user through setting up Neo4j database for CodeGraphContext."""
+    """Guides the user through setting up Neo4j database for KeplerKG."""
     console.print("[bold cyan]Welcome to the Neo4j Setup Wizard![/bold cyan]")
     
     questions = [
@@ -380,8 +386,8 @@ def configure_mcp_client():
     Includes all current configuration values in the env section.
     """
     console.print("[bold cyan]MCP Client Configuration[/bold cyan]\n")
-    console.print("This will configure CodeGraphContext integration with your IDE or CLI tool.")
-    console.print("CodeGraphContext works with FalkorDB by default (no database setup needed).\n")
+    console.print("This will configure KeplerKG integration with your IDE or CLI tool.")
+    console.print("KeplerKG works with KuzuDB by default (no database setup needed).\n")
     
     # Load current configuration (includes project-local .env if present)
     try:
@@ -424,20 +430,12 @@ def configure_mcp_client():
         env_vars[key] = value
     
     # Generate MCP configuration
-    cgc_path = shutil.which("cgc") or sys.executable
-
-    if "python" in Path(cgc_path).name:
-        # fallback to running as module if no cgc binary is found
-        command = cgc_path
-        args = ["-m", "cgc", "mcp", "start"]
-    else:
-        command = cgc_path
-        args = ["mcp", "start"]
+    command, args, cli_display = _resolve_cli_command()
 
     # Create MCP config with complete env section
     mcp_config = {
         "mcpServers": {
-            "CodeGraphContext": {
+            "KeplerKG": {
                 "command": command,
                 "args": args,
                 "env": env_vars,
@@ -473,8 +471,8 @@ def configure_mcp_client():
     _configure_ide(mcp_config)
     
     console.print("\n[bold green]✅ MCP Client configuration complete![/bold green]")
-    console.print("[cyan]You can now run 'cgc mcp start' to launch the server.[/cyan]")
-    console.print("[yellow]💡 Tip: To update MCP config after changing settings, re-run 'cgc mcp setup'[/yellow]\n")
+    console.print(f"[cyan]You can now run '{cli_display} mcp start' to launch the server.[/cyan]")
+    console.print(f"[yellow]💡 Tip: To update MCP config after changing settings, re-run '{cli_display} mcp setup'[/yellow]\n")
 
 
 def find_latest_neo4j_creds_file():

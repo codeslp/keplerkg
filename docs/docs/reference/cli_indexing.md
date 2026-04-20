@@ -1,18 +1,18 @@
 # CLI: Indexing & Management
 
-These commands are the foundation of CodeGraphContext. They allow you to add, remove, and monitor the code repositories in your graph.
+These commands are the foundation of KeplerKG. They allow you to add, remove, and monitor the code repositories in your graph.
 
-## `cgc index`
+## `kkg index`
 
 Adds a code repository to the graph database. This is the first step for any project.
 
 !!! info "Excluding Files (.cgcignore)"
-    Want to skip specific files or folders? CodeGraphContext supports a `.cgcignore` file.
+    Want to skip specific files or folders? KeplerKG supports a `.cgcignore` file.
     **[📄 Read the .cgcignore Guide](cgcignore.md)**
 
 **Usage:**
 ```bash
-cgc index [path] [options]
+kkg index [path] [options]
 ```
 
 **Common Options:**
@@ -23,21 +23,21 @@ cgc index [path] [options]
 **Example:**
 ```bash
 # Index the current folder
-$ cgc index .
+$ kkg index .
 
 # Index a specific project
-$ cgc index /home/user/projects/backend-api
+$ kkg index /home/user/projects/backend-api
 ```
 
 ---
 
-## `cgc list`
+## `kkg list`
 
 Shows all repositories currently stored in your graph database.
 
 **Usage:**
 ```bash
-cgc list
+kkg list
 ```
 
 **Example Output:**
@@ -49,7 +49,7 @@ Indexed Repositories:
 
 ---
 
-## `cgc watch`
+## `kkg watch`
 
 Starts a real-time monitor. If you edit a file, the graph updates instantly.
 
@@ -58,25 +58,25 @@ Starts a real-time monitor. If you edit a file, the graph updates instantly.
 
 **Usage:**
 ```bash
-cgc watch [path]
+kkg watch [path]
 ```
 
 **Example:**
 ```bash
-$ cgc watch .
+$ kkg watch .
 [INFO] Watching /home/user/projects/backend-api for changes...
 [INFO] Detected change in users/models.py. Re-indexing...
 ```
 
 ---
 
-## `cgc delete`
+## `kkg delete`
 
 Removes a repository from the database. This does *not* delete your actual files, only the graph index.
 
 **Usage:**
 ```bash
-cgc delete [path] [options]
+kkg delete [path] [options]
 ```
 
 **Common Options:**
@@ -85,32 +85,32 @@ cgc delete [path] [options]
 
 ---
 
-## `cgc bundle` Commands
+## `kkg bundle` Commands
 
 Tools for managing portable graph snapshots (`.cgc` files).
 
-### `cgc bundle export`
+### `kkg bundle export`
 Save your graph to a file. Useful for sharing context with team members or loading into a production read-only instance.
 ```bash
-cgc bundle export my-graph.cgc --repo /path/to/repo
+kkg bundle export my-graph.cgc --repo /path/to/repo
 ```
 
-### `cgc bundle load`
+### `kkg bundle load`
 Download and install a popular library bundle from our registry.
-*(Alias: `cgc load`)*
+*(Alias: `kkg load`)*
 
 ```bash
-cgc load flask
+kkg load flask
 ```
 
-### `cgc registry`
+### `kkg registry`
 Search for available pre-indexed bundles in the cloud registry.
-**Usage:** `cgc registry [query]`
+**Usage:** `kkg registry [query]`
 
 ```bash
 # List top bundles
-cgc registry
+kkg registry
 
 # Search for a specific package
-cgc registry pandas
+kkg registry pandas
 ```

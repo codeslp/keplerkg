@@ -11,6 +11,7 @@ Output: JSON with violations, counts, and hard_zero status.
 from __future__ import annotations
 
 import json
+import math
 import subprocess
 import sys
 from pathlib import Path
@@ -273,6 +274,230 @@ def build_explain_payload(
 
 
 # ---------------------------------------------------------------------------
+# Calibration report
+# ---------------------------------------------------------------------------
+
+def _percentile(sorted_vals: list[float], p: int) -> float:
+    """Compute the p-th percentile using linear interpolation."""
+    if not sorted_vals:
+        return 0.0
+    k = (p / 100) * (len(sorted_vals) - 1)
+    f = math.floor(k)
+    c = math.ceil(k)
+    if f == c:
+        return sorted_vals[int(k)]
+    return sorted_vals[f] * (c - k) + sorted_vals[c] * (k - f)
+
+
+def _compute_distribution(values: list[float]) -> dict[str, float]:
+    """Compute distribution percentiles from metric values."""
+    if not values:
+        return {}
+    sv = sorted(values)
+    return {
+        "min": sv[0],
+        "p25": _percentile(sv, 25),
+        "p50": _percentile(sv, 50),
+        "p75": _percentile(sv, 75),
+        "p90": _percentile(sv, 90),
+        "p95": _percentile(sv, 95),
+        "p99": _percentile(sv, 99),
+        "max": sv[-1],
+    }
+
+
+def _detect_comparison_op(query: str, placeholder: str) -> str:
+    """Detect whether a threshold placeholder uses > or >= in the query.
+
+    Returns '>=' if the query contains '>= $placeholder', otherwise '>'.
+    """
+    import re
+    if re.search(rf'>= *\${re.escape(placeholder)}\b', query):
+        return ">="
+    return ">"
+
+
+def _count_violations(
+    metrics: list[float],
+    threshold: float,
+    op: str,
+) -> int:
+    """Count metric values that violate a threshold with the given operator."""
+    if op == ">=":
+        return sum(1 for m in metrics if m >= threshold)
+    return sum(1 for m in metrics if m > threshold)
+
+
+def _calibrate_rule(
+    conn: Any,
+    rule: "StandardRule",
+    exemptions: Any,
+) -> dict[str, Any]:
+    """Run a single rule with thresholds zeroed to capture full population."""
+    from ..standards.loader import StandardRule as _SR, resolve_query
+
+    # Detect comparison operators before zeroing thresholds.
+    # Keys not found in the query (e.g. $hard when only $warn appears)
+    # inherit the operator from the "warn" key.
+    ops: dict[str, str] = {}
+    for key in rule.thresholds:
+        ops[key] = _detect_comparison_op(rule.query, key)
+    warn_op = ops.get("warn", ">")
+    for key in ops:
+        if f"${key}" not in rule.query:
+            ops[key] = warn_op
+
+    # Copy the rule with all thresholds set to 0
+    cal_rule = _SR(
+        id=rule.id,
+        advisory_kind=rule.advisory_kind,
+        severity=rule.severity,
+        summary=rule.summary,
+        query=rule.query,
+        thresholds={k: 0 for k in rule.thresholds},
+        suggestion=rule.suggestion,
+        exemptions=rule.exemptions,
+        evidence=rule.evidence,
+        category=rule.category,
+        detection_method=rule.detection_method,
+    )
+
+    resolved = resolve_query(cal_rule, exemptions)
+
+    try:
+        result = conn.execute(resolved)
+    except Exception as exc:
+        return {
+            "id": rule.id,
+            "category": rule.category,
+            "severity": rule.severity,
+            "current_thresholds": rule.thresholds,
+            "error": f"{type(exc).__name__}: {exc}",
+            "population": 0,
+            "distribution": {},
+            "violations_at_current": {},
+            "candidate_thresholds": [],
+        }
+
+    # Collect metric values from last column (index 4)
+    metrics: list[float] = []
+    while result.has_next():
+        row = result.get_next()
+        if len(row) > 4 and row[4] is not None:
+            try:
+                metrics.append(float(row[4]))
+            except (ValueError, TypeError):
+                pass
+
+    distribution = _compute_distribution(metrics)
+
+    # Count violations at current thresholds using the correct operator
+    violations_at_current: dict[str, int] = {}
+    for key, val in rule.thresholds.items():
+        violations_at_current[key] = _count_violations(metrics, val, ops.get(key, ">"))
+
+    # Generate candidate thresholds at each percentile
+    # Use the warn operator for candidates since that's the primary tuning target
+    warn_op = ops.get("warn", ">")
+    candidates: list[dict[str, Any]] = []
+    if metrics:
+        for label, pval in distribution.items():
+            if label in ("min", "max"):
+                continue
+            threshold_val = math.ceil(pval)
+            candidates.append({
+                "percentile": label,
+                "value": threshold_val,
+                "violations_above": _count_violations(metrics, threshold_val, warn_op),
+            })
+
+    return {
+        "id": rule.id,
+        "category": rule.category,
+        "severity": rule.severity,
+        "current_thresholds": rule.thresholds,
+        "population": len(metrics),
+        "distribution": distribution,
+        "violations_at_current": violations_at_current,
+        "candidate_thresholds": candidates,
+    }
+
+
+def build_calibration_payload(
+    standards_dir: Path | None = None,
+    category: str | None = None,
+    profile: str | None = None,
+) -> dict[str, Any]:
+    """Build a calibration report showing metric distributions for threshold tuning.
+
+    For each threshold-bearing Cypher rule, runs the query with thresholds
+    zeroed to capture the full metric population, then computes percentile
+    distributions and violation counts at current and candidate thresholds.
+    """
+    std_dir = standards_dir or _find_standards_dir()
+
+    cfg = resolve_cgraph_config()
+    std_cfg = cfg.standards
+    if profile:
+        std_cfg.profile = profile
+        from ..config import _apply_preset
+        _apply_preset(std_cfg)
+
+    rules = load_rules(std_dir)
+
+    # Only threshold-bearing Cypher rules are calibratable
+    threshold_rules = [
+        r for r in rules
+        if r.thresholds and r.detection_method == "cypher"
+    ]
+
+    active_categories = [category] if category else std_cfg.categories
+    if "all" not in active_categories:
+        threshold_rules = [r for r in threshold_rules if r.category in active_categories]
+
+    # Apply per-rule overrides (disabled, severity, thresholds, hard_stop)
+    # Mirrors the same logic in build_audit_payload.
+    filtered: list[Any] = []
+    for rule in threshold_rules:
+        override = std_cfg.overrides.get(rule.id)
+        if override == "off":
+            continue
+        if override and override != "off":
+            rule.severity = "hard" if override in ("blocker", "critical", "hard") else "warn"
+        if rule.id in std_cfg.hard_stop and rule.severity != "hard":
+            rule.severity = "hard"
+        threshold_overrides = std_cfg.thresholds.get(rule.id)
+        if threshold_overrides:
+            rule.thresholds.update(threshold_overrides)
+        filtered.append(rule)
+    threshold_rules = filtered
+
+    try:
+        conn = get_kuzu_connection()
+    except (SystemExit, Exception) as exc:
+        return {
+            "ok": False,
+            "kind": "audit_calibration",
+            "error": f"Could not connect to KùzuDB: {exc}",
+            "rules_analyzed": 0,
+            "rules": [],
+        }
+
+    exemptions = load_exemptions(std_dir)
+    rule_reports = [
+        _calibrate_rule(conn, rule, exemptions)
+        for rule in threshold_rules
+    ]
+
+    return {
+        "ok": True,
+        "kind": "audit_calibration",
+        "rules_analyzed": len(rule_reports),
+        "rules": rule_reports,
+    }
+
+
+# ---------------------------------------------------------------------------
 # CLI command
 # ---------------------------------------------------------------------------
 
@@ -307,6 +532,11 @@ def audit_command(
         "--require-hard-zero",
         help="Exit 2 if any hard violation fires.",
     ),
+    calibration_report: bool = typer.Option(
+        False,
+        "--calibration-report",
+        help="Show metric distributions and candidate thresholds for tuning.",
+    ),
     fmt: str = typer.Option(
         "json",
         "--format",
@@ -329,6 +559,17 @@ def audit_command(
     if explain:
         payload = build_explain_payload(explain)
         typer.echo(emit_json(payload))
+        raise typer.Exit(code=0)
+
+    if calibration_report:
+        payload = build_calibration_payload(
+            category=category,
+            profile=profile,
+        )
+        if fmt == "summary":
+            _print_calibration_summary(payload)
+        else:
+            typer.echo(emit_json(payload))
         raise typer.Exit(code=0)
 
     payload = build_audit_payload(
@@ -370,6 +611,41 @@ def _print_summary(payload: dict[str, Any]) -> None:
     else:
         print("  ✗ HARD VIOLATIONS FOUND", file=sys.stderr)
     print("", file=sys.stderr)
+
+    # Still emit JSON on stdout for piping
+    print(emit_json(payload))
+
+
+def _print_calibration_summary(payload: dict[str, Any]) -> None:
+    """Print a human-readable calibration report to stderr."""
+    rules = payload.get("rules", [])
+    print(f"\nkkg audit --calibration-report: {len(rules)} rules analyzed\n", file=sys.stderr)
+
+    for r in rules:
+        if r.get("error"):
+            print(f"  {r['id']}: ERROR — {r['error']}", file=sys.stderr)
+            continue
+
+        dist = r.get("distribution", {})
+        pop = r.get("population", 0)
+        current = r.get("current_thresholds", {})
+        viol = r.get("violations_at_current", {})
+
+        print(f"  {r['id']} ({r['category']}, {r['severity']})", file=sys.stderr)
+        print(f"    population: {pop}", file=sys.stderr)
+        if dist:
+            print(
+                f"    distribution: min={dist.get('min','-')}"
+                f"  p50={dist.get('p50','-')}"
+                f"  p75={dist.get('p75','-')}"
+                f"  p90={dist.get('p90','-')}"
+                f"  p95={dist.get('p95','-')}"
+                f"  max={dist.get('max','-')}",
+                file=sys.stderr,
+            )
+        for key, val in current.items():
+            print(f"    {key} threshold: {val} → {viol.get(key, '?')} violations", file=sys.stderr)
+        print("", file=sys.stderr)
 
     # Still emit JSON on stdout for piping
     print(emit_json(payload))

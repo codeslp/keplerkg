@@ -1,9 +1,9 @@
 #!/bin/bash
-# Quick test runner for CodeGraphContext Final Test Suite
+# Quick test runner for KeplerKG Final Test Suite
 
 set -e  # Exit on error
 
-echo "🧪 CodeGraphContext Final Test Suite"
+echo "🧪 KeplerKG Final Test Suite"
 echo "==================================="
 echo ""
 

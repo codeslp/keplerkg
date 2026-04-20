@@ -15,14 +15,14 @@ def _github_headers() -> dict:
         headers["Authorization"] = f"token {token}"
     return headers
 
-GITHUB_ORG = "CodeGraphContext"
-GITHUB_REPO = "CodeGraphContext"
+GITHUB_ORG = "codeslp"
+GITHUB_REPO = "keplerkg"
 REGISTRY_API_URL = f"https://api.github.com/repos/{GITHUB_ORG}/{GITHUB_REPO}/releases"
 MANIFEST_URL = f"https://github.com/{GITHUB_ORG}/{GITHUB_REPO}/releases/download/on-demand-bundles/manifest.json"
 
 class BundleRegistry:
     """
-    Core logic for interacting with the CodeGraphContext bundle registry.
+    Core logic for interacting with the KeplerKG bundle registry.
     Handles fetching metadata, searching, and downloading bundles without CLI dependencies.
     """
 

@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo "Running Post Install fix for CodeGraphContext..."
+echo "Running Post Install fix for KeplerKG..."
 
 detect_shell_config() {
     # Windows PowerShell detection
@@ -41,7 +41,7 @@ fix_windows_path() {
     else
         echo "Adding to PowerShell PATH..."
         echo "" >> "$profile_file"
-        echo "# Added by CodeGraphContext" >> "$profile_file"
+        echo "# Added by KeplerKG" >> "$profile_file"
         echo "$path_line" >> "$profile_file"
         echo "Added PATH to PowerShell profile"
     fi
@@ -65,7 +65,7 @@ fix_unix_path() {
     else
         echo "Adding ~/.local/bin to PATH..."
         echo "" >> "$config_file"
-        echo "# Added by CodeGraphContext" >> "$config_file"
+        echo "# Added by KeplerKG" >> "$config_file"
         echo "$path_line" >> "$config_file"
         echo "Added PATH to $config_file"
     fi
@@ -117,7 +117,7 @@ get_cgc_locations() {
 
 # Main execution
 if check_cgc; then
-    echo "✅ cgc (CodeGraphContext) is already available!"
+    echo "✅ cgc (KeplerKG) is already available!"
 else
     echo "⚠️ cgc command not found, fixing PATH..."
 
@@ -136,7 +136,7 @@ else
 
         # Check again
         if check_cgc; then
-            echo "✅ cgc command (CodeGraphContext) is now available to use!"
+            echo "✅ cgc command (KeplerKG) is now available to use!"
             echo "You can now run: cgc neo4j setup"
         else
             if [[ "$OS" == "Windows_NT" ]]; then

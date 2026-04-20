@@ -1,2 +1,2 @@
-"""Scaffolding for cgraph-specific extensions to CodeGraphContext."""
+"""Scaffolding for cgraph-specific extensions to KeplerKG."""
 

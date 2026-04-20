@@ -1,6 +1,6 @@
 # src/codegraphcontext/cli/main.py
 """
-This module defines the command-line interface (CLI) for the CodeGraphContext application.
+This module defines the command-line interface (CLI) for the KeplerKG application.
 It uses the Typer library to create a user-friendly and well-documented CLI.
 
 Commands:
@@ -126,7 +126,7 @@ def mcp_setup():
     """
     Configure MCP Client (IDE/CLI Integration).
     
-    Sets up CodeGraphContext integration with your IDE or CLI tool:
+    Sets up KeplerKG integration with your IDE or CLI tool:
     - VS Code, Cursor, Windsurf
     - Claude Desktop, Gemini CLI
     - Cline, RooCode, Amazon Q Developer
@@ -135,18 +135,18 @@ def mcp_setup():
     Works with KuzuDB by default (no database setup needed).
     """
     console.print("\n[bold cyan]MCP Client Setup[/bold cyan]")
-    console.print("Configure your IDE or CLI tool to use CodeGraphContext.\n")
+    console.print("Configure your IDE or CLI tool to use KeplerKG.\n")
     configure_mcp_client()
 
 @mcp_app.command("start")
 def mcp_start():
     """
-    Start the CodeGraphContext MCP server.
+    Start the KeplerKG MCP server.
     
     Starts the server which listens for JSON-RPC requests from stdin.
     This is used by IDE integrations (VS Code, Cursor, etc.).
     """
-    console.print("[bold green]Starting CodeGraphContext Server...[/bold green]")
+    console.print("[bold green]Starting KeplerKG Server...[/bold green]")
     _load_credentials()
 
     server = None
@@ -158,7 +158,7 @@ def mcp_start():
     except ValueError as e:
         # This typically happens if credentials are still not found after all checks.
         console.print(f"[bold red]Configuration Error:[/bold red] {e}")
-        console.print("Please run `cgc neo4j setup` or use KuzuDB (default).")
+        console.print("Please run `kkg neo4j setup` or use KuzuDB (default).")
     except KeyboardInterrupt:
         # Handle graceful shutdown on Ctrl+C.
         console.print("\n[bold yellow]Server stopped by user.[/bold yellow]")
@@ -200,7 +200,7 @@ def mcp_tools():
 # Abbreviation for mcp setup
 @app.command("m", rich_help_panel="Shortcuts")
 def mcp_setup_alias():
-    """Shortcut for 'cgc mcp setup'"""
+    """Shortcut for 'kkg mcp setup'"""
     mcp_setup()
 
 
@@ -219,16 +219,16 @@ def neo4j_setup():
     - Hosted (Neo4j AuraDB or remote instance)
     - Connect to existing Neo4j instance
     
-    Note: This is optional. CodeGraphContext works with KuzuDB by default.
+    Note: This is optional. KeplerKG works with KuzuDB by default.
     """
     console.print("\n[bold cyan]Neo4j Database Setup[/bold cyan]")
-    console.print("Configure Neo4j database connection for CodeGraphContext.\n")
+    console.print("Configure Neo4j database connection for KeplerKG.\n")
     run_neo4j_setup_wizard()
 
 # Abbreviation for neo4j setup
 @app.command("n", rich_help_panel="Shortcuts")
 def neo4j_setup_alias():
-    """Shortcut for 'cgc neo4j setup'"""
+    """Shortcut for 'kkg neo4j setup'"""
     neo4j_setup()
 
 
@@ -314,7 +314,7 @@ def _load_credentials():
     3. Global `~/.codegraphcontext/.env` (lowest - user defaults)
 
     Step 2 skips duplicate loading when that file is the same path as the global file.
-    Arbitrary repo-root `.env` files are not loaded—only CodeGraphContext config paths.
+    Arbitrary repo-root `.env` files are not loaded—only KeplerKG config paths.
     """
     from dotenv import dotenv_values
     from codegraphcontext.cli.config_manager import (
@@ -355,7 +355,8 @@ def _load_credentials():
         try:
             with open(mcp_file_path, "r") as f:
                 mcp_config = json.load(f)
-            server_env = mcp_config.get("mcpServers", {}).get("CodeGraphContext", {}).get("env", {})
+            servers = mcp_config.get("mcpServers", {})
+            server_env = servers.get("KeplerKG", servers.get("CodeGraphContext", {})).get("env", {})
             if server_env:
                 config_sources.append(server_env)
                 config_source_names.append("mcp.json")
@@ -369,7 +370,7 @@ def _load_credentials():
     
     # Apply merged config to environment.
     # IMPORTANT: DB-selection keys set in the shell must win over .env defaults.
-    # E.g. `DEFAULT_DATABASE=falkordb cgc index …` must not be overridden by
+    # E.g. `DEFAULT_DATABASE=falkordb kkg index …` must not be overridden by
     # DEFAULT_DATABASE=neo4j sitting in ~/.codegraphcontext/.env
     DB_OVERRIDE_KEYS = {"CGC_RUNTIME_DB_TYPE", "DEFAULT_DATABASE"}
     for key, value in merged_config.items():
@@ -470,10 +471,10 @@ def config_set(
     Set a configuration value.
     
     Examples:
-        cgc config set DEFAULT_DATABASE neo4j
-        cgc config set INDEX_VARIABLES false
-        cgc config set MAX_FILE_SIZE_MB 20
-        cgc config set DEBUG_LOGS true
+        kkg config set DEFAULT_DATABASE neo4j
+        kkg config set INDEX_VARIABLES false
+        kkg config set MAX_FILE_SIZE_MB 20
+        kkg config set DEBUG_LOGS true
     """
     config_manager.set_config_value(key, value)
 
@@ -495,12 +496,12 @@ def config_db(backend: str = typer.Argument(..., help="Database backend: 'kuzudb
     """
     Quickly switch the default database backend.
     
-    Shortcut for 'cgc config set DEFAULT_DATABASE <backend>'.
+    Shortcut for 'kkg config set DEFAULT_DATABASE <backend>'.
     
     Examples:
-        cgc config db kuzudb
-        cgc config db neo4j
-        cgc config db falkordb
+        kkg config db kuzudb
+        kkg config db neo4j
+        kkg config db falkordb
     """
     backend = backend.lower()
     if backend not in ['falkordb', 'falkordb-remote', 'neo4j', 'kuzudb']:
@@ -536,9 +537,9 @@ def bundle_export(
     instantly without re-indexing. Perfect for sharing famous repositories.
     
     Examples:
-        cgc bundle export numpy.cgc --repo /path/to/numpy
-        cgc bundle export my-project.cgc
-        cgc bundle export all-repos.cgc --no-stats
+        kkg bundle export numpy.cgc --repo /path/to/numpy
+        kkg bundle export my-project.cgc
+        kkg bundle export all-repos.cgc --no-stats
     """
     _load_credentials()
     from codegraphcontext.core.cgc_bundle import CGCBundle
@@ -587,8 +588,8 @@ def bundle_import(
     replace all existing data with the bundle contents.
     
     Examples:
-        cgc bundle import numpy.cgc
-        cgc bundle import my-project.cgc --clear
+        kkg bundle import numpy.cgc
+        kkg bundle import my-project.cgc --clear
     """
     _load_credentials()
     from codegraphcontext.core.cgc_bundle import CGCBundle
@@ -642,9 +643,9 @@ def bundle_load(
     3. Import the bundle into the database
     
     Examples:
-        cgc load numpy
-        cgc load numpy.cgc --clear
-        cgc load /path/to/bundle.cgc
+        kkg load numpy
+        kkg load numpy.cgc --clear
+        kkg load /path/to/bundle.cgc
     """
     _load_credentials()
     
@@ -687,7 +688,7 @@ def bundle_load(
     
     except Exception as e:
         console.print(f"[bold red]Error: {e}[/bold red]")
-        console.print(f"[dim]Use 'cgc registry list' to see available bundles[/dim]")
+        console.print(f"[dim]Use 'kkg registry list' to see available bundles[/dim]")
         raise typer.Exit(code=1)
 
 # Shortcut commands at root level
@@ -698,7 +699,7 @@ def export_shortcut(
     no_stats: bool = typer.Option(False, "--no-stats", help="Skip generating statistics in the bundle"),
     context: Optional[str] = typer.Option(None, "--context", "-c", help="Specific context to use"),
 ):
-    """Shortcut for 'cgc bundle export'"""
+    """Shortcut for 'kkg bundle export'"""
     bundle_export(output, repo, no_stats, context)
 
 @app.command("load", rich_help_panel="Bundle Shortcuts")
@@ -706,7 +707,7 @@ def load_shortcut(
     bundle_name: str = typer.Argument(..., help="Bundle name or path to load"),
     clear: bool = typer.Option(False, "--clear", help="Clear existing graph data before loading")
 ):
-    """Shortcut for 'cgc bundle load'"""
+    """Shortcut for 'kkg bundle load'"""
     bundle_load(bundle_name, clear)
 
 # ============================================================================
@@ -728,9 +729,9 @@ def registry_list(
     By default, shows all versions. Use --unique to see only the most recent version per package.
     
     Examples:
-        cgc registry list
-        cgc registry list --verbose
-        cgc registry list --unique
+        kkg registry list
+        kkg registry list --verbose
+        kkg registry list --unique
     """
     from .registry_commands import list_bundles
     list_bundles(verbose=verbose, unique=unique)
@@ -745,9 +746,9 @@ def registry_search(
     Searches bundle names, repositories, and descriptions for matches.
     
     Examples:
-        cgc registry search numpy
-        cgc registry search web
-        cgc registry search http
+        kkg registry search numpy
+        kkg registry search web
+        kkg registry search http
     """
     from .registry_commands import search_bundles
     search_bundles(query)
@@ -765,9 +766,9 @@ def registry_download(
     Use --load to automatically import the bundle after downloading.
     
     Examples:
-        cgc registry download numpy
-        cgc registry download pandas --output ./bundles
-        cgc registry download fastapi --load
+        kkg registry download numpy
+        kkg registry download pandas --output ./bundles
+        kkg registry download fastapi --load
     """
     from .registry_commands import download_bundle
     
@@ -789,8 +790,8 @@ def registry_request(
     The bundle will be available in the registry after 5-10 minutes.
     
     Examples:
-        cgc registry request https://github.com/encode/httpx
-        cgc registry request https://github.com/pallets/flask
+        kkg registry request https://github.com/encode/httpx
+        kkg registry request https://github.com/pallets/flask
     """
     from .registry_commands import request_bundle
     request_bundle(repo_url, wait=wait)
@@ -811,7 +812,7 @@ def doctor():
     - Required dependencies
     - File permissions
     """
-    console.print("[bold cyan]🏥 Running CodeGraphContext Diagnostics...[/bold cyan]\n")
+    console.print("[bold cyan]🏥 Running KeplerKG Diagnostics...[/bold cyan]\n")
     
     all_checks_passed = True
 
@@ -879,7 +880,7 @@ def doctor():
                     console.print(f"[red]✗[/red] Neo4j connection failed: {error_msg}")
                     all_checks_passed = False
             else:
-                console.print(f"   [yellow]⚠[/yellow] Neo4j credentials not set. Run 'cgc neo4j setup'")
+                console.print(f"   [yellow]⚠[/yellow] Neo4j credentials not set. Run 'kkg neo4j setup'")
         elif default_db == "kuzudb":
             from importlib.util import find_spec
 
@@ -961,14 +962,18 @@ def doctor():
         console.print(f"   [red]✗[/red] Permission check error: {e}")
         all_checks_passed = False
     
-    # 5. Check cgc command availability
-    console.print("\n[bold]5. Checking CGC Command...[/bold]")
+    # 5. Check CLI command availability
+    console.print("\n[bold]5. Checking CLI Command...[/bold]")
     import shutil
-    cgc_path = shutil.which("cgc")
-    if cgc_path:
-        console.print(f"   [green]✓[/green] cgc command found at: {cgc_path}")
+    cli_candidates = ("kkg", "codegraphcontext", "cgc")
+    detected_cli = next((name for name in cli_candidates if shutil.which(name)), None)
+    if detected_cli:
+        cli_path = shutil.which(detected_cli)
+        console.print(f"   [green]✓[/green] {detected_cli} command found at: {cli_path}")
+        if detected_cli != "kkg":
+            console.print("   [yellow]⚠[/yellow] Primary `kkg` alias not found; using a compatibility entry point")
     else:
-        console.print(f"   [yellow]⚠[/yellow] cgc command not in PATH (using python -m cgc)")
+        console.print("   [yellow]⚠[/yellow] No CLI binary in PATH (use python -m codegraphcontext)")
     
     # 6. Check KeplerKG graph health (nodes, CALLS edges, embeddings)
     console.print("\n[bold]6. Checking Graph Health (KeplerKG)...[/bold]")
@@ -1017,9 +1022,9 @@ def doctor():
     else:
         console.print("[bold yellow]⚠️  Some issues detected. Please review the output above.[/bold yellow]")
         console.print("\n[cyan]Common fixes:[/cyan]")
-        console.print("  • For Neo4j issues: Run 'cgc neo4j setup'")
+        console.print("  • For Neo4j issues: Run 'kkg neo4j setup'")
         console.print("  • For missing packages: pip install codegraphcontext")
-        console.print("  • For config issues: Run 'cgc config reset'")
+        console.print("  • For config issues: Run 'kkg config reset'")
         console.print("  • For graph issues: Run 'kkg index && kkg embed'")
     console.print("=" * 60 + "\n")
 
@@ -1029,9 +1034,9 @@ def doctor():
 @app.command()
 def start():
     """
-    [DEPRECATED] Use 'cgc mcp start' instead. This command will be removed in a future version.
+    [DEPRECATED] Use 'kkg mcp start' instead. This command will be removed in a future version.
     """
-    console.print("[yellow]⚠️  'cgc start' is deprecated. Use 'cgc mcp start' instead.[/yellow]")
+    console.print("[yellow]⚠️  'kkg start' is deprecated. Use 'kkg mcp start' instead.[/yellow]")
     mcp_start()
 
 
@@ -1122,8 +1127,8 @@ def delete(
     Use --all to delete all repositories at once (requires confirmation).
     
     Examples:
-        cgc delete ./my-project       # Delete specific repository
-        cgc delete --all              # Delete all repositories
+        kkg delete ./my-project       # Delete specific repository
+        kkg delete --all              # Delete all repositories
     """
     _load_credentials()
     
@@ -1188,7 +1193,7 @@ def delete(
         # Delete specific repository
         if not path:
             console.print("[red]Error: Please provide a path or use --all to delete all repositories[/red]")
-            console.print("Usage: cgc delete <path> or cgc delete --all")
+            console.print("Usage: kkg delete <path> or kkg delete --all")
             raise typer.Exit(code=1)
         
         delete_helper(path, context)
@@ -1258,9 +1263,9 @@ def watch(
     Press Ctrl+C to stop watching.
     
     Examples:
-        cgc watch .                    # Watch current directory
-        cgc watch /path/to/project     # Watch specific directory
-        cgc w .                        # Using shortcut alias
+        kkg watch .                    # Watch current directory
+        kkg watch /path/to/project     # Watch specific directory
+        kkg w .                        # Using shortcut alias
     """
     _load_credentials()
     _activate_project_target(project, start_dir=Path(path))
@@ -1278,7 +1283,7 @@ def unwatch(
     For CLI watch mode, simply press Ctrl+C in the watch terminal.
     
     Examples:
-        cgc unwatch /path/to/project
+        kkg unwatch /path/to/project
     """
     _load_credentials()
     unwatch_helper(path)
@@ -1291,10 +1296,10 @@ def watching(
     List all directories currently being watched for changes.
     
     Note: This command is primarily for MCP server mode.
-    For CLI watch mode, check the terminal where you ran 'cgc watch'.
+    For CLI watch mode, check the terminal where you ran 'kkg watch'.
     
     Examples:
-        cgc watching
+        kkg watching
     """
     _load_credentials()
     list_watching_helper()
@@ -1320,9 +1325,9 @@ def find_by_name(
     Find code elements by exact name.
     
     Examples:
-        cgc find name MyClass
-        cgc find name calculate --type function
-        cgc find name MyClass --visual
+        kkg find name MyClass
+        kkg find name calculate --type function
+        kkg find name MyClass --visual
     """
     _load_credentials()
     services = _initialize_services(context)
@@ -1422,9 +1427,9 @@ def find_by_pattern(
     Find code elements using substring matching.
     
     Examples:
-        cgc find pattern "Auth"       # Finds Auth, Authentication, Authorize...
-        cgc find pattern "process_"   # Finds process_data, process_request...
-        cgc find pattern "Auth" --visual
+        kkg find pattern "Auth"       # Finds Auth, Authentication, Authorize...
+        kkg find pattern "process_"   # Finds process_data, process_request...
+        kkg find pattern "Auth" --visual
     """
     _load_credentials()
     services = _initialize_services(context)
@@ -1515,9 +1520,9 @@ def find_by_type(
     Find all elements of a specific type.
     
     Examples:
-        cgc find type class
-        cgc find type function --limit 100
-        cgc find type class --visual
+        kkg find type class
+        kkg find type function --limit 100
+        kkg find type class --visual
     """
     _load_credentials()
     services = _initialize_services(context)
@@ -1571,8 +1576,8 @@ def find_by_variable(
     Find variables by name.
     
     Examples:
-        cgc find variable MAX_RETRIES
-        cgc find variable config
+        kkg find variable MAX_RETRIES
+        kkg find variable config
     """
     _load_credentials()
     services = _initialize_services(context)
@@ -1617,8 +1622,8 @@ def find_by_content_search(
     Search code content (source and docstrings) using full-text index.
     
     Examples:
-        cgc find content "error 503"
-        cgc find content "TODO: refactor"
+        kkg find content "error 503"
+        kkg find content "TODO: refactor"
     """
     _load_credentials()
     services = _initialize_services(context)
@@ -1635,9 +1640,9 @@ def find_by_content_search(
                 console.print("\n[bold red]❌ Full-text search is not supported on FalkorDB[/bold red]\n")
                 console.print("[yellow]💡 You have two options:[/yellow]\n")
                 console.print("  1. [cyan]Switch to Neo4j:[/cyan]")
-                console.print(f"     [dim]cgc --database neo4j find content \"{query}\"[/dim]\n")
+                console.print(f"     [dim]kkg --database neo4j find content \"{query}\"[/dim]\n")
                 console.print("  2. [cyan]Use pattern search instead:[/cyan]")
-                console.print(f"     [dim]cgc find pattern \"{query}\"[/dim]")
+                console.print(f"     [dim]kkg find pattern \"{query}\"[/dim]")
                 console.print("     [dim](searches in names only, not source code)[/dim]\n")
                 return
             else:
@@ -1679,8 +1684,8 @@ def find_by_decorator_search(
     Find functions with a specific decorator.
     
     Examples:
-        cgc find decorator app.route
-        cgc find decorator test --file tests/test_main.py
+        kkg find decorator app.route
+        kkg find decorator test --file tests/test_main.py
     """
     _load_credentials()
     services = _initialize_services(context)
@@ -1727,8 +1732,8 @@ def find_by_argument_search(
     Find functions that take a specific argument/parameter.
     
     Examples:
-        cgc find argument password
-        cgc find argument user_id --file src/auth.py
+        kkg find argument password
+        kkg find argument user_id --file src/auth.py
     """
     _load_credentials()
     services = _initialize_services(context)
@@ -1782,9 +1787,9 @@ def analyze_calls(
     Show what functions this function calls (callees).
     
     Example:
-        cgc analyze calls process_data
-        cgc analyze calls process_data --file src/main.py
-        cgc analyze calls process_data --visual
+        kkg analyze calls process_data
+        kkg analyze calls process_data --file src/main.py
+        kkg analyze calls process_data --visual
     """
     _load_credentials()
     services = _initialize_services(context)
@@ -1838,9 +1843,9 @@ def analyze_callers(
     Show what functions call this function.
     
     Example:
-        cgc analyze callers process_data
-        cgc analyze callers process_data --file src/main.py
-        cgc analyze callers process_data --visual
+        kkg analyze callers process_data
+        kkg analyze callers process_data --file src/main.py
+        kkg analyze callers process_data --visual
     """
     _load_credentials()
     services = _initialize_services(context)
@@ -1899,9 +1904,9 @@ def analyze_chain(
     Show call chain between two functions.
     
     Example:
-        cgc analyze chain main process_data --depth 10
-        cgc analyze chain main process --from-file main.py --to-file utils.py
-        cgc analyze chain main process_data --visual
+        kkg analyze chain main process_data --depth 10
+        kkg analyze chain main process --from-file main.py --to-file utils.py
+        kkg analyze chain main process_data --visual
     """
     _load_credentials()
     services = _initialize_services(context)
@@ -1970,9 +1975,9 @@ def analyze_dependencies(
     Show dependencies and imports for a module.
     
     Example:
-        cgc analyze deps numpy
-        cgc analyze deps mymodule --no-external
-        cgc analyze deps mymodule --visual
+        kkg analyze deps numpy
+        kkg analyze deps mymodule --no-external
+        kkg analyze deps mymodule --visual
     """
     _load_credentials()
     services = _initialize_services(context)
@@ -2022,9 +2027,9 @@ def analyze_inheritance_tree(
     Show inheritance hierarchy for a class.
     
     Example:
-        cgc analyze tree MyClass
-        cgc analyze tree MyClass --file src/models.py
-        cgc analyze tree MyClass --visual
+        kkg analyze tree MyClass
+        kkg analyze tree MyClass --file src/models.py
+        kkg analyze tree MyClass --visual
     """
     _load_credentials()
     services = _initialize_services(context)
@@ -2088,10 +2093,10 @@ def analyze_complexity(
     Show cyclomatic complexity for functions.
     
     Example:
-        cgc analyze complexity                    # Most complex functions
-        cgc analyze complexity --threshold 15     # Functions over threshold
-        cgc analyze complexity my_function        # Specific function
-        cgc analyze complexity my_function -f file.py # Specific function in file
+        kkg analyze complexity                    # Most complex functions
+        kkg analyze complexity --threshold 15     # Functions over threshold
+        kkg analyze complexity my_function        # Specific function
+        kkg analyze complexity my_function -f file.py # Specific function in file
     """
     _load_credentials()
     services = _initialize_services(context)
@@ -2152,8 +2157,8 @@ def analyze_dead_code(
     Find potentially unused functions and classes.
     
     Example:
-        cgc analyze dead-code
-        cgc analyze dead-code --exclude route,task,api
+        kkg analyze dead-code
+        kkg analyze dead-code --exclude route,task,api
     """
     _load_credentials()
     services = _initialize_services(context)
@@ -2205,9 +2210,9 @@ def analyze_overrides(
     Useful for finding polymorphic implementations and method overrides.
     
     Example:
-        cgc analyze overrides area
-        cgc analyze overrides process
-        cgc analyze overrides area --visual
+        kkg analyze overrides area
+        kkg analyze overrides process
+        kkg analyze overrides area --visual
     """
     _load_credentials()
     services = _initialize_services(context)
@@ -2260,9 +2265,9 @@ def analyze_variable_usage(
     Shows all instances of the variable and their scope (function, class, module).
     
     Example:
-        cgc analyze variable MAX_RETRIES
-        cgc analyze variable config
-        cgc analyze variable x --file math_utils.py
+        kkg analyze variable MAX_RETRIES
+        kkg analyze variable config
+        kkg analyze variable x --file math_utils.py
     """
     _load_credentials()
     services = _initialize_services(context)
@@ -2332,9 +2337,9 @@ def query_graph(
     Execute a custom Cypher query on the code graph.
     
     Examples:
-        cgc query "MATCH (f:Function) RETURN f.name LIMIT 10"
-        cgc query "MATCH (c:Class)-[:CONTAINS]->(m) RETURN c.name, count(m)"
-        cgc query "MATCH (n)-[r]->(m) RETURN n,r,m LIMIT 50" --visual
+        kkg query "MATCH (f:Function) RETURN f.name LIMIT 10"
+        kkg query "MATCH (c:Class)-[:CONTAINS]->(m) RETURN c.name, count(m)"
+        kkg query "MATCH (n)-[r]->(m) RETURN n,r,m LIMIT 50" --visual
     """
     _load_credentials()
     
@@ -2350,8 +2355,8 @@ def cypher_legacy(
     query: str = typer.Argument(..., help="The read-only Cypher query to execute."),
     context: Optional[str] = typer.Option(None, "--context", "-c", help="Specific context to use"),
 ):
-    """[Deprecated] Use 'cgc query' instead."""
-    console.print("[yellow]⚠️  'cgc cypher' is deprecated. Use 'cgc query' instead.[/yellow]")
+    """[Deprecated] Use 'kkg query' instead."""
+    console.print("[yellow]⚠️  'kkg cypher' is deprecated. Use 'kkg query' instead.[/yellow]")
     cypher_helper(query, context)
 
 
@@ -2371,14 +2376,14 @@ def index_abbrev(
         help="Target project slug. Routes KUZUDB_PATH to /Volumes/zombie/cgraph/db/<slug>/kuzudb.",
     ),
 ):
-    """Shortcut for 'cgc index'"""
+    """Shortcut for 'kkg index'"""
     index(path, force=force, context=context, project=project)
 
 @app.command("ls", rich_help_panel="Shortcuts")
 def list_abbrev(
     context: Optional[str] = typer.Option(None, "--context", "-c", help="Specific context to use")
 ):
-    """Shortcut for 'cgc list'"""
+    """Shortcut for 'kkg list'"""
     list_repositories(context=context)
 
 @app.command("rm", rich_help_panel="Shortcuts")
@@ -2387,7 +2392,7 @@ def delete_abbrev(
     all_repos: bool = typer.Option(False, "--all", help="Delete all indexed repositories"),
     context: Optional[str] = typer.Option(None, "--context", "-c", help="Specific context to use")
 ):
-    """Shortcut for 'cgc delete'"""
+    """Shortcut for 'kkg delete'"""
     delete(path, all_repos, context=context)
 
 @app.command("v", rich_help_panel="Shortcuts")
@@ -2396,7 +2401,7 @@ def visualize_abbrev(
     port: int = typer.Option(8000, "--port", "-p", help="Port to run the visualizer server on."),
     context: Optional[str] = typer.Option(None, "--context", "-c", help="Specific context to use")
 ):
-    """Shortcut for 'cgc visualize'"""
+    """Shortcut for 'kkg visualize'"""
     _load_credentials()
     visualize_helper(repo, port, context=context)
 
@@ -2410,7 +2415,7 @@ def watch_abbrev(
         help="Target project slug. Routes KUZUDB_PATH to /Volumes/zombie/cgraph/db/<slug>/kuzudb.",
     ),
 ):
-    """Shortcut for 'cgc watch'"""
+    """Shortcut for 'kkg watch'"""
     watch(path, context=context, project=project)
 
 
@@ -2428,7 +2433,7 @@ def help(ctx: typer.Context):
 @app.command("version")
 def version_cmd():
     """Show the application version."""
-    console.print(f"CodeGraphContext [bold cyan]{get_version()}[/bold cyan]")
+    console.print(f"KeplerKG [bold cyan]{get_version()}[/bold cyan]")
 
 
 @app.callback(invoke_without_command=True)
@@ -2463,7 +2468,7 @@ def main(
     ), 
 ):
     """
-    Main entry point for the cgc CLI application.
+    Main entry point for the KeplerKG CLI application.
     If no subcommand is provided, it displays a welcome message with instructions.
     """
     # Initialize context object for sharing state with subcommands
@@ -2477,25 +2482,25 @@ def main(
         ctx.obj["visual"] = True
 
     if version_:
-        console.print(f"CodeGraphContext [bold cyan]{get_version()}[/bold cyan]")
+        console.print(f"KeplerKG [bold cyan]{get_version()}[/bold cyan]")
         raise typer.Exit()
 
     if ctx.invoked_subcommand is None:
-        console.print("[bold green]👋 Welcome to CodeGraphContext (cgc)![/bold green]\n")
-        console.print("CodeGraphContext is both an [bold cyan]MCP server[/bold cyan] and a [bold cyan]CLI toolkit[/bold cyan] for code analysis.\n")
+        console.print("[bold green]👋 Welcome to KeplerKG (kkg)![/bold green]\n")
+        console.print("KeplerKG is both an [bold cyan]MCP server[/bold cyan] and a [bold cyan]CLI toolkit[/bold cyan] for code analysis.\n")
         console.print("🤖 [bold]For MCP Server Mode (AI assistants):[/bold]")
-        console.print("   1. Run [cyan]cgc mcp setup[/cyan] (or [cyan]cgc m[/cyan]) to configure your IDE")
-        console.print("   2. Run [cyan]cgc mcp start[/cyan] to launch the server\n")
+        console.print("   1. Run [cyan]kkg mcp setup[/cyan] (or [cyan]kkg m[/cyan]) to configure your IDE")
+        console.print("   2. Run [cyan]kkg mcp start[/cyan] to launch the server\n")
         console.print("🛠️  [bold]For CLI Toolkit Mode (direct usage):[/bold]")
-        console.print("   • [cyan]cgc index .[/cyan] - Index your current directory")
-        console.print("   • [cyan]cgc list[/cyan] - List indexed repositories\n")
+        console.print("   • [cyan]kkg index .[/cyan] - Index your current directory")
+        console.print("   • [cyan]kkg list[/cyan] - List indexed repositories\n")
         console.print("📊 [bold]Using Neo4j instead of KuzuDB?[/bold]")
-        console.print("     Run [cyan]cgc neo4j setup[/cyan] (or [cyan]cgc n[/cyan]) to configure Neo4j\n")
+        console.print("     Run [cyan]kkg neo4j setup[/cyan] (or [cyan]kkg n[/cyan]) to configure Neo4j\n")
         console.print("📈 [bold]Want visual graph output?[/bold]")
         console.print("     Add [cyan]-V[/cyan] or [cyan]--visual[/cyan] to any analyze/find command\n")
-        console.print("👉 Run [cyan]cgc help[/cyan] to see all available commands")
-        console.print("👉 Run [cyan]cgc --version[/cyan] to check the version\n")
-        console.print("👉 Running [green]codegraphcontext[/green] works the same as using [green]cgc[/green]")
+        console.print("👉 Run [cyan]kkg help[/cyan] to see all available commands")
+        console.print("👉 Run [cyan]kkg --version[/cyan] to check the version\n")
+        console.print("👉 Running [green]codegraphcontext[/green] or [green]cgc[/green] works the same as using [green]kkg[/green] when those compatibility entry points are installed")
 
 
 if __name__ == "__main__":

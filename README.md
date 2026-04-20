@@ -234,6 +234,18 @@ Run `kkg viz-dashboard` and click the **Standards** tab to configure rules inter
 - Switch between presets (default, strict, SOC 2, minimal)
 - Export your config as TOML
 
+## Supported programming languages
+
+KeplerKG uses tree-sitter to parse 14 languages with full extraction of functions, classes, methods, parameters, inheritance, calls, and imports:
+
+| Language | Language | Language |
+| :--- | :--- | :--- |
+| **Python** | **JavaScript** | **TypeScript** |
+| **Java** | **C / C++** | **C#** |
+| **Go** | **Rust** | **Ruby** |
+| **PHP** | **Swift** | **Kotlin** |
+| **Dart** | **Perl** | |
+
 ## Embedding providers
 
 | Provider | Model | Dimensions | Requires |
