@@ -403,6 +403,16 @@ class KuzuSessionWrapper:
                             break
 
                     if all_ok:
+                        deduped_batch = []
+                        seen_uids = set()
+                        for item in batch_data:
+                            uid = item.get('uid')
+                            if uid in seen_uids:
+                                continue
+                            seen_uids.add(uid)
+                            deduped_batch.append(item)
+                        batch_data = deduped_batch
+                        parameters[batch_param] = deduped_batch
                         old_block = '{' + props_str + '}'
                         new_block = (
                             '{' + props_str + f', uid: {row_var}.uid' + '}'

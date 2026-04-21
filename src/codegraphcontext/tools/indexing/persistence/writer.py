@@ -206,6 +206,19 @@ class GraphWriter:
 
                     key_order = sorted(all_keys)
                     batch[:] = [{k: b[k] for k in key_order} for b in batch]
+                    deduped_batch: List[Dict[str, Any]] = []
+                    seen_symbol_keys: set[tuple[Any, Any]] = set()
+                    for row in batch:
+                        # Kuzu's MERGE key for indexed symbols is the same composite we
+                        # use below: (name, file_path, line_number). Collapse duplicates
+                        # up front so repeated parser captures cannot violate the primary
+                        # key when they land in the same UNWIND batch.
+                        symbol_key = (row.get("name"), row.get("line_number"))
+                        if symbol_key in seen_symbol_keys:
+                            continue
+                        seen_symbol_keys.add(symbol_key)
+                        deduped_batch.append(row)
+                    batch[:] = deduped_batch
 
                 session.run(
                     f"""

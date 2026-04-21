@@ -329,6 +329,35 @@ class TestAddFileToGraph:
         queries = [c["query"] for c in session.calls]
         assert any("UNWIND" in q for q in queries), "Expected UNWIND batch writes"
 
+    def test_dedupes_duplicate_variable_rows_before_unwind(self):
+        """Duplicate symbol rows should collapse before the batched Variable write."""
+        session = _RecordingSession(responses=[_FakeResult()])
+        gb, _ = _make_graph_builder(session)
+        file_data = {
+            "path": "/repo/a.php",
+            "lang": "php",
+            "is_dependency": False,
+            "functions": [],
+            "classes": [],
+            "variables": [
+                {"name": "$n", "line_number": 3, "context": "", "lang": "php"},
+                {"name": "$n", "line_number": 3, "context": "", "lang": "php"},
+            ],
+            "imports": [],
+            "function_calls": [],
+        }
+
+        gb.add_file_to_graph(file_data, "my_repo", {}, repo_path_str="/repo")
+
+        variable_call = next(
+            call
+            for call in session.calls
+            if "UNWIND $batch AS row" in call["query"] and "MERGE (n:Variable" in call["query"]
+        )
+        assert variable_call["kwargs"]["batch"] == [
+            {"context": "", "lang": "php", "line_number": 3, "name": "$n"}
+        ]
+
 
 # ---------------------------------------------------------------------------
 # 4. delete_repository_from_graph (Changes 9a/9b/9c)

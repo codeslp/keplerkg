@@ -286,12 +286,11 @@ class PhpTreeSitterParser:
                 try:
                      var_name = self._get_node_text(node)
                      start_line = node.start_point[0] + 1
-                     
-                     start_byte = node.start_byte
-                     if start_byte in seen_vars:
+                     dedupe_key = (var_name, start_line)
+                     if dedupe_key in seen_vars:
                          continue
-                     seen_vars.add(start_byte)
-                     
+                     seen_vars.add(dedupe_key)
+
                      ctx_name, ctx_type, ctx_line = self._get_parent_context(node)
 
                      # Infer type from assignment
