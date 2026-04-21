@@ -84,6 +84,9 @@ class RuleResult:
             # Render Mustache-style {{key}} from first offender
             for key, val in offender_dicts[0].items():
                 suggestion = suggestion.replace(f"{{{{{key}}}}}", str(val or ""))
+            # Strip any unreplaced {{placeholder}} tokens to prevent leaking
+            # template syntax into user-visible output.
+            suggestion = re.sub(r"\{\{[^}]*\}\}", "", suggestion).strip()
 
         return {
             "kind": self.rule.advisory_kind,

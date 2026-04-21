@@ -204,6 +204,12 @@ class KuzuDriverWrapper:
 class KuzuSessionWrapper:
     def __init__(self, conn):
         self.conn = conn
+        # UID format: concatenation of primary-key parts with no separator.
+        # For most node types: "{name}{absolute_path}{line_number}"
+        #   e.g. "hashContent/Users/bfaris96/cgraph/scripts/file.mjs31"
+        # For Parameter: "{name}{absolute_path}{function_line_number}"
+        # UIDs are auto-injected into MERGE queries by the Cypher translator
+        # when the query's inline property block contains matching key names.
         self.uid_map = {
             'Function': ['name', 'path', 'line_number'],
             'Class': ['name', 'path', 'line_number'],

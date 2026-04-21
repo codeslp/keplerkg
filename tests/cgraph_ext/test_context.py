@@ -13,6 +13,7 @@ from codegraphcontext_ext.hybrid.traverse import traverse
 from codegraphcontext_ext.commands.context import (
     _build_context_payload,
     _estimate_tokens,
+    build_search_payload,
 )
 
 runner = CliRunner()
@@ -268,6 +269,33 @@ def test_context_command_with_seeds(monkeypatch):
     payload = _extract_json(result.output)
     assert len(payload["seeds"]) > 0
     assert payload["seeds"][0]["name"] == "verify_token"
+
+
+def test_build_search_payload_with_seeds(monkeypatch):
+    monkeypatch.setenv("DEFAULT_DATABASE", "kuzudb")
+    monkeypatch.setattr(runtime, "is_kuzudb_available", lambda: True)
+
+    ann_rows = [
+        ("uid1", "verify_token", "src/auth.py", 42, 0.2),
+    ]
+    traverse_rows = [
+        ("uid_caller", "main_handler", "src/api.py", 10, "Function"),
+    ]
+    fake_conn = _FakeConn(ann_rows=ann_rows, traverse_rows=traverse_rows)
+
+    with patch(
+        "codegraphcontext_ext.commands.context.get_kuzu_connection",
+        return_value=fake_conn,
+    ), patch(
+        "codegraphcontext_ext.commands.context.create_provider",
+        return_value=_MockProvider(),
+    ):
+        payload = build_search_payload("auth flow", k=4, depth=2)
+
+    assert payload["query"] == "auth flow"
+    assert len(payload["seeds"]) > 0
+    assert payload["seeds"][0]["name"] == "verify_token"
+    assert payload["neighborhood"]["callers"][0]["uid"] == "uid_caller"
 
 
 def test_context_command_rejects_non_kuzu(monkeypatch):

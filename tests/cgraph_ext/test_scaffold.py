@@ -16,6 +16,7 @@ def test_register_extensions_registers_sync_check_embed_and_context():
         "audit",
         "blast-radius",
         "clusters",
+        "doctor",
         "drift-check",
         "sync-check",
         "embed",

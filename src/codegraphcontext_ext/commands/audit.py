@@ -42,6 +42,40 @@ _DEFAULT_STANDARDS_DIR = Path(__file__).resolve().parent.parent.parent.parent / 
 # Scope resolution — which files are in scope for this audit run?
 # ---------------------------------------------------------------------------
 
+def _normalize_scope_path(path: str) -> str:
+    """Normalize a repo-relative or absolute path for scope matching."""
+    normalized = path.replace("\\", "/").strip()
+    while normalized.startswith("./"):
+        normalized = normalized[2:]
+    return normalized.strip("/")
+
+
+def _parse_files_csv(files: str | None) -> list[str] | None:
+    """Parse a comma-separated --files value into a normalized list."""
+    if files is None:
+        return None
+    parsed = [_normalize_scope_path(part) for part in files.split(",")]
+    normalized = [part for part in parsed if part]
+    return normalized or []
+
+
+def _path_in_scope(offender_path: str, scope_path: str) -> bool:
+    """Return True when an offender path matches a scoped file or directory."""
+    normalized_offender = _normalize_scope_path(offender_path)
+    normalized_scope = _normalize_scope_path(scope_path)
+    if not normalized_offender or not normalized_scope:
+        return False
+
+    if normalized_offender == normalized_scope:
+        return True
+    if normalized_offender.endswith(f"/{normalized_scope}"):
+        return True
+
+    offender_haystack = f"/{normalized_offender}/"
+    scope_token = f"/{normalized_scope}/"
+    return scope_token in offender_haystack
+
+
 def _resolve_scope_files(scope: str) -> set[str] | None:
     """Return the set of files in scope, or None for 'all' (no filtering).
 
@@ -90,10 +124,7 @@ def _filter_violations_by_scope(
     for adv in advisories:
         scoped_offenders = [
             o for o in adv.get("offenders", [])
-            if o.get("path") and any(
-                o["path"].endswith(f) or f in o["path"]
-                for f in scope_files
-            )
+            if o.get("path") and any(_path_in_scope(o["path"], f) for f in scope_files)
         ]
         if scoped_offenders:
             adv = {**adv, "offenders": scoped_offenders}
@@ -119,6 +150,7 @@ def _find_standards_dir() -> Path:
 def build_audit_payload(
     standards_dir: Path | None = None,
     scope: str = "all",
+    files: list[str] | None = None,
     category: str | None = None,
     require_hard_zero: bool = False,
     profile: str | None = None,
@@ -209,8 +241,16 @@ def build_audit_payload(
         if result.fired:
             advisories.append(result.to_advisory())
 
+    # Explicit file inputs override git-derived scope resolution.
+    explicit_files = {path for path in files or [] if path}
+    if explicit_files:
+        scope_files = explicit_files
+        scope_source = "explicit_files"
+    else:
+        scope_files = _resolve_scope_files(scope)
+        scope_source = "all" if scope_files is None else "git"
+
     # Scope filtering — only report violations on files that are in scope
-    scope_files = _resolve_scope_files(scope)
     if scope_files is not None:
         advisories = _filter_violations_by_scope(advisories, scope_files)
 
@@ -222,6 +262,8 @@ def build_audit_payload(
         "ok": True,
         "kind": "audit",
         "scope": scope,
+        "scope_source": scope_source,
+        "files_requested": len(explicit_files),
         "standards_evaluated": rules_evaluated,
         "advisories": advisories,
         "counts": {"warn": warn_count, "hard": hard_count},
@@ -512,6 +554,11 @@ def audit_command(
         "--scope",
         help="Audit scope: diff, session, lane, all, or function:<uid>.",
     ),
+    files: Optional[str] = typer.Option(
+        None,
+        "--files",
+        help="Comma-separated repo paths or directories to audit. Overrides git-derived scope resolution.",
+    ),
     category: Optional[str] = typer.Option(
         None,
         "--category",
@@ -560,6 +607,14 @@ def audit_command(
 ) -> None:
     """Run code-quality standards against the graph."""
     activate_project(project)
+    file_list = _parse_files_csv(files)
+    if files is not None and not file_list:
+        typer.echo(emit_json({
+            "ok": False,
+            "kind": "no_files",
+            "detail": "--files must contain at least one path.",
+        }))
+        raise typer.Exit(code=1)
 
     if list_standards:
         payload = build_list_payload()
@@ -584,6 +639,7 @@ def audit_command(
 
     payload = build_audit_payload(
         scope=scope,
+        files=file_list,
         category=category,
         require_hard_zero=require_hard_zero,
         profile=profile,

@@ -127,6 +127,83 @@ def _build_context_payload(
     }
 
 
+def _validate_mode_args(
+    mode: str,
+    community_id: Optional[int],
+    cluster_id: Optional[int],
+) -> None:
+    """Validate --mode and its companion flags."""
+    valid_modes = ("global", "community", "cluster")
+    if mode not in valid_modes:
+        raise ValueError(
+            f"--mode must be one of {', '.join(valid_modes)}, got '{mode}'."
+        )
+    if mode == "global" and (community_id is not None or cluster_id is not None):
+        raise ValueError("--mode global does not accept --community-id or --cluster-id.")
+    if mode == "community":
+        if community_id is None:
+            raise ValueError("--mode community requires --community-id.")
+        if cluster_id is not None:
+            raise ValueError("--mode community does not accept --cluster-id.")
+    if mode == "cluster":
+        if cluster_id is None:
+            raise ValueError("--mode cluster requires --cluster-id.")
+        if community_id is not None:
+            raise ValueError("--mode cluster does not accept --community-id.")
+
+
+def build_search_payload(
+    query: str,
+    *,
+    lane: Optional[str] = None,
+    k: int = 8,
+    depth: int = 1,
+    mode: str = "global",
+    community_id: Optional[int] = None,
+    cluster_id: Optional[int] = None,
+    provider: Optional[str] = None,
+    model: Optional[str] = None,
+    dimensions: Optional[int] = None,
+    project: Optional[str] = None,
+    resolved_config: Any | None = None,
+) -> dict[str, Any]:
+    """Build the JSON payload for `kkg search`."""
+    activate_project(project)
+    _validate_mode_args(mode, community_id, cluster_id)
+
+    backend_payload = probe_backend_support()
+    if not backend_payload["ok"]:
+        return backend_payload
+
+    config = resolved_config or resolve_embedding_config(
+        provider=provider,
+        model=model,
+        dimensions=dimensions,
+    )
+
+    emb_provider = create_provider(config)
+    query_vectors = emb_provider.embed_texts([query])
+    query_vector = query_vectors[0]
+    conn = get_kuzu_connection()
+
+    if mode == "community" and community_id is not None:
+        allowed = _resolve_community_uids(conn, community_id)
+        seeds = search_scoped(conn, query_vector, k=k, allowed_uids=allowed)
+    elif mode == "cluster" and cluster_id is not None:
+        allowed = _resolve_cluster_uids(conn, cluster_id)
+        seeds = search_scoped(conn, query_vector, k=k, allowed_uids=allowed)
+    else:
+        seeds = ann_search(conn, query_vector, k=k)
+
+    if not seeds:
+        return _build_context_payload(query, [], {"callers": [], "callees": [], "imports": []})
+
+    seeds = _enrich_seeds_with_snippets(seeds)
+    seed_uids = [s["uid"] for s in seeds]
+    neighborhood = traverse(conn, seed_uids, depth=depth)
+    return _build_context_payload(query, seeds, neighborhood)
+
+
 def context_command(
     query: str = typer.Argument(
         ...,
@@ -187,28 +264,6 @@ def context_command(
     ),
 ) -> None:
     """Hybrid retrieval: find code relevant to a query via ANN + graph walk."""
-    activate_project(project)
-
-    # Validate --mode and required/incompatible companion flags
-    valid_modes = ("global", "community", "cluster")
-    if mode not in valid_modes:
-        raise typer.BadParameter(
-            f"--mode must be one of {', '.join(valid_modes)}, got '{mode}'."
-        )
-    if mode == "global" and (community_id is not None or cluster_id is not None):
-        raise typer.BadParameter("--mode global does not accept --community-id or --cluster-id.")
-    if mode == "community":
-        if community_id is None:
-            raise typer.BadParameter("--mode community requires --community-id.")
-        if cluster_id is not None:
-            raise typer.BadParameter("--mode community does not accept --cluster-id.")
-    if mode == "cluster":
-        if cluster_id is None:
-            raise typer.BadParameter("--mode cluster requires --cluster-id.")
-        if community_id is not None:
-            raise typer.BadParameter("--mode cluster does not accept --community-id.")
-
-    # Backend gate
     backend_payload = probe_backend_support()
     if not backend_payload["ok"]:
         typer.echo(emit_json(backend_payload))
@@ -220,39 +275,24 @@ def context_command(
             model=model,
             dimensions=dimensions,
         )
+        _validate_mode_args(mode, community_id, cluster_id)
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
 
-    # Embed the query
-    emb_provider = create_provider(config)
     print(f"Embedding query with {config.provider}...", file=sys.stderr)
-    query_vectors = emb_provider.embed_texts([query])
-    query_vector = query_vectors[0]
-
-    # Connect and search
-    conn = get_kuzu_connection()
-
-    if mode == "community" and community_id is not None:
-        allowed = _resolve_community_uids(conn, community_id)
-        seeds = search_scoped(conn, query_vector, k=k, allowed_uids=allowed)
-    elif mode == "cluster" and cluster_id is not None:
-        allowed = _resolve_cluster_uids(conn, cluster_id)
-        seeds = search_scoped(conn, query_vector, k=k, allowed_uids=allowed)
-    else:
-        seeds = ann_search(conn, query_vector, k=k)
-
-    if not seeds:
-        payload = _build_context_payload(query, [], {"callers": [], "callees": [], "imports": []})
-        typer.echo(emit_json(payload))
-        raise typer.Exit(code=0)
-
-    # Enrich seeds with source code snippets
-    seeds = _enrich_seeds_with_snippets(seeds)
-
-    # Traverse from seeds
-    seed_uids = [s["uid"] for s in seeds]
-    neighborhood = traverse(conn, seed_uids, depth=depth)
-
-    payload = _build_context_payload(query, seeds, neighborhood)
+    payload = build_search_payload(
+        query,
+        lane=lane,
+        k=k,
+        depth=depth,
+        mode=mode,
+        community_id=community_id,
+        cluster_id=cluster_id,
+        provider=provider,
+        model=model,
+        dimensions=dimensions,
+        project=project,
+        resolved_config=config,
+    )
     typer.echo(emit_json(payload))
-    raise typer.Exit(code=0)
+    raise typer.Exit(code=0 if payload.get("ok", True) else 1)

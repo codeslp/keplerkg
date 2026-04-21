@@ -48,12 +48,104 @@ def default_socket_path() -> Path:
 # Command dispatch table
 # ---------------------------------------------------------------------------
 
-def _dispatch(cmd: str, args: dict[str, Any]) -> dict[str, Any]:
+def _split_csv(value: Any) -> list[str]:
+    """Normalize a comma-separated string or list of strings."""
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    if isinstance(value, str):
+        return [part.strip() for part in value.split(",") if part.strip()]
+    return []
+
+
+def _parse_json_maybe(value: Any) -> Any:
+    """Decode JSON strings when possible, otherwise return the original value."""
+    if not isinstance(value, str):
+        return value
+    try:
+        return json.loads(value)
+    except json.JSONDecodeError:
+        return value
+
+
+def _coerce_int(value: Any) -> Any:
+    """Parse integer-like strings used in daemon CLI argv translation."""
+    if isinstance(value, str):
+        try:
+            return int(value)
+        except ValueError:
+            return value
+    return value
+
+
+def _normalize_request_args(cmd: str, args: Any) -> dict[str, Any]:
+    """Accept both legacy dict args and adapter-style argv lists."""
+    normalized: dict[str, Any] = {}
+    if isinstance(args, dict):
+        normalized = {
+            str(key).replace("-", "_"): value
+            for key, value in args.items()
+        }
+    elif isinstance(args, list):
+        tokens = [str(token) for token in args]
+        positionals: list[str] = []
+        boolean_flags = {
+            "review-packet": {"include_staged", "include_workdir", "include_untracked"},
+            "audit": {"require_hard_zero", "list", "calibration_report", "library"},
+        }.get(cmd, set())
+
+        idx = 0
+        while idx < len(tokens):
+            token = tokens[idx]
+            if token.startswith("--"):
+                key = token[2:].replace("-", "_")
+                if key in boolean_flags:
+                    normalized[key] = True
+                    idx += 1
+                    continue
+                if idx + 1 >= len(tokens):
+                    normalized[key] = True
+                    idx += 1
+                    continue
+                normalized[key] = tokens[idx + 1]
+                idx += 2
+                continue
+            positionals.append(token)
+            idx += 1
+
+        if cmd == "advise" and positionals:
+            normalized.setdefault("situation", positionals[0])
+        if cmd in {"search", "context"} and positionals:
+            normalized.setdefault("query", positionals[0])
+
+    if "files" in normalized:
+        normalized["files"] = _split_csv(normalized["files"])
+    if "context" in normalized:
+        normalized["context"] = _parse_json_maybe(normalized["context"])
+    if "locks_json" in normalized:
+        normalized["locks_json"] = _parse_json_maybe(normalized["locks_json"])
+    if "source_dir" in normalized and normalized["source_dir"]:
+        normalized["source_dir"] = Path(str(normalized["source_dir"]))
+
+    for key in ("max_nodes", "k", "depth", "community_id", "cluster_id", "dimensions"):
+        if key in normalized:
+            normalized[key] = _coerce_int(normalized[key])
+
+    return normalized
+
+
+def _dispatch(cmd: str, args: dict[str, Any] | list[Any] | None) -> dict[str, Any]:
     """Route a request to the appropriate command handler.
 
     Each handler is imported lazily so the daemon only pays import cost
     once (on first call per command type).
     """
+    cmd = "search" if cmd == "context" else cmd
+    args = _normalize_request_args(cmd, args or {})
+
+    if cmd == "ping":
+        return {"ok": True, "kind": "ping"}
     if cmd == "advise":
         from ..commands.advise import build_advise_payload
         return build_advise_payload(
@@ -75,6 +167,69 @@ def _dispatch(cmd: str, args: dict[str, Any]) -> dict[str, Any]:
             files=args.get("files", []),
             since=args.get("since", ""),
             lane=args.get("lane"),
+        )
+    if cmd == "review-packet":
+        from ..commands.review_packet import (
+            build_review_packet_payload,
+            get_kuzu_connection,
+        )
+        try:
+            conn = get_kuzu_connection()
+        except Exception:
+            conn = None
+        return build_review_packet_payload(
+            base=args.get("base"),
+            head=args.get("head"),
+            files=args.get("files"),
+            include_staged=bool(args.get("include_staged")),
+            include_workdir=bool(args.get("include_workdir")),
+            include_untracked=bool(args.get("include_untracked")),
+            max_nodes=args.get("max_nodes", 50),
+            conn=conn,
+        )
+    if cmd == "audit":
+        from ..commands.audit import (
+            build_audit_payload,
+            build_calibration_payload,
+            build_explain_payload,
+            build_list_payload,
+        )
+        if args.get("list"):
+            return build_list_payload()
+        if args.get("explain"):
+            return build_explain_payload(str(args["explain"]))
+        if args.get("calibration_report"):
+            return build_calibration_payload(
+                category=args.get("category"),
+                profile=args.get("profile"),
+            )
+        return build_audit_payload(
+            scope=str(args.get("scope", "all")),
+            files=args.get("files"),
+            category=args.get("category"),
+            require_hard_zero=bool(args.get("require_hard_zero")),
+            profile=args.get("profile"),
+            library=bool(args.get("library")),
+        )
+    if cmd == "search":
+        from ..commands.context import build_search_payload
+        return build_search_payload(
+            query=str(args.get("query", "")),
+            lane=args.get("lane"),
+            k=args.get("k", 8),
+            depth=args.get("depth", 1),
+            mode=str(args.get("mode", "global")),
+            community_id=args.get("community_id"),
+            cluster_id=args.get("cluster_id"),
+            provider=args.get("provider"),
+            model=args.get("model"),
+            dimensions=args.get("dimensions"),
+            project=args.get("project"),
+        )
+    if cmd == "sync-check":
+        from ..commands.sync_check import build_sync_check_payload
+        return build_sync_check_payload(
+            source_dir=args.get("source_dir"),
         )
     # Fallback: unknown command
     return {
@@ -109,7 +264,7 @@ async def _handle_client(
                 await writer.drain()
                 continue
 
-            cmd = request.get("cmd", "")
+            cmd = request.get("cmd") or request.get("command", "")
             args = request.get("args", {})
             try:
                 result = _dispatch(cmd, args)

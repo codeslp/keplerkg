@@ -86,6 +86,67 @@ def test_dispatch_blast_radius():
     assert any(a["kind"] == "no_graph" for a in result.get("advisories", []))
 
 
+def test_dispatch_ping():
+    result = _dispatch("ping", {})
+    assert result == {"ok": True, "kind": "ping"}
+
+
+def test_dispatch_review_packet():
+    payload = {"source": "workdir", "touched_nodes": [], "advisories": []}
+    with patch(
+        "codegraphcontext_ext.commands.review_packet.build_review_packet_payload",
+        return_value=payload,
+    ), patch(
+        "codegraphcontext_ext.commands.review_packet.get_kuzu_connection",
+        side_effect=Exception("no db"),
+    ):
+        result = _dispatch("review-packet", {"files": ["src/foo.py"], "base": "HEAD"})
+    assert result == payload
+
+
+def test_dispatch_audit():
+    payload = {
+        "ok": True,
+        "kind": "audit",
+        "counts": {"warn": 0, "hard": 0},
+        "advisories": [],
+        "hard_zero": True,
+        "standards_evaluated": 1,
+    }
+    with patch(
+        "codegraphcontext_ext.commands.audit.build_audit_payload",
+        return_value=payload,
+    ):
+        result = _dispatch("audit", {"scope": "lane", "files": ["src/foo.py"]})
+    assert result == payload
+
+
+def test_dispatch_search():
+    payload = {
+        "query": "auth flow",
+        "seeds": [],
+        "neighborhood": {"callers": [], "callees": [], "imports": []},
+        "token_estimate": 1,
+        "token_estimate_basis": "cl100k_base",
+    }
+    with patch(
+        "codegraphcontext_ext.commands.context.build_search_payload",
+        return_value=payload,
+    ):
+        result = _dispatch("search", {"query": "auth flow", "k": 4})
+    assert result == payload
+
+
+def test_dispatch_sync_check():
+    payload = {"upstream": "CodeGraphContext/CodeGraphContext", "behind_by": 0, "new_commits": []}
+    with patch(
+        "codegraphcontext_ext.commands.sync_check.build_sync_check_payload",
+        return_value=payload,
+    ):
+        result = _dispatch("sync-check", {"source_dir": Path("/tmp/cgraph")})
+    assert result == payload
+
+
 # ---------------------------------------------------------------------------
 # Async server integration test
 # ---------------------------------------------------------------------------
@@ -111,8 +172,8 @@ async def test_server_round_trip(tmp_path):
     try:
         reader, writer = await asyncio.open_unix_connection(str(sock_path))
 
-        # Send advise request
-        request = {"cmd": "advise", "args": {"situation": "lock_overlap", "lane": "a"}}
+        # Send advise request in the adapter's command/argv shape
+        request = {"command": "advise", "args": ["lock_overlap", "--lane", "a"]}
         with patch(
             "codegraphcontext_ext.commands.advise.resolve_cgraph_config",
             return_value=_DEFAULT_CONFIG,
@@ -124,6 +185,12 @@ async def test_server_round_trip(tmp_path):
         response = json.loads(raw)
         assert response["situation"] == "lock_overlap"
         assert response["advisory_id"] is not None
+
+        writer.write((json.dumps({"command": "ping", "args": []}) + "\n").encode())
+        await writer.drain()
+        raw = await asyncio.wait_for(reader.readline(), timeout=5.0)
+        response = json.loads(raw)
+        assert response == {"kind": "ping", "ok": True}
 
         # Send unknown command
         writer.write((json.dumps({"cmd": "nope"}) + "\n").encode())
@@ -177,7 +244,7 @@ async def test_localhost_server_retries_busy_port_and_serves_requests():
         writer.write(
             (
                 json.dumps(
-                    {"cmd": "advise", "args": {"situation": "lock_overlap", "lane": "a"}}
+                    {"command": "advise", "args": ["lock_overlap", "--lane", "a"]}
                 )
                 + "\n"
             ).encode()

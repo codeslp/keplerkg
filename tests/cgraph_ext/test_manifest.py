@@ -227,6 +227,7 @@ _KNOWN_PROJECT_AWARE = {
     "audit",
     "blast-radius",
     "clusters",
+    "doctor",
     "drift-check",
     "embed",
     "entrypoints",

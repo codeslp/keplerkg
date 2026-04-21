@@ -14,6 +14,8 @@
         "ok": { "type": "boolean" },
         "kind": { "type": "string", "enum": ["audit", "audit_list", "audit_explain"] },
         "scope": { "type": "string" },
+        "scope_source": { "type": "string", "enum": ["all", "git", "explicit_files"] },
+        "files_requested": { "type": "integer", "minimum": 0 },
         "standards_evaluated": { "type": "integer" },
         "advisories": {
           "type": "array",

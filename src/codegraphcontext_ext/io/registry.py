@@ -63,6 +63,16 @@ COMMAND_REGISTRY: list[dict[str, Any]] = [
         "prereqs": ["KUZUDB_PATH"],
     },
     {
+        "name": "doctor",
+        "summary": "Validate setup: backend, DB access, graph, embeddings, PATH.",
+        "schema": None,
+        "project_aware": True,
+        "touches_kuzu": True,
+        "output_modes": ["json"],
+        "server": False,
+        "prereqs": ["KUZUDB_PATH"],
+    },
+    {
         "name": "drift-check",
         "summary": "Detect graph-neighborhood changes outside a lane's locked files.",
         "schema": "drift-check.json",

@@ -168,6 +168,56 @@ def test_audit_category_filter(tmp_path):
     assert result["standards_evaluated"] == 0
 
 
+def test_audit_explicit_files_override_scope_resolution(tmp_path):
+    std = _make_standards_dir(tmp_path)
+    conn = _FakeConn(rows_by_query={
+        "f.x > 5": [
+            ("uid1", "scoped_func", "src/a.py", 10, 25),
+            ("uid2", "other_func", "src/b.py", 20, 30),
+        ],
+    })
+    with patch(
+        "codegraphcontext_ext.commands.audit.get_kuzu_connection",
+        return_value=conn,
+    ), patch(
+        "codegraphcontext_ext.commands.audit._resolve_scope_files",
+        return_value={"src/b.py"},
+    ):
+        result = build_audit_payload(
+            standards_dir=std,
+            scope="lane",
+            files=["src/a.py"],
+        )
+
+    assert result["scope"] == "lane"
+    assert result["scope_source"] == "explicit_files"
+    assert result["files_requested"] == 1
+    assert result["counts"]["warn"] == 1
+    assert [o["path"] for o in result["advisories"][0]["offenders"]] == ["src/a.py"]
+
+
+def test_audit_explicit_directory_scope_filters_descendants(tmp_path):
+    std = _make_standards_dir(tmp_path)
+    conn = _FakeConn(rows_by_query={
+        "f.x > 5": [
+            ("uid1", "scoped_func", "/repo/src/a.py", 10, 25),
+            ("uid2", "other_func", "/repo/pkg/b.py", 20, 30),
+        ],
+    })
+    with patch(
+        "codegraphcontext_ext.commands.audit.get_kuzu_connection",
+        return_value=conn,
+    ):
+        result = build_audit_payload(
+            standards_dir=std,
+            files=["src/"],
+        )
+
+    assert result["scope_source"] == "explicit_files"
+    assert result["counts"]["warn"] == 1
+    assert [o["path"] for o in result["advisories"][0]["offenders"]] == ["/repo/src/a.py"]
+
+
 # ---------------------------------------------------------------------------
 # build_list_payload
 # ---------------------------------------------------------------------------
@@ -231,6 +281,22 @@ def test_schema_validation_with_violations(tmp_path):
         return_value=conn,
     ):
         result = build_audit_payload(standards_dir=std)
+    jsonschema.validate(result, _load_schema())
+
+
+def test_schema_validation_with_explicit_files_scope(tmp_path):
+    std = _make_standards_dir(tmp_path)
+    conn = _FakeConn(rows_by_query={
+        "f.x > 5": [
+            ("uid1", "scoped_func", "src/a.py", 1, 20),
+            ("uid2", "other_func", "src/b.py", 2, 25),
+        ],
+    })
+    with patch(
+        "codegraphcontext_ext.commands.audit.get_kuzu_connection",
+        return_value=conn,
+    ):
+        result = build_audit_payload(standards_dir=std, files=["src/a.py"])
     jsonschema.validate(result, _load_schema())
 
 
@@ -622,3 +688,47 @@ def test_audit_registered():
     register_extensions(app)
     names = [cmd.name for cmd in app.registered_commands]
     assert "audit" in names
+
+
+def test_cli_audit_files_flag_filters_output(tmp_path):
+    from codegraphcontext_ext.cli import register_extensions
+    import typer
+
+    app = typer.Typer()
+    register_extensions(app)
+    std = _make_standards_dir(tmp_path)
+    conn = _FakeConn(rows_by_query={
+        "f.x > 5": [
+            ("uid1", "scoped_func", "src/a.py", 10, 25),
+            ("uid2", "other_func", "src/b.py", 20, 30),
+        ],
+    })
+
+    with patch(
+        "codegraphcontext_ext.commands.audit._find_standards_dir",
+        return_value=std,
+    ), patch(
+        "codegraphcontext_ext.commands.audit.get_kuzu_connection",
+        return_value=conn,
+    ):
+        result = runner.invoke(app, ["audit", "--files", "src/a.py"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.output)
+    assert payload["scope_source"] == "explicit_files"
+    assert payload["files_requested"] == 1
+    assert [o["path"] for o in payload["advisories"][0]["offenders"]] == ["src/a.py"]
+
+
+def test_cli_audit_rejects_empty_files():
+    from codegraphcontext_ext.cli import register_extensions
+    import typer
+
+    app = typer.Typer()
+    register_extensions(app)
+    result = runner.invoke(app, ["audit", "--files", "  "])
+
+    assert result.exit_code == 1
+    payload = json.loads(result.output)
+    assert payload["ok"] is False
+    assert payload["kind"] == "no_files"

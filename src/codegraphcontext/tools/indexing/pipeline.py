@@ -13,6 +13,7 @@ from ...utils.debug_log import debug_log, error_logger, info_logger
 from .discovery import discover_files_to_index
 from .persistence.writer import GraphWriter
 from .pre_scan import pre_scan_for_imports
+from .resolution.ast_calls import ast_fallback_for_file_data
 from .resolution.calls import build_function_call_groups
 from .resolution.inheritance import build_inheritance_and_csharp_files
 
@@ -79,6 +80,18 @@ async def run_tree_sitter_index_async(
     writer.write_inheritance_links(inheritance_batch, csharp_files, imports_map)
     t1 = time.time()
     info_logger(f"Inheritance links created in {t1 - t0:.1f}s. Starting function calls...")
+
+    # AST-based fallback: for Python files where tree-sitter extracted no calls,
+    # use stdlib ast to extract calls before resolution.
+    ast_fallback_count = 0
+    for fd in all_file_data:
+        if fd.get("lang") == "python" and not fd.get("function_calls"):
+            fallback_calls = ast_fallback_for_file_data(fd)
+            if fallback_calls:
+                fd["function_calls"] = fallback_calls
+                ast_fallback_count += 1
+    if ast_fallback_count:
+        info_logger(f"[AST-CALLS] Fallback populated calls for {ast_fallback_count} Python files")
 
     groups = build_function_call_groups(all_file_data, imports_map, None)
     writer.write_function_call_groups(*groups)

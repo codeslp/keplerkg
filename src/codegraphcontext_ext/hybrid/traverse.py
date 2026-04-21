@@ -52,6 +52,7 @@ def _query_edges(
                 "uid": row[0],
                 "name": row[1],
                 "file": f"{row[2]}:{row[3]}" if row[2] and row[3] else row[2],
+                "relative_path": row[2] or "",
                 "kind": row[4],
             })
     except Exception:

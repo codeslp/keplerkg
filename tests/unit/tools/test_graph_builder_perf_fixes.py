@@ -57,6 +57,18 @@ class _RecordingSession:
         return False
 
 
+class _StructFieldValidatingSession(_RecordingSession):
+    """Raises when a UNWIND row is missing a field referenced in the query."""
+
+    def run(self, query: str, **kwargs):
+        batch = kwargs.get("batch")
+        if "row.full_import_name" in query and isinstance(batch, list):
+            for row in batch:
+                if "full_import_name" not in row:
+                    raise RuntimeError("Binder exception: Invalid struct field name: full_import_name.")
+        return super().run(query, **kwargs)
+
+
 class _FakeDriver:
     def __init__(self, session: _RecordingSession):
         self._session = session
@@ -355,7 +367,87 @@ class TestAddFileToGraph:
             if "UNWIND $batch AS row" in call["query"] and "MERGE (n:Variable" in call["query"]
         )
         assert variable_call["kwargs"]["batch"] == [
-            {"context": "", "lang": "php", "line_number": 3, "name": "$n"}
+            {"context": "", "lang": "php", "line_number": 3, "name": "$n", "path": "/repo/a.php"}
+        ]
+
+    def test_normalizes_source_based_import_rows_before_unwind(self):
+        """TypeScript-style imports must include full_import_name before the IMPORTS UNWIND."""
+        session = _StructFieldValidatingSession(responses=[_FakeResult()])
+        gb, _ = _make_graph_builder(session)
+        file_data = {
+            "path": "/repo/a.ts",
+            "lang": "typescript",
+            "is_dependency": False,
+            "functions": [],
+            "classes": [],
+            "variables": [],
+            "imports": [
+                {
+                    "name": "useEffect",
+                    "source": "react",
+                    "alias": None,
+                    "line_number": 1,
+                    "lang": "typescript",
+                }
+            ],
+            "function_calls": [],
+        }
+
+        gb.add_file_to_graph(file_data, "my_repo", {}, repo_path_str="/repo")
+
+        imports_call = next(
+            call
+            for call in session.calls
+            if "MERGE (f)-[r:IMPORTS]->(m)" in call["query"]
+        )
+        assert imports_call["kwargs"]["batch"] == [
+            {
+                "module_name": "react",
+                "imported_name": "useEffect",
+                "alias": None,
+                "line_number": 1,
+                "full_import_name": "react",
+            }
+        ]
+
+    def test_normalizes_symbol_row_paths_to_absolute_file_path(self):
+        """Symbol batches must not overwrite the MERGE key path with parser-local paths."""
+        session = _RecordingSession(responses=[_FakeResult()])
+        gb, _ = _make_graph_builder(session)
+        file_data = {
+            "path": "/repo/a.php",
+            "lang": "php",
+            "is_dependency": False,
+            "functions": [],
+            "classes": [],
+            "variables": [
+                {
+                    "name": "$n",
+                    "line_number": 3,
+                    "context": "",
+                    "lang": "php",
+                    "path": "tests/fixtures/sample_projects/sample_project_php/generators_iterators.php",
+                }
+            ],
+            "imports": [],
+            "function_calls": [],
+        }
+
+        gb.add_file_to_graph(file_data, "my_repo", {}, repo_path_str="/repo")
+
+        variable_call = next(
+            call
+            for call in session.calls
+            if "UNWIND $batch AS row" in call["query"] and "MERGE (n:Variable" in call["query"]
+        )
+        assert variable_call["kwargs"]["batch"] == [
+            {
+                "context": "",
+                "lang": "php",
+                "line_number": 3,
+                "name": "$n",
+                "path": "/repo/a.php",
+            }
         ]
 
 
@@ -430,6 +522,24 @@ class TestDeleteRepositoryFromGraph:
 
         queries = [c["query"] for c in session.calls]
         assert any("Repository" in q and ("DELETE" in q or "DETACH DELETE" in q) for q in queries)
+
+    def test_deletes_variable_nodes(self):
+        session = self._make_repo_exists_session()
+        gb, _ = _make_graph_builder(session)
+        gb.delete_repository_from_graph("/my/repo")
+
+        queries = [c["query"] for c in session.calls]
+        assert any("MATCH (n:Variable)" in q for q in queries), "Expected Variable node deletion query"
+
+    def test_deletes_corrupted_symbol_paths_via_uid_fallback(self):
+        session = self._make_repo_exists_session()
+        gb, _ = _make_graph_builder(session)
+        gb.delete_repository_from_graph("/my/repo")
+
+        variable_query = next(
+            c["query"] for c in session.calls if "MATCH (n:Variable)" in c["query"]
+        )
+        assert "n.uid CONTAINS $path" in variable_query
 
 
 # ---------------------------------------------------------------------------

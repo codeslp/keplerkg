@@ -127,6 +127,7 @@ class GraphWriter:
                 batch: List[Dict[str, Any]] = []
                 for item in item_list:
                     row = dict(item)
+                    row["path"] = file_path_str
                     if label == "Function" and "cyclomatic_complexity" not in row:
                         row["cyclomatic_complexity"] = 1
                     batch.append(sanitize_props(row))
@@ -288,35 +289,37 @@ class GraphWriter:
                     batch=[{"name": m["name"], "lang": lang} for m in ruby_modules],
                 )
 
-            js_imports = []
+            source_based_imports = []
             other_imports = []
             for imp in file_data.get("imports", []):
-                if lang == "javascript":
-                    module_name = imp.get("source")
-                    if module_name:
-                        js_imports.append(
-                            {
-                                "module_name": module_name,
-                                "imported_name": imp.get("name", "*"),
-                                "alias": imp.get("alias"),
-                                "line_number": imp.get("line_number"),
-                            }
-                        )
+                module_name = imp.get("source")
+                if module_name:
+                    source_based_imports.append(
+                        {
+                            "module_name": module_name,
+                            "imported_name": imp.get("name", "*"),
+                            "alias": imp.get("alias"),
+                            "line_number": imp.get("line_number"),
+                            "full_import_name": module_name,
+                        }
+                    )
                 else:
                     other_imports.append(imp)
 
-            if js_imports:
+            if source_based_imports:
                 session.run(
                     """
                     UNWIND $batch AS row
                     MATCH (f:File {path: $file_path})
                     MERGE (m:Module {name: row.module_name})
+                    SET m.full_import_name = coalesce(row.full_import_name, m.full_import_name)
                     MERGE (f)-[r:IMPORTS]->(m)
                     SET r.imported_name = row.imported_name,
                         r.alias = row.alias,
-                        r.line_number = row.line_number
+                        r.line_number = row.line_number,
+                        r.full_import_name = row.full_import_name
                 """,
-                    batch=js_imports,
+                    batch=source_based_imports,
                     file_path=file_path_str,
                 )
 
@@ -490,6 +493,13 @@ class GraphWriter:
                 elapsed = time.time() - t0
                 info_logger(f"[CALLS] {label} done: {len(calls)} in {elapsed:.1f}s")
         info_logger(f"[CALLS] All complete: {total_all} CALLS relationships processed.")
+        if total_all == 0:
+            warning_logger(
+                "[CALLS] WARNING: 0 CALLS edges were created. Graph features that "
+                "depend on call relationships (blast-radius, impact, execution-flow, "
+                "fan-out audit rules) will return empty results. "
+                "Enable SCIP indexing or use AST-based call extraction for basic coverage."
+            )
 
     def _create_csharp_inheritance_and_interfaces(
         self, session: Any, file_data: Dict[str, Any], imports_map: dict
@@ -529,10 +539,9 @@ class GraphWriter:
 
                     if is_interface or (base_index > 0 and type_label == "Class"):
                         session.run(
-                            """
-                            MATCH (child {name: $child_name, path: $path})
-                            WHERE child:Class OR child:Struct OR child:Record
-                            MATCH (iface:Interface {name: $interface_name})
+                            f"""
+                            MATCH (child:{type_label} {{name: $child_name, path: $path}})
+                            MATCH (iface:Interface {{name: $interface_name}})
                             MERGE (child)-[:IMPLEMENTS]->(iface)
                         """,
                             child_name=type_item["name"],
@@ -540,12 +549,12 @@ class GraphWriter:
                             interface_name=base_name,
                         )
                     else:
+                        if type_label not in {"Class", "Record", "Interface"}:
+                            continue
                         session.run(
-                            """
-                            MATCH (child {name: $child_name, path: $path})
-                            WHERE child:Class OR child:Record OR child:Interface
-                            MATCH (parent {name: $parent_name})
-                            WHERE parent:Class OR parent:Record OR parent:Interface
+                            f"""
+                            MATCH (child:{type_label} {{name: $child_name, path: $path}})
+                            MATCH (parent:{type_label} {{name: $parent_name}})
                             MERGE (child)-[:INHERITS]->(parent)
                         """,
                             child_name=type_item["name"],
@@ -677,14 +686,54 @@ class GraphWriter:
                 break
             info_logger(f"[DELETE] Removed {deleted} CONTAINS rels for {repo_path_str}")
 
-        for label in ("Function", "Class", "File"):
+        uid_scoped_labels = {
+            "Parameter",
+            "Function",
+            "Class",
+            "Trait",
+            "Variable",
+            "Interface",
+            "Macro",
+            "Struct",
+            "Enum",
+            "Union",
+            "Annotation",
+            "Record",
+            "Property",
+        }
+        for label in (
+            "Parameter",
+            "Function",
+            "Class",
+            "Trait",
+            "Variable",
+            "Interface",
+            "Macro",
+            "Struct",
+            "Enum",
+            "Union",
+            "Annotation",
+            "Record",
+            "Property",
+            "File",
+            "Directory",
+        ):
             while True:
                 with self.driver.session() as session:
-                    result = session.run(
-                        f"MATCH (n:{label}) WHERE n.path STARTS WITH $prefix "
-                        "WITH n LIMIT 10000 DETACH DELETE n RETURN count(n) AS deleted",
-                        prefix=path_prefix,
-                    ).single()
+                    if label in uid_scoped_labels:
+                        result = session.run(
+                            f"MATCH (n:{label}) "
+                            "WHERE n.path STARTS WITH $prefix OR n.uid CONTAINS $path "
+                            "WITH n LIMIT 10000 DETACH DELETE n RETURN count(n) AS deleted",
+                            prefix=path_prefix,
+                            path=repo_path_str,
+                        ).single()
+                    else:
+                        result = session.run(
+                            f"MATCH (n:{label}) WHERE n.path STARTS WITH $prefix "
+                            "WITH n LIMIT 10000 DETACH DELETE n RETURN count(n) AS deleted",
+                            prefix=path_prefix,
+                        ).single()
                     deleted = result["deleted"] if result else 0
                 if deleted == 0:
                     break
