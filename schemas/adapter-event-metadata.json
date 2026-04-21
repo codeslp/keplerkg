@@ -1,0 +1,114 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://codeslp.dev/cgraph/schemas/adapter-event-metadata.json",
+  "title": "cgraph event metadata for btrain handoff events",
+  "description": "Structured cgraph metadata that btrain stores in lane event details. Compact references to artifacts, not full payloads. Supports replay without parsing prose.",
+  "type": "object",
+  "required": ["status"],
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": ["ok", "degraded", "unavailable"],
+      "description": "Overall cgraph integration status for this event. 'ok' = all requested commands succeeded. 'degraded' = some commands failed but handoff proceeded. 'unavailable' = cgraph binary missing or not configured."
+    },
+    "degraded_reason": {
+      "type": "string",
+      "description": "Short reason when status is 'degraded'. Absent when ok."
+    },
+    "review_packet": {
+      "type": "object",
+      "required": ["path", "source", "touched_nodes", "advisory_count"],
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Relative path to the persisted review-packet artifact under .btrain/artifacts/cgraph/."
+        },
+        "source": {
+          "type": "string",
+          "enum": ["diff", "staged", "workdir", "untracked", "locked_files"],
+          "description": "How the packet was built (mirrors review-packet.json source field)."
+        },
+        "touched_nodes": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of code-entity nodes touched by the change."
+        },
+        "advisory_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of advisories in the packet."
+        },
+        "truncated": {
+          "type": "boolean",
+          "description": "True if the packet was truncated by --max-nodes."
+        }
+      },
+      "additionalProperties": false
+    },
+    "audit": {
+      "type": "object",
+      "required": ["path", "warn", "hard"],
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Relative path to the persisted audit summary artifact."
+        },
+        "warn": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of warn-severity findings."
+        },
+        "hard": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of hard-severity findings."
+        },
+        "standards_evaluated": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "How many standards rules were evaluated."
+        }
+      },
+      "additionalProperties": false
+    },
+    "blast_radius": {
+      "type": "object",
+      "properties": {
+        "nodes_in_scope": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "transitive_callers": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "transitive_callees": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "lock_overlaps": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    },
+    "graph_mode": {
+      "type": "string",
+      "enum": ["working/a", "working/b", "working/c", "working/d", "working/e", "working/f", "review/a", "review/b", "review/c", "review/d", "review/e", "review/f", "shared-working"],
+      "description": "Graph-role label. 'working/<lane>' or 'review/<lane>' when worktree isolation is available, 'shared-working' when falling back to shared worktree."
+    },
+    "latency_ms": {
+      "type": "object",
+      "description": "Per-command wall-clock latency in milliseconds.",
+      "patternProperties": {
+        "^[a-z_]+$": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

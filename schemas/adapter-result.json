@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://codeslp.dev/cgraph/schemas/adapter-result.json",
+  "title": "cgraph adapter result",
+  "description": "Normalized result shape returned by btrain's cgraph_adapter for every command invocation. Wraps the cgraph JSON envelope with adapter-level metadata (timeout, availability, stderr).",
+  "type": "object",
+  "required": ["ok", "kind", "timed_out", "unavailable"],
+  "properties": {
+    "ok": {
+      "type": "boolean",
+      "description": "True when the cgraph command exited 0 and returned ok=true in its envelope."
+    },
+    "kind": {
+      "type": "string",
+      "description": "cgraph command name that was invoked (e.g. 'review_packet', 'audit', 'blast_radius', 'manifest')."
+    },
+    "payload": {
+      "description": "Parsed JSON output from the cgraph command. Null when unavailable or timed_out.",
+      "oneOf": [
+        { "type": "object" },
+        { "type": "null" }
+      ]
+    },
+    "timed_out": {
+      "type": "boolean",
+      "description": "True when the command exceeded the adapter timeout budget."
+    },
+    "unavailable": {
+      "type": "boolean",
+      "description": "True when the cgraph binary was not found, manifest probe failed, or the command is not supported by the installed version."
+    },
+    "stderr_summary": {
+      "type": "string",
+      "description": "First 500 chars of stderr for diagnostics. Empty on clean runs."
+    },
+    "latency_ms": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Wall-clock milliseconds from subprocess spawn to result."
+    },
+    "source": {
+      "type": "string",
+      "enum": ["daemon", "subprocess"],
+      "description": "Whether the result came from kkg serve or a direct CLI subprocess."
+    }
+  },
+  "additionalProperties": false
+}
