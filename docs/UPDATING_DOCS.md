@@ -104,7 +104,9 @@ python3 -m http.server 8000
 ### Deployment Notes
 
 - There is **no repo-managed auto-deploy** for `site/` today.
-- If you publish it, use a separate static host or deployment workflow.
+- `scripts/sync-to-kkg.sh` copies `site/` into the sibling `keplerkg` repo working tree, but that does **not** update the live GitHub Pages branch by itself.
+- To prepare the live landing page payload for `keplerkg/gh-pages`, run `bash scripts/publish-site-to-kkg-gh-pages.sh`.
+- Research notes under `research/` are **not** auto-rendered into the landing page. If a note should appear publicly, add a condensed version to `site/index.html`.
 
 ---
 
@@ -156,6 +158,11 @@ npm run build  # Generates dist/ folder
    python3 -m http.server 8000
    ```
    Check the landing page in a browser.
+   If the change should go live on the KeplerKG website, also run:
+   ```bash
+   cd ..
+   bash scripts/publish-site-to-kkg-gh-pages.sh
+   ```
 
 3. **For `website/` changes**:
    ```bash

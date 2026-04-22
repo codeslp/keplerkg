@@ -7,10 +7,13 @@ escaping, Projector tempdir layout, and the typed error paths.
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
+from pathlib import Path
 from unittest.mock import patch
 
+import codegraphcontext_ext.commands.viz_dashboard as viz_dashboard_mod
 from typer.testing import CliRunner
 
 from codegraphcontext_ext.commands.viz_dashboard import (
@@ -30,6 +33,20 @@ from .conftest import (
 )
 
 runner = CliRunner()
+_CAPTURE_SCRIPT_PATH = (
+    Path(__file__).resolve().parents[2]
+    / "research"
+    / "experiments"
+    / "dogfooding"
+    / "scripts"
+    / "capture_graph_screenshots.py"
+)
+_CAPTURE_SPEC = importlib.util.spec_from_file_location(
+    "capture_graph_screenshots", _CAPTURE_SCRIPT_PATH,
+)
+assert _CAPTURE_SPEC and _CAPTURE_SPEC.loader
+capture_graph_screenshots = importlib.util.module_from_spec(_CAPTURE_SPEC)
+_CAPTURE_SPEC.loader.exec_module(capture_graph_screenshots)
 
 
 class _DashboardConn:
@@ -185,6 +202,64 @@ def test_viz_dashboard_prefers_project_kuzu_over_global_default_database(monkeyp
     assert payload["kind"] == "viz_dashboard_serving"
     assert payload["project"] == "cgraph"
     assert os.environ.get("CGC_RUNTIME_DB_TYPE") is None
+
+
+def test_capture_graph_screenshots_extracts_dashboard_url():
+    line = 'cgraph dashboard: serving at http://127.0.0.1:3401/'
+    assert (
+        capture_graph_screenshots._extract_dashboard_url(line)
+        == "http://127.0.0.1:3401/"
+    )
+
+
+def test_viz_dashboard_releases_kuzu_before_serving(monkeypatch, tmp_path):
+    mark_kuzu_backend_available(monkeypatch)
+    graph = {
+        "nodes": [{"id": "u1", "name": "foo", "path": "a.py", "line": 1, "type": "Function"}],
+        "edges": [],
+    }
+    close_calls: list[str] = []
+
+    monkeypatch.setattr(
+        viz_dashboard_mod,
+        "_close_kuzu_connection",
+        lambda: close_calls.append("closed"),
+        raising=False,
+    )
+
+    with patch(
+        "codegraphcontext_ext.commands.viz_dashboard.activate_project",
+    ) as activate_project, patch(
+        "codegraphcontext_ext.commands.viz_dashboard.get_kuzu_connection",
+        return_value=object(),
+    ), patch(
+        "codegraphcontext_ext.commands.viz_dashboard._fetch_graph",
+        return_value=graph,
+    ), patch(
+        "codegraphcontext_ext.commands.viz_dashboard.fetch_embedded_nodes",
+        return_value=[],
+    ), patch(
+        "codegraphcontext_ext.commands.viz_dashboard._prepare_dashboard_serve_dir",
+        return_value=tmp_path,
+    ), patch(
+        "codegraphcontext_ext.commands.viz_dashboard.find_free_port",
+        return_value=43123,
+    ), patch(
+        "codegraphcontext_ext.commands.viz_dashboard.build_server",
+        return_value=object(),
+    ), patch(
+        "codegraphcontext_ext.commands.viz_dashboard.serve_until_interrupted",
+        return_value=None,
+    ):
+        activate_project.return_value.slug = "cgraph"
+
+        result = runner.invoke(
+            build_ext_app(),
+            ["viz-dashboard", "--no-open", "--port", "0"],
+        )
+
+    assert result.exit_code == 0
+    assert close_calls == ["closed"]
 
 
 def test_dashboard_html_wires_three_tabs_including_embeddings():

@@ -99,6 +99,16 @@ def _rule_principle(rule_id: str, category: str) -> str:
     )
 
 
+def _close_kuzu_connection() -> None:
+    """Release the upstream Kuzu singleton once dashboard data is materialized."""
+    try:
+        from codegraphcontext.core.database_kuzu import KuzuDBManager
+
+        KuzuDBManager().close_driver()
+    except Exception:
+        pass
+
+
 _DASHBOARD_TEMPLATE = """<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -2007,6 +2017,7 @@ def viz_dashboard_command(
     # Project-aware dashboard invocations always target the activated Kuzu store,
     # even when the caller's shell has a different global DEFAULT_DATABASE.
     os.environ["CGC_RUNTIME_DB_TYPE"] = "kuzudb"
+    kuzu_released = False
 
     try:
         if layout not in _LAYOUTS:
@@ -2041,6 +2052,8 @@ def viz_dashboard_command(
             limit=limit,
             project_slug=target.slug,
         )
+        _close_kuzu_connection()
+        kuzu_released = True
         bound_port = find_free_port(port or None)
         server = build_server(serve_dir, bound_port, current_project=target.slug)
         url = f"http://127.0.0.1:{bound_port}/"
@@ -2065,6 +2078,8 @@ def viz_dashboard_command(
         serve_until_interrupted(server, url, no_open=no_open, cleanup_dir=serve_dir)
         raise typer.Exit(code=0)
     finally:
+        if not kuzu_released:
+            _close_kuzu_connection()
         if previous_runtime_db is None:
             os.environ.pop("CGC_RUNTIME_DB_TYPE", None)
         else:

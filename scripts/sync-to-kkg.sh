@@ -21,6 +21,12 @@
 #   docs/ (upstream CGC docs, not KeplerKG)
 #   HANDOFF_*.md, FEEDBACK_LOG.md
 #   *.pyc, __pycache__, .venv/
+#
+# Important:
+#   This sync updates the sibling keplerkg repo working tree (usually main).
+#   It does NOT publish the landing page to keplerkg/gh-pages, and it
+#   intentionally excludes research/ notes. Use
+#   scripts/publish-site-to-kkg-gh-pages.sh for the live website payload.
 
 set -euo pipefail
 
