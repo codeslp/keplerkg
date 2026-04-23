@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 import typer
+from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from ..embeddings.fetch import fetch_embedded_nodes
 from ..embeddings.schema import EMBEDDABLE_TABLES, EMBEDDING_COLUMN
@@ -542,7 +543,7 @@ __LOADING_CSS__
        click by the JS below, where the iframe is actually visible. -->
   <div class="pane active" id="pane-2d">
     __LOADER_2D__
-    <iframe id="iframe-2d" srcdoc="__IFRAME_2D__"></iframe>
+    <iframe id="iframe-2d" data-srcdoc="__IFRAME_2D__"></iframe>
   </div>
   <div class="pane" id="pane-3d">
     __LOADER_3D__
@@ -1227,6 +1228,12 @@ document.addEventListener("keydown", (e) => {
       if (window._kkgLoaded) window._kkgLoaded("pane-standards");
     };
   }
+
+  /* Async init 2D pane: allow main UI to paint first before parsing heavy 2D JSON */
+  setTimeout(function() {
+    var defaultPane = document.getElementById("pane-2d");
+    if (defaultPane) promoteDataSrcdoc(defaultPane);
+  }, 100);
 })();
 </script>
 </body>
@@ -1440,28 +1447,36 @@ def viz_dashboard_command(
 
         conn = get_kuzu_connection()
 
-        print("Fetching graph data...", file=sys.stderr)
-        graph = _fetch_graph(conn, limit=limit)
-        if not graph["nodes"]:
-            typer.echo(emit_json({
-                "ok": False,
-                "kind": "empty_graph",
-                "detail": "No nodes found. Run `kkg index` first.",
-            }))
-            raise typer.Exit(code=1)
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            transient=True,
+        ) as progress:
+            task = progress.add_task("Fetching graph data...", total=None)
+            graph = _fetch_graph(conn, limit=limit)
+            if not graph["nodes"]:
+                typer.echo(emit_json({
+                    "ok": False,
+                    "kind": "empty_graph",
+                    "detail": "No nodes found. Run `kkg index` first.",
+                }))
+                raise typer.Exit(code=1)
 
-        print("Fetching embeddings...", file=sys.stderr)
-        emb_nodes = fetch_embedded_nodes(conn)
-        count_details = _collect_dashboard_count_details(conn)
+            progress.update(task, description="Fetching embeddings...")
+            emb_nodes = fetch_embedded_nodes(conn)
+            
+            progress.update(task, description="Gathering dashboard metrics...")
+            count_details = _collect_dashboard_count_details(conn)
 
-        serve_dir = _prepare_dashboard_serve_dir(
-            graph,
-            emb_nodes,
-            layout=layout,
-            limit=limit,
-            project_slug=target.slug,
-            count_details=count_details,
-        )
+            progress.update(task, description="Generating dashboard HTML payload...")
+            serve_dir = _prepare_dashboard_serve_dir(
+                graph,
+                emb_nodes,
+                layout=layout,
+                limit=limit,
+                project_slug=target.slug,
+                count_details=count_details,
+            )
         _close_kuzu_connection()
         kuzu_released = True
         bound_port = find_free_port(port or None)
