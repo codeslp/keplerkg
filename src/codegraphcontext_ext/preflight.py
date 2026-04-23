@@ -1,13 +1,12 @@
 """Fail-closed preflight: block cgraph commands when storage is offline.
 
-Phase 1.5 Step 7.  Shared by the Phase 3 btrain adapter, Phase 6 hooks,
+Phase 1.5 Step 7. Shared by the Phase 3 btrain adapter, Phase 6 hooks,
 and any direct CLI invocation via ``check_storage()``.
 
-The check is deliberately conservative: if KUZUDB_PATH (or HF_HOME)
-points under a mount-point that is not currently mounted, we refuse to
-proceed — upstream's ``KuzuDBManager`` would silently ``makedirs`` the
-path on the internal drive, creating an empty store that masks the real
-data.
+The check is deliberately conservative: if the active local backend path
+(or HF_HOME) points under a mount-point that is not currently mounted,
+we refuse to proceed. Otherwise an embedded backend can silently
+recreate the store on the internal drive, masking the real data.
 """
 
 from __future__ import annotations
@@ -49,26 +48,45 @@ def check_storage() -> dict[str, Any] | None:
     unmounted volume, or *None* if everything looks fine.
 
     Paths checked (in order):
-      1. ``KUZUDB_PATH`` env var
-      2. ``KUZUDB_PATH`` from ``~/.codegraphcontext/.env`` (via upstream)
+      1. Active local backend path from env/config
+      2. Active FalkorDB socket path from env/config when relevant
       3. ``HF_HOME`` env var
 
     Returns ``None`` when all paths are either local or on mounted volumes.
     """
     paths_to_check: list[tuple[str, str]] = []  # (label, path)
 
-    # KUZUDB_PATH — env first, then upstream config
-    kuzu_env = os.environ.get("KUZUDB_PATH")
-    if kuzu_env:
-        paths_to_check.append(("KUZUDB_PATH", kuzu_env))
-    else:
-        try:
-            from codegraphcontext.cli.config_manager import get_config_value
-            kuzu_cfg = get_config_value("KUZUDB_PATH")
-            if kuzu_cfg:
-                paths_to_check.append(("KUZUDB_PATH", kuzu_cfg))
-        except Exception:
-            pass
+    try:
+        from codegraphcontext.cli.config_manager import get_config_value
+    except Exception:
+        get_config_value = None
+
+    configured_backend = (
+        os.environ.get("CGC_RUNTIME_DB_TYPE")
+        or os.environ.get("DEFAULT_DATABASE")
+        or (get_config_value("DEFAULT_DATABASE") if get_config_value else None)
+        or "falkordb"
+    ).lower()
+
+    def _env_or_config(key: str) -> str | None:
+        value = os.environ.get(key)
+        if value:
+            return value
+        if get_config_value is None:
+            return None
+        return get_config_value(key)
+
+    if configured_backend == "kuzudb":
+        kuzu_path = _env_or_config("KUZUDB_PATH")
+        if kuzu_path:
+            paths_to_check.append(("KUZUDB_PATH", kuzu_path))
+    elif configured_backend == "falkordb":
+        falkor_path = _env_or_config("FALKORDB_PATH")
+        if falkor_path:
+            paths_to_check.append(("FALKORDB_PATH", falkor_path))
+        falkor_socket = _env_or_config("FALKORDB_SOCKET_PATH")
+        if falkor_socket:
+            paths_to_check.append(("FALKORDB_SOCKET_PATH", falkor_socket))
 
     hf_home = os.environ.get("HF_HOME")
     if hf_home:
