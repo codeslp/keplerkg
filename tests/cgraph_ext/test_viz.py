@@ -393,10 +393,12 @@ def test_graph_html_uses_cytoscape_and_animate_false():
     }
     html = gen_graph_html(graph)
     assert "cytoscape@" in html, "Cytoscape.js CDN include must be present"
-    assert "cytoscape-dagre" in html, "dagre plugin must be bundled so --layout dagre works"
-    # Every layout in LAYOUT_CONFIGS must disable animation; otherwise users hit
-    # the same jitter the hand-rolled force sim produced.
-    assert html.count("animate: false") >= 5
+    assert "cytoscape-dagre" not in html, "dagre plugin should disappear once dagre layout is removed"
+    assert '<option value="dagre">' not in html
+    assert '<option value="breadthfirst">' not in html
+    # Every remaining layout in LAYOUT_CONFIGS must disable animation;
+    # otherwise users hit the same jitter the hand-rolled force sim produced.
+    assert html.count("animate: false") >= 4
 
 
 def test_viz_graph_rejects_unknown_layout(monkeypatch):
@@ -463,14 +465,26 @@ def test_viz_graph_reports_layout_in_json(monkeypatch, tmp_path):
     ):
         result = runner.invoke(
             _viz_app(),
-            ["viz-graph", "--no-open", "-o", out_file, "--layout", "dagre"],
+            ["viz-graph", "--no-open", "-o", out_file, "--layout", "concentric"],
         )
 
     assert result.exit_code == 0, result.output
     payload = _extract_json(result.output)
-    assert payload["layout"] == "dagre"
+    assert payload["layout"] == "concentric"
     html = open(out_file).read()
-    assert 'INITIAL_LAYOUT = "dagre"' in html
+    assert 'INITIAL_LAYOUT = "concentric"' in html
+
+
+def test_viz_graph_rejects_removed_layouts(monkeypatch):
+    mark_kuzu_backend_available(monkeypatch)
+
+    for removed_layout in ("dagre", "breadthfirst"):
+        result = runner.invoke(
+            _viz_app(),
+            ["viz-graph", "--no-open", "--layout", removed_layout],
+        )
+        assert result.exit_code != 0
+        assert "unknown layout" in result.output or removed_layout in result.output
 
 
 # --- Reducer flag ---

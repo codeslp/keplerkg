@@ -1,13 +1,12 @@
 """kkg viz-graph: interactive graph of code structure via Cytoscape.js.
 
-Standalone HTML output; Cytoscape.js + cytoscape-dagre are loaded from unpkg
-so opening the file requires a live internet connection.  The earlier vanilla
-force-directed sim jittered visibly at 1-2K nodes — Cytoscape layouts compute
-positions with `animate: false` and paint once.
+Standalone HTML output; Cytoscape.js is loaded from unpkg so opening the file
+requires a live internet connection.  The earlier vanilla force-directed sim
+jittered visibly at 1-2K nodes — Cytoscape layouts compute positions with
+`animate: false` and paint once.
 
-Layouts (via --layout): cose (default, stabilized force-directed), dagre
-(hierarchical top-down, good for File→Class→Function), concentric (rings
-by node type), grid / breadthfirst / circle (fully deterministic).
+Layouts (via --layout): cose (default, stabilized force-directed),
+concentric (rings by node type), grid, and circle.
 """
 
 from __future__ import annotations
@@ -30,7 +29,7 @@ COMMAND_NAME = "viz-graph"
 SCHEMA_FILE = "context.json"  # reuse context schema stub for metadata
 SUMMARY = "Interactive Cytoscape.js graph of code structure."
 
-_LAYOUTS = ("cose", "dagre", "concentric", "grid", "breadthfirst", "circle")
+_LAYOUTS = ("cose", "concentric", "grid", "circle")
 
 # Node tables to include.  Order matters for layering.
 _NODE_TABLES = ("File", "Module", "Class", "Function", "Variable")
@@ -184,10 +183,8 @@ _HTML_TEMPLATE = """<!DOCTYPE html>
       <span class="kg-explainer__stats">__NODE_COUNT__ nodes &middot; __EDGE_COUNT__ edges</span>
       <select id="layout-select" title="Layout">
         <option value="cose">cose</option>
-        <option value="dagre">dagre</option>
         <option value="concentric">concentric</option>
         <option value="grid">grid</option>
-        <option value="breadthfirst">breadthfirst</option>
         <option value="circle">circle</option>
       </select>
       <input id="search" type="text" placeholder="Search node name...">
@@ -209,8 +206,8 @@ _HTML_TEMPLATE = """<!DOCTYPE html>
     <div>
       <h3>Layouts</h3>
       <p><strong>cose</strong> &mdash; force-directed; clusters emerge naturally.</p>
-      <p><strong>dagre</strong> &mdash; tidy top-down hierarchy for containment.</p>
       <p><strong>concentric</strong> &mdash; rings by type (Files outer, Variables inner).</p>
+      <p><strong>grid</strong> / <strong>circle</strong> &mdash; deterministic snapshots when you want a quick scan without extra layout work.</p>
     </div>
   </div>
 </section>
@@ -234,8 +231,6 @@ _HTML_TEMPLATE = """<!DOCTYPE html>
 </div>
 <div class="tooltip" id="tooltip"></div>
 <script src="https://unpkg.com/cytoscape@3.28.1/dist/cytoscape.min.js"></script>
-<script src="https://unpkg.com/dagre@0.8.5/dist/dagre.min.js"></script>
-<script src="https://unpkg.com/cytoscape-dagre@2.5.0/cytoscape-dagre.js"></script>
 <script>
 const GRAPH = __GRAPH_JSON__;
 const INITIAL_LAYOUT = "__LAYOUT_NAME__";
@@ -244,8 +239,6 @@ const EDGE_COLORS = { CONTAINS: "#2ea043", CALLS: "#f0883e", IMPORTS: "#58a6ff",
 const SIZES = { File: 18, Module: 14, Class: 16, Function: 10, Variable: 8 };
 const TYPE_RANK = { File: 5, Module: 4, Class: 3, Function: 2, Variable: 1 };
 const DASHBOARD_HIGHLIGHT_ZOOM_SCALE = 0.4;
-
-if (typeof cytoscapeDagre !== "undefined") cytoscape.use(cytoscapeDagre);
 
 const elements = [
   ...GRAPH.nodes.map(n => ({
@@ -259,10 +252,8 @@ const elements = [
 // animate:false — layout computes positions and paints once, no jitter.
 const LAYOUT_CONFIGS = {
   cose:         { name: "cose", animate: false, nodeRepulsion: 8000, idealEdgeLength: 70, nodeOverlap: 12, gravity: 0.25, numIter: 1500 },
-  dagre:        { name: "dagre", rankDir: "TB", animate: false, spacingFactor: 1.1, nodeDimensionsIncludeLabels: true },
   concentric:   { name: "concentric", animate: false, concentric: n => TYPE_RANK[n.data("type")] || 0, levelWidth: () => 1, minNodeSpacing: 30 },
   grid:         { name: "grid", animate: false, avoidOverlap: true, condense: false },
-  breadthfirst: { name: "breadthfirst", animate: false, directed: true, spacingFactor: 1.1 },
   circle:       { name: "circle", animate: false },
 };
 
