@@ -290,6 +290,19 @@ class FalkorDBManager:
         """Returns the database backend type."""
         return 'falkordb'
 
+    def get_conn(self):
+        """Return a Kuzu-compatible ``conn`` over the FalkorDB graph.
+
+        The shim exposes ``execute(query, parameters=...)`` returning an
+        iterable with ``has_next``/``get_next``, matching what the rest of
+        the codegraph extension expects from KuzuDB. Callers that want the
+        Neo4j-style session should keep using ``get_driver().session()``.
+        """
+        self.get_driver()
+        if self._graph is None:
+            raise RuntimeError("FalkorDB graph is not initialized")
+        return FalkorDBKuzuCompatConnection(self._graph)
+
 
     @staticmethod
     def validate_config(db_path: str = None) -> Tuple[bool, Optional[str]]:
@@ -344,21 +357,64 @@ class FalkorDBDriverWrapper:
         pass
 
 
+# Composite-key → uid mapping. Must match KuzuSessionWrapper.uid_map so the
+# same label-keyed MERGE writes the same uid on either backend; downstream
+# consumers (embed, ANN, review-packet, bundle export) key off uid.
+_UID_COMPOSITE_KEYS = {
+    'Function': ['name', 'path', 'line_number'],
+    'Class': ['name', 'path', 'line_number'],
+    'Variable': ['name', 'path', 'line_number'],
+    'Trait': ['name', 'path', 'line_number'],
+    'Interface': ['name', 'path', 'line_number'],
+    'Macro': ['name', 'path', 'line_number'],
+    'Struct': ['name', 'path', 'line_number'],
+    'Enum': ['name', 'path', 'line_number'],
+    'Union': ['name', 'path', 'line_number'],
+    'Annotation': ['name', 'path', 'line_number'],
+    'Record': ['name', 'path', 'line_number'],
+    'Property': ['name', 'path', 'line_number'],
+    'Parameter': ['name', 'path', 'function_line_number'],
+}
+
+_UNWIND_RE = re.compile(r'UNWIND\s+\$(\w+)\s+AS\s+(\w+)')
+_MERGE_PATTERN_RE = re.compile(r'MERGE\s+\((\w+):([^\s\{]+)\s*\{([^}]+)\}\)')
+_UID_ALREADY_PRESENT_RE = re.compile(r'\buid\s*:')
+
+# Kuzu's driver aliases standard Cypher ``type()`` to its internal ``label()``
+# (see database_kuzu.py). FalkorDB implements the portable Cypher name
+# ``labels()`` which returns a list; translate ``label(<ident>)`` projections
+# to ``labels(<ident>)[0]`` in the compat shim so Kuzu-style read queries
+# (hybrid/traverse, blast_radius, impact, execution_flow, review_packet)
+# return node kinds instead of silently failing into empty result sets.
+_KUZU_LABEL_FN_RE = re.compile(r'\blabel\((\w+)\)')
+
+
+def _translate_kuzu_read_query(query: str) -> str:
+    """Translate Kuzu-only read syntax to FalkorDB-compatible Cypher."""
+    return _KUZU_LABEL_FN_RE.sub(r'labels(\1)[0]', query)
+
+
 class FalkorDBSessionWrapper:
     """
     Wrapper class to provide Neo4j session-like interface for FalkorDB Lite.
     """
-    
+
     def __init__(self, graph):
         self.graph = graph
-    
+
     def run(self, query, **parameters):
         """
         Execute a Cypher query on FalkorDB.
         """
+        # Inject synthetic uid into UNWIND+MERGE writes so uid-scoped labels
+        # carry the same primary key contract as Kuzu. Must run before the
+        # schema-query translation below so the SET/MERGE bodies we rewrite
+        # here are still the ones FalkorDB will execute.
+        query, parameters = self._inject_uid_for_unwind_merge(query, parameters)
+
         # Translate Neo4j schema queries to FalkorDB syntax
         query = self._translate_schema_query(query)
-        
+
         try:
             result = self.graph.query(query, parameters)
             return FalkorDBResultWrapper(result)
@@ -367,9 +423,88 @@ class FalkorDBSessionWrapper:
             error_msg = str(e).lower()
             if "already exists" in error_msg or "already created" in error_msg:
                 return FalkorDBResultWrapper(None)
-                
+
             error_logger(f"FalkorDB query failed: {query[:100]}... Error: {e}")
             raise
+
+    def _inject_uid_for_unwind_merge(self, query, parameters):
+        """Mirror ``KuzuSessionWrapper``'s uid synthesis for UNWIND+MERGE writes.
+
+        The indexer writes symbol nodes with
+        ``UNWIND $batch AS row MERGE (n:Label {name: row.name, ...})``.
+        Kuzu's driver wrapper mutates each batch item in place to add
+        ``item['uid']`` and rewrites the MERGE to include
+        ``uid: row.uid``. We do the same here so FalkorDB-backed
+        indexing produces nodes with a stable uid that downstream tools
+        (ANN, review-packet, bundle export) can key off of.
+
+        Hot path: ``session.run`` fires once per MERGE batch during
+        indexing, so the unaffected-query fast path below matters — we
+        early-out via a literal substring check before any regex work.
+        """
+        if "UNWIND" not in query:
+            return query, parameters
+
+        unwind_m = _UNWIND_RE.search(query)
+        if not unwind_m:
+            return query, parameters
+
+        batch_param = unwind_m.group(1)
+        row_var = unwind_m.group(2)
+        batch_data = parameters.get(batch_param)
+        if not isinstance(batch_data, list) or not batch_data:
+            return query, parameters
+
+        for m in list(_MERGE_PATTERN_RE.finditer(query)):
+            var_name, label_raw, props_str = m.groups()
+            label = label_raw.strip('`')
+            pk_parts = _UID_COMPOSITE_KEYS.get(label)
+            if not pk_parts:
+                continue
+            if _UID_ALREADY_PRESENT_RE.search(props_str):
+                continue
+
+            # Resolve pk-part → (source, ref) ONCE per MERGE block; the
+            # props string is shared across every batch item, so the
+            # regex below would otherwise fire pk_parts × len(batch)
+            # times on every write.
+            resolution_ok = True
+            resolved: list[tuple[str, str]] = []  # (source, ref_name)
+            for part in pk_parts:
+                row_ref = re.search(
+                    rf'\b{part}\s*:\s*{re.escape(row_var)}\.(\w+)', props_str
+                )
+                if row_ref:
+                    resolved.append(("row", row_ref.group(1)))
+                    continue
+                param_ref = re.search(rf'\b{part}\s*:\s*\$(\w+)', props_str)
+                if param_ref:
+                    resolved.append(("param", param_ref.group(1)))
+                    continue
+                resolution_ok = False
+                break
+            if not resolution_ok:
+                continue
+
+            all_ok = True
+            for item in batch_data:
+                uid_components = []
+                for source, ref_name in resolved:
+                    val = item.get(ref_name) if source == "row" else parameters.get(ref_name)
+                    if val is None:
+                        all_ok = False
+                        break
+                    uid_components.append(str(val))
+                if not all_ok:
+                    break
+                item['uid'] = ''.join(uid_components)
+
+            if all_ok:
+                new_props = props_str.rstrip() + f", uid: {row_var}.uid"
+                new_merge = f"MERGE ({var_name}:{label_raw} {{{new_props}}})"
+                query = query.replace(m.group(0), new_merge, 1)
+
+        return query, parameters
 
     def _translate_schema_query(self, query: str) -> str:
         """Translate Neo4j schema queries to FalkorDB/RedisGraph syntax."""
@@ -478,3 +613,47 @@ class FalkorDBResultWrapper:
     def __iter__(self):
         """Iterate over results as FalkorDBRecord objects."""
         return iter(self.data())
+
+
+class FalkorDBKuzuCompatResult:
+    """Kuzu-style result iterator backed by FalkorDB's ``result_set``.
+
+    Kuzu callers iterate with ``while result.has_next(): result.get_next()``
+    and index rows positionally. FalkorDB returns a ``QueryResult`` with a
+    ``result_set`` of lists in the same order as the RETURN clause, so we
+    can expose the Kuzu contract by stepping through that list directly.
+    """
+
+    def __init__(self, query_result):
+        self._rows = list(getattr(query_result, "result_set", None) or [])
+        self._idx = 0
+
+    def has_next(self) -> bool:
+        return self._idx < len(self._rows)
+
+    def get_next(self):
+        row = self._rows[self._idx]
+        self._idx += 1
+        return row
+
+
+class FalkorDBKuzuCompatConnection:
+    """Kuzu-style ``conn.execute(query, parameters=...)`` shim over FalkorDB.
+
+    Lets code written against Kuzu's driver (``execute``/``has_next``/
+    ``get_next``) run unchanged on FalkorDB so we don't have to rewrite
+    every query site during the Spec 006 migration. Cypher queries that
+    are portable between Kuzu and FalkorDB continue to work, and the
+    shim auto-translates Kuzu's ``label(<ident>)`` node-kind projection
+    to portable ``labels(<ident>)[0]`` on the way through. Callers that
+    rely on Kuzu-only DDL (``ALTER TABLE``, ``CREATE HNSW INDEX``,
+    ``CALL hnsw_search``) still need backend-specific branches.
+    """
+
+    def __init__(self, graph):
+        self._graph = graph
+
+    def execute(self, query: str, parameters=None):
+        params = parameters or {}
+        result = self._graph.query(_translate_kuzu_read_query(query), params)
+        return FalkorDBKuzuCompatResult(result)
