@@ -279,7 +279,7 @@ def fetch_community_data(
     semantic_threshold: float = 0.85,
     max_semantic_nodes: int = 2000,
 ) -> dict[str, Any]:
-    """Fetch community detection results for the taxonomy dashboard tab.
+    """Fetch community detection results.
 
     Returns:
     {

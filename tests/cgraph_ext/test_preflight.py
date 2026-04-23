@@ -13,6 +13,20 @@ from codegraphcontext_ext.preflight import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _clear_preflight_env(monkeypatch):
+    """Keep preflight expectations stable regardless of prior project activation."""
+    for key in (
+        "CGC_RUNTIME_DB_TYPE",
+        "DEFAULT_DATABASE",
+        "KUZUDB_PATH",
+        "FALKORDB_PATH",
+        "FALKORDB_SOCKET_PATH",
+        "HF_HOME",
+    ):
+        monkeypatch.delenv(key, raising=False)
+
+
 # ---------------------------------------------------------------------------
 # _requires_mount
 # ---------------------------------------------------------------------------

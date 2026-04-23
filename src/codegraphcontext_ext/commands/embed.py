@@ -86,10 +86,11 @@ def _fetch_name_nodes(
 ) -> list[dict[str, Any]]:
     """Fetch a batch of nodes for name embedding."""
     where = "" if force else f"WHERE n.`{NAME_EMBEDDING_COLUMN}` IS NULL "
+    fetch_offset = offset if force else 0
     query = (
         f"MATCH (n:`{table}`) {where}"
         f"RETURN n.uid AS uid, n.name AS name "
-        f"SKIP {offset} LIMIT {batch_size}"
+        f"SKIP {fetch_offset} LIMIT {batch_size}"
     )
     result = conn.execute(query)
     rows: list[dict[str, Any]] = []
@@ -160,7 +161,8 @@ def _run_name_embed(
                     end="\r",
                 )
 
-            offset += _BATCH_SIZE
+            if force:
+                offset += _BATCH_SIZE
 
         print(file=sys.stderr)
         table_stats.append({
@@ -188,10 +190,11 @@ def _fetch_nodes(
 ) -> list[dict[str, Any]]:
     """Fetch a batch of nodes to embed from a table."""
     where = "" if force else f"WHERE n.`{EMBEDDING_COLUMN}` IS NULL "
+    fetch_offset = offset if force else 0
     query = (
         f"MATCH (n:`{table}`) {where}"
         f"RETURN n.uid AS uid, n.name AS name, n.docstring AS docstring, n.source AS source "
-        f"SKIP {offset} LIMIT {batch_size}"
+        f"SKIP {fetch_offset} LIMIT {batch_size}"
     )
     result = conn.execute(query)
     rows: list[dict[str, Any]] = []
@@ -270,11 +273,12 @@ def _run_embed(
                     end="\r",
                 )
 
-            # In non-force mode, successfully embedded nodes disappear
-            # from the IS NULL query, but empty-text nodes persist.
-            # The seen_uids set prevents infinite re-fetch.  We still
-            # advance offset so the DB cursor moves forward.
-            offset += _BATCH_SIZE
+            # In non-force mode, successfully embedded nodes disappear from the
+            # IS NULL query, so we must keep re-reading the first batch rather
+            # than SKIP-ing through a shrinking result set. Empty-text rows
+            # persist, and seen_uids prevents infinite re-fetch of those rows.
+            if force:
+                offset += _BATCH_SIZE
 
         print(file=sys.stderr)  # newline after \r progress
         table_stats.append({
