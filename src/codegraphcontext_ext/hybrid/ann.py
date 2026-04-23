@@ -1,8 +1,13 @@
-"""ANN vector search over KùzuDB HNSW-indexed embedding columns.
+"""ANN vector search over embedding columns.
 
 Given a query string, embeds it via the configured provider and runs
 approximate nearest-neighbor search on Function/Class node embeddings.
 Returns scored seed nodes for the context command.
+
+On KùzuDB this uses HNSW via ``CALL hnsw_search``. On FalkorDB (no
+HNSW procedure) we skip the CALL entirely and use ``_linear_scan``. On
+Kùzu stores built before the HNSW index exists we also fall through to
+the linear path via the ``try/except`` around the CALL.
 """
 
 from __future__ import annotations
@@ -10,6 +15,7 @@ from __future__ import annotations
 import math
 from typing import Any
 
+from ..embeddings.runtime import active_local_backend
 from ..embeddings.schema import EMBEDDABLE_TABLES, EMBEDDING_COLUMN
 
 
@@ -27,26 +33,29 @@ def search(
     """
     target_tables = tables or EMBEDDABLE_TABLES
     all_results: list[dict[str, Any]] = []
+    use_hnsw = active_local_backend() != "falkordb"
 
     for table in target_tables:
-        query = (
-            f"CALL hnsw_search(`{table}`, `{EMBEDDING_COLUMN}`, "
-            f"$query_vec, {k}) "
-            f"YIELD node, distance "
-            f"RETURN node.uid AS uid, node.name AS name, "
-            f"node.path AS file, node.line_number AS line_number, "
-            f"distance "
-            f"LIMIT {k}"
-        )
-        try:
-            result = conn.execute(query, parameters={"query_vec": query_vector})
-            all_results.extend(_rows_to_results(result, table))
-            continue
-        except Exception:
-            # New project stores can be searchable before HNSW is available on
-            # the installed Kùzu build. Fall back to a linear embedding scan.
-            fallback = _linear_scan(conn, table, query_vector, k=k)
-            all_results.extend(fallback)
+        if use_hnsw:
+            query = (
+                f"CALL hnsw_search(`{table}`, `{EMBEDDING_COLUMN}`, "
+                f"$query_vec, {k}) "
+                f"YIELD node, distance "
+                f"RETURN node.uid AS uid, node.name AS name, "
+                f"node.path AS file, node.line_number AS line_number, "
+                f"distance "
+                f"LIMIT {k}"
+            )
+            try:
+                result = conn.execute(query, parameters={"query_vec": query_vector})
+                all_results.extend(_rows_to_results(result, table))
+                continue
+            except Exception:
+                # New project stores can be searchable before HNSW is available on
+                # the installed Kùzu build. Fall back to a linear embedding scan.
+                pass
+        fallback = _linear_scan(conn, table, query_vector, k=k)
+        all_results.extend(fallback)
 
     # Sort by score descending, take top-k across all tables
     all_results.sort(key=lambda r: r["score"], reverse=True)

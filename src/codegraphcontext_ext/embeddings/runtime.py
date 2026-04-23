@@ -14,7 +14,7 @@ from ._upstream import (
     is_neo4j_configured,
 )
 
-SUPPORTED_BACKEND = "kuzudb"
+SUPPORTED_BACKENDS = frozenset({"kuzudb", "falkordb"})
 DEFAULT_PROVIDER = "local"
 
 _PROVIDER_DEFAULTS = {
@@ -86,33 +86,57 @@ def resolve_requested_backend() -> str:
     if is_falkordb_available():
         return "falkordb"
     if is_kuzudb_available():
-        return SUPPORTED_BACKEND
+        return "kuzudb"
     if is_neo4j_configured():
         return "neo4j"
     return "unavailable"
 
 
+def active_local_backend() -> str:
+    """Return the active embedded backend, defaulting to ``kuzudb``.
+
+    Thin wrapper over ``resolve_requested_backend`` that coerces unknown
+    or remote values down to the nearest local backend. Canonical helper
+    for modules that branch on ``kuzudb`` vs. ``falkordb`` (schema,
+    ANN, io/kuzu). Kept here rather than duplicated per module.
+    """
+    backend = (resolve_requested_backend() or "").lower()
+    return backend if backend in SUPPORTED_BACKENDS else "kuzudb"
+
+
 def probe_backend_support() -> dict[str, object]:
-    """Report whether the current backend is usable for cgraph embeddings."""
+    """Report whether the current backend is usable for cgraph embeddings.
+
+    Admits ``kuzudb`` or ``falkordb``. Per-backend write/read details
+    live in ``embeddings/schema.py`` and ``hybrid/ann.py``.
+    """
 
     backend = resolve_requested_backend()
-    if backend != SUPPORTED_BACKEND:
+    if backend not in SUPPORTED_BACKENDS:
         return {
             "ok": False,
             "kind": "unsupported_backend",
             "backend": backend,
             "detail": (
-                f"cgraph v1 requires kuzu; found {backend}. "
-                "Set CGC backend to kuzu and re-index."
+                f"cgraph embeddings support kuzudb or falkordb; found {backend}. "
+                "Set CGC backend to kuzudb or falkordb and re-index."
             ),
         }
 
-    if not is_kuzudb_available():
+    if backend == "kuzudb" and not is_kuzudb_available():
         return {
             "ok": False,
             "kind": "missing_backend_dependency",
             "backend": backend,
             "detail": "KuzuDB is not installed. Run `pip install kuzu` before using cgraph embeddings.",
+        }
+
+    if backend == "falkordb" and not is_falkordb_available():
+        return {
+            "ok": False,
+            "kind": "missing_backend_dependency",
+            "backend": backend,
+            "detail": "FalkorDB Lite is not installed. Run `pip install falkordblite` before using cgraph embeddings.",
         }
 
     return {
