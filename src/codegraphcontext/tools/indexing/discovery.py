@@ -1,9 +1,10 @@
 """Enumerate files to index with ignore rules."""
 
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import List, Optional, Set, Tuple
 
 from ...core.cgcignore import build_ignore_spec
+from ...core.code_only_filter import partition_by_code_only
 from ...utils.debug_log import debug_log, warning_logger
 from .constants import DEFAULT_IGNORE_PATTERNS
 
@@ -11,9 +12,16 @@ from .constants import DEFAULT_IGNORE_PATTERNS
 def discover_files_to_index(
     path: Path,
     cgcignore_path: Optional[str] = None,
+    code_only: bool = False,
+    parseable_extensions: Optional[Set[str]] = None,
 ) -> Tuple[List[Path], Path]:
     """
     Returns (files, ignore_root). *ignore_root* is used for .cgcignore relative matching.
+
+    When ``code_only`` is True, the result is additionally restricted to
+    AST-parseable source files and a small set of structural configs (see
+    :mod:`codegraphcontext.core.code_only_filter`). ``parseable_extensions``
+    must be provided in that mode — callers pass ``graph_builder.parsers.keys()``.
     """
     ignore_root = path.resolve() if path.is_dir() else path.resolve().parent
 
@@ -60,5 +68,15 @@ def discover_files_to_index(
             except ValueError:
                 filtered_files.append(f)
         files = filtered_files
+
+    if code_only:
+        if parseable_extensions is None:
+            raise ValueError(
+                "discover_files_to_index(code_only=True) requires parseable_extensions"
+            )
+        kept, skipped = partition_by_code_only(files, set(parseable_extensions))
+        if skipped:
+            debug_log(f"code-only filter dropped {len(skipped)} non-code files")
+        files = kept
 
     return files, ignore_root

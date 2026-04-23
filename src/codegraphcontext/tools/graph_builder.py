@@ -23,6 +23,42 @@ from .indexing.scip_pipeline import name_from_symbol, run_scip_index_async
 from .tree_sitter_parser import TreeSitterParser
 
 
+# Extension → tree-sitter language name. Module-level so callers (e.g. the
+# code-only preview walk in `kkg index --code-only`) can inspect what kkg will
+# actually parse without instantiating GraphBuilder.
+PARSER_EXTENSIONS: Dict[str, str] = {
+    ".py": "python",
+    ".ipynb": "python",
+    ".js": "javascript",
+    ".jsx": "javascript",
+    ".mjs": "javascript",
+    ".cjs": "javascript",
+    ".go": "go",
+    ".ts": "typescript",
+    ".tsx": "tsx",
+    ".cpp": "cpp",
+    ".h": "cpp",
+    ".hpp": "cpp",
+    ".hh": "cpp",
+    ".rs": "rust",
+    ".c": "c",
+    ".java": "java",
+    ".rb": "ruby",
+    ".cs": "c_sharp",
+    ".php": "php",
+    ".kt": "kotlin",
+    ".scala": "scala",
+    ".sc": "scala",
+    ".swift": "swift",
+    ".hs": "haskell",
+    ".dart": "dart",
+    ".pl": "perl",
+    ".pm": "perl",
+    ".ex": "elixir",
+    ".exs": "elixir",
+}
+
+
 class GraphBuilder:
     """Module for building and managing the code graph (Neo4j / Falkor / Kùzu)."""
 
@@ -32,37 +68,7 @@ class GraphBuilder:
         self.loop = loop
         self.driver = self.db_manager.get_driver()
         self._writer = GraphWriter(self.driver)
-        self.parsers = {
-            ".py": "python",
-            ".ipynb": "python",
-            ".js": "javascript",
-            ".jsx": "javascript",
-            ".mjs": "javascript",
-            ".cjs": "javascript",
-            ".go": "go",
-            ".ts": "typescript",
-            ".tsx": "tsx",
-            ".cpp": "cpp",
-            ".h": "cpp",
-            ".hpp": "cpp",
-            ".hh": "cpp",
-            ".rs": "rust",
-            ".c": "c",
-            ".java": "java",
-            ".rb": "ruby",
-            ".cs": "c_sharp",
-            ".php": "php",
-            ".kt": "kotlin",
-            ".scala": "scala",
-            ".sc": "scala",
-            ".swift": "swift",
-            ".hs": "haskell",
-            ".dart": "dart",
-            ".pl": "perl",
-            ".pm": "perl",
-            ".ex": "elixir",
-            ".exs": "elixir",
-        }
+        self.parsers = dict(PARSER_EXTENSIONS)
         self._parsed_cache = {}
         self.create_schema()
 
@@ -261,7 +267,12 @@ class GraphBuilder:
         return name_from_symbol(symbol)
 
     async def build_graph_from_path_async(
-        self, path: Path, is_dependency: bool = False, job_id: str = None, cgcignore_path: str = None
+        self,
+        path: Path,
+        is_dependency: bool = False,
+        job_id: str = None,
+        cgcignore_path: str = None,
+        code_only: bool = False,
     ):
         try:
             scip_enabled = (get_config_value("SCIP_INDEXER") or "false").lower() == "true"
@@ -298,6 +309,7 @@ class GraphBuilder:
                 self.get_parser,
                 self.parse_file,
                 self.add_minimal_file_node,
+                code_only=code_only,
             )
         except Exception as e:
             error_message = str(e)

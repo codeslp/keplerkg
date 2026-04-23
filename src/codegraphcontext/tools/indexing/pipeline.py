@@ -29,6 +29,7 @@ async def run_tree_sitter_index_async(
     get_parser: Callable[[str], Any],
     parse_file: Callable[[Path, Path, bool], Dict[str, Any]],
     add_minimal_file_node: Callable[[Path, Path, bool], None],
+    code_only: bool = False,
 ) -> None:
     """Parse all discovered files, write symbols, then inheritance + CALLS."""
     if job_id:
@@ -37,7 +38,12 @@ async def run_tree_sitter_index_async(
     writer.add_repository_to_graph(path, is_dependency)
     repo_name = path.name
 
-    files, _ignore_root = discover_files_to_index(path, cgcignore_path)
+    files, _ignore_root = discover_files_to_index(
+        path,
+        cgcignore_path,
+        code_only=code_only,
+        parseable_extensions=set(parsers.keys()) if code_only else None,
+    )
 
     if job_id:
         job_manager.update_job(job_id, total_files=len(files))

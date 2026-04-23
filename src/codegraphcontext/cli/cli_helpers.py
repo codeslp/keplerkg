@@ -118,7 +118,13 @@ def _initialize_services(cli_context_flag: Optional[str] = None) -> tuple[Any, A
     return db_manager, graph_builder, code_finder, ctx
 
 
-async def _run_index_with_progress(graph_builder: GraphBuilder, path_obj: Path, is_dependency: bool = False, cgcignore_path: str = None):
+async def _run_index_with_progress(
+    graph_builder: GraphBuilder,
+    path_obj: Path,
+    is_dependency: bool = False,
+    cgcignore_path: str = None,
+    code_only: bool = False,
+):
     """Internal helper to run indexing with a Live progress bar."""
     job_id = graph_builder.job_manager.create_job(str(path_obj), is_dependency=is_dependency)
     
@@ -142,7 +148,13 @@ async def _run_index_with_progress(graph_builder: GraphBuilder, path_obj: Path, 
         )
 
         indexing_task = asyncio.create_task(
-            graph_builder.build_graph_from_path_async(path_obj, is_dependency=is_dependency, job_id=job_id, cgcignore_path=cgcignore_path)
+            graph_builder.build_graph_from_path_async(
+                path_obj,
+                is_dependency=is_dependency,
+                job_id=job_id,
+                cgcignore_path=cgcignore_path,
+                code_only=code_only,
+            )
         )
 
         from ..core.jobs import JobStatus
@@ -176,7 +188,7 @@ async def _run_index_with_progress(graph_builder: GraphBuilder, path_obj: Path, 
             raise e
 
 
-def index_helper(path: str, context: Optional[str] = None):
+def index_helper(path: str, context: Optional[str] = None, code_only: bool = False):
     """Synchronously indexes a repository in a given context."""
     time_start = time.time()
     services = _initialize_services(context)
@@ -224,7 +236,7 @@ def index_helper(path: str, context: Optional[str] = None):
     console.print(f"Starting indexing for: {path_obj}")
 
     try:
-        asyncio.run(_run_index_with_progress(graph_builder, path_obj, is_dependency=False, cgcignore_path=ctx.cgcignore_path))
+        asyncio.run(_run_index_with_progress(graph_builder, path_obj, is_dependency=False, cgcignore_path=ctx.cgcignore_path, code_only=code_only))
         time_end = time.time()
         elapsed = time_end - time_start
         console.print(f"[green]Successfully finished indexing: {path} in {elapsed:.2f} seconds[/green]")
@@ -489,7 +501,7 @@ def visualize_helper(repo_path: Optional[str] = None, port: int = 8000, context:
         db_manager.close_driver()
 
 
-def reindex_helper(path: str, context: Optional[str] = None):
+def reindex_helper(path: str, context: Optional[str] = None, code_only: bool = False):
     """Force re-index by deleting and rebuilding the repository."""
     time_start = time.time()
     services = _initialize_services(context)
@@ -521,7 +533,7 @@ def reindex_helper(path: str, context: Optional[str] = None):
     console.print(f"[cyan]Re-indexing: {path_obj}[/cyan]")
     
     try:
-        asyncio.run(_run_index_with_progress(graph_builder, path_obj, is_dependency=False, cgcignore_path=ctx.cgcignore_path))
+        asyncio.run(_run_index_with_progress(graph_builder, path_obj, is_dependency=False, cgcignore_path=ctx.cgcignore_path, code_only=code_only))
         time_end = time.time()
         elapsed = time_end - time_start
         console.print(f"[green]Successfully re-indexed: {path} in {elapsed:.2f} seconds[/green]")

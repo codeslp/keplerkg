@@ -293,6 +293,74 @@ def _activate_project_target(project: Optional[str], *, start_dir: Optional[Path
     activate_project(project, start_dir=start_dir)
 
 
+def _confirm_code_only(path: Path, *, assume_yes: bool = False) -> bool:
+    """Preview --code-only filter and prompt the user to confirm.
+
+    Walks *path*, applies the same ignore rules + code-only whitelist that
+    the indexer will use, and prints a before/after summary plus a mild
+    warning about what gets excluded. Returns True if the user accepts
+    (or if ``assume_yes`` is set), False otherwise.
+    """
+    from codegraphcontext.core.code_only_filter import partition_by_code_only
+    from codegraphcontext.tools.graph_builder import PARSER_EXTENSIONS
+    from codegraphcontext.tools.indexing.discovery import discover_files_to_index
+
+    target = path.resolve()
+    if not target.exists():
+        console.print(f"[red]Error: Path does not exist: {target}[/red]")
+        return False
+
+    try:
+        files, _ = discover_files_to_index(target, cgcignore_path=None, code_only=False)
+    except Exception as e:
+        console.print(f"[red]Could not scan {target}: {e}[/red]")
+        return False
+
+    parseable = set(PARSER_EXTENSIONS.keys())
+    kept, skipped = partition_by_code_only(files, parseable)
+
+    skipped_size = 0
+    for f in skipped:
+        try:
+            skipped_size += f.stat().st_size
+        except OSError:
+            pass
+    skipped_mb = skipped_size / (1024 * 1024)
+
+    console.print()
+    console.print(f"[bold cyan]--code-only preview for[/bold cyan] {target}")
+    console.print(f"  kept:    [green]{len(kept):>6}[/green] files (AST-parseable code + structural configs)")
+    console.print(f"  skipped: [yellow]{len(skipped):>6}[/yellow] files ({skipped_mb:.1f} MB)")
+    console.print()
+    console.print(
+        "[dim]Implication:[/dim] the graph will reflect only source code and "
+        "the handful of configs that define project structure (pyproject.toml, "
+        "package.json, Dockerfile, *.proto/.sql/.graphql, lint configs). Docs, "
+        "research notes, training data, JSON fixtures, binaries, and generated "
+        "artifacts will [bold]not[/bold] be represented — semantic search over "
+        "prose content will miss those files."
+    )
+    console.print()
+
+    if assume_yes:
+        console.print("[dim]--yes supplied; proceeding.[/dim]")
+        return True
+
+    # Print the prompt via the same Rich console, then read from stdin, so
+    # the prompt can't appear ahead of the preview when stdout is piped.
+    console.print("Proceed with --code-only? \\[y/N]: ", end="")
+    try:
+        sys.stdout.flush()
+    except Exception:
+        pass
+    try:
+        answer = sys.stdin.readline()
+    except (EOFError, KeyboardInterrupt):
+        return False
+
+    return answer.strip().lower() in {"y", "yes"}
+
+
 def _current_database_backend(default: str = "falkordb") -> str:
     return (
         os.environ.get("CGC_RUNTIME_DB_TYPE")
@@ -1276,11 +1344,22 @@ def index(
         "--project",
         help=PROJECT_OPTION_HELP,
     ),
+    code_only: bool = typer.Option(
+        False,
+        "--code-only",
+        help="Walk only AST-parseable code and a small set of structural configs (pyproject.toml, package.json, Dockerfile, schema files, lint configs). Skips docs, media, data, and generated artifacts. Prompts for confirmation unless --yes is passed.",
+    ),
+    yes: bool = typer.Option(
+        False,
+        "--yes",
+        "-y",
+        help="Skip the --code-only confirmation prompt.",
+    ),
 ):
     """
     Indexes a directory or file by adding it to the code graph.
     If no path is provided, it indexes the current directory.
-    
+
     Use --force to delete the existing index and rebuild from scratch.
     """
     _load_credentials()
@@ -1288,11 +1367,15 @@ def index(
         path = str(Path.cwd())
     _activate_project_target(project, start_dir=Path(path))
 
+    if code_only and not _confirm_code_only(Path(path), assume_yes=yes):
+        console.print("[yellow]Aborted.[/yellow]")
+        raise typer.Exit(code=1)
+
     if force:
         console.print("[yellow]Force re-indexing (--force flag detected)[/yellow]")
-        reindex_helper(path, context)
+        reindex_helper(path, context, code_only=code_only)
     else:
-        index_helper(path, context)
+        index_helper(path, context, code_only=code_only)
 
     # Post-index check: the current Kuzu-backed graph adapters still rely on
     # CALLS edges, so keep this warning only on Kuzu-backed invocations.
