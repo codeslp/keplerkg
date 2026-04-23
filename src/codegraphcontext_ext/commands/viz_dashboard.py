@@ -1,9 +1,10 @@
-"""kkg viz-dashboard: server-backed 3-tab viz dashboard.
+"""kkg viz-dashboard: server-backed multi-tab visualization dashboard.
 
-Three tabs in one browser window:
+Primary tabs in one browser window:
   1. 2D Graph   — Cytoscape.js (srcdoc iframe)
   2. 3D Graph   — 3d-force-graph (srcdoc iframe)
   3. Embeddings — TF Embedding Projector (iframe src="projector/")
+  4. Standards  — live graph-backed standards configuration + violations
 
 The Projector can't be srcdoc-inlined — its JS does real fetch() calls for
 projector_config.json and the TSVs, which fail from a srcdoc iframe's
@@ -18,11 +19,9 @@ from __future__ import annotations
 import html as _html
 import json
 import os
-import re
 import shutil
 import sys
 import tempfile
-from collections import Counter
 from pathlib import Path
 from typing import Any, Optional
 
@@ -54,7 +53,7 @@ from .viz_graph import (
 
 COMMAND_NAME = "viz-dashboard"
 SCHEMA_FILE = "context.json"
-SUMMARY = "Unified dashboard: 2D graph, 3D graph, embeddings scatter, and TF Projector as tabs."
+SUMMARY = "Unified dashboard: 2D graph, 3D graph, embeddings, and standards as tabs."
 
 _CATEGORY_PRINCIPLES: dict[str, str] = {
     "clarity": "Public interfaces should explain intent and expectations clearly.",
@@ -498,7 +497,6 @@ __LOADING_CSS__
     <button class="tab" data-pane="pane-3d">3D Graph</button>
     <button class="tab" data-pane="pane-embeddings">Embeddings</button>
     <button class="tab" data-pane="pane-standards">Standards</button>
-    <button class="tab" data-pane="pane-taxonomy">Taxonomy</button>
   </div>
   <button type="button" id="about-btn">About</button>
 </div>
@@ -1025,573 +1023,6 @@ __LOADING_CSS__
     })();
     </script>
   </div>
-  <!-- ═══ TAXONOMY TAB ═══ -->
-  <div class="pane" id="pane-taxonomy">
-    __LOADER_TAX__
-    <div style="display:flex;flex-direction:column;width:100%;height:100%;position:absolute;inset:0;font-family:'Antic',sans-serif;color:#c9d1d9">
-      <div style="display:flex;align-items:center;gap:0;background:#0d1117;border-bottom:2px solid #30363d;flex-shrink:0;padding:0 12px">
-        <button class="tab active" data-tax-pane="tax-structure" style="padding:8px 16px;font-size:13px;color:#58a6ff;background:transparent;border:none;border-bottom:2px solid #58a6ff;cursor:pointer;margin-bottom:-2px">Structure</button>
-        <button class="tab" data-tax-pane="tax-inheritance" style="padding:8px 16px;font-size:13px;color:#8b949e;background:transparent;border:none;border-bottom:2px solid transparent;cursor:pointer;margin-bottom:-2px">Inheritance</button>
-        <button class="tab" data-tax-pane="tax-communities" style="padding:8px 16px;font-size:13px;color:#8b949e;background:transparent;border:none;border-bottom:2px solid transparent;cursor:pointer;margin-bottom:-2px">Communities</button>
-        <span style="flex:1"></span>
-        <input id="tax-search" type="text" placeholder="Search nodes..." style="padding:4px 8px;background:#161b22;color:#c9d1d9;border:1px solid #30363d;font-size:12px;width:160px;font-family:inherit">
-        <span id="tax-stats" style="font-size:11px;color:#8b949e;margin-left:12px"></span>
-      </div>
-      <section class="emb-explainer" id="tax-explainer" aria-label="Taxonomy graph guide">
-        <div class="emb-explainer__bar">
-          <div class="emb-explainer__lede" id="tax-explainer-lede">
-            <strong>Structure</strong> shows the containment map from repository and directories down to files and symbols, so you can trace where code lives before you drill into relationships.
-          </div>
-          <div class="emb-explainer__controls">
-            <span class="emb-explainer__badge" id="tax-explainer-current">Structure</span>
-            <button type="button" id="tax-explainer-toggle" class="emb-explainer__chevron" aria-expanded="true" aria-controls="tax-explainer-body" title="Hide tips"><span class="chev">&#9662;</span></button>
-          </div>
-        </div>
-        <div class="emb-explainer__body" id="tax-explainer-body">
-          <article class="emb-explainer__panel active" data-tax-explainer-panel="tax-structure">
-            <span class="emb-explainer__eyebrow">Structure</span>
-            <p><strong>Containment map.</strong> Read the repo as nested containers: repo → directories → files → symbols.</p>
-            <p><strong>Use it for</strong> locating where a feature sits, checking file ownership, and narrowing depth before you inspect details.</p>
-            <p><strong>Interaction</strong> Use the depth slider to peel layers back and tap a node to isolate its subtree.</p>
-          </article>
-          <article class="emb-explainer__panel" data-tax-explainer-panel="tax-inheritance">
-            <span class="emb-explainer__eyebrow">Inheritance</span>
-            <p><strong>Type hierarchy.</strong> This view shows `INHERITS` and `IMPLEMENTS` edges between classes, interfaces, traits, and structs.</p>
-            <p><strong>Use it for</strong> spotting deep hierarchies, shared base types, and where interface contracts fan out into concrete implementations.</p>
-            <p><strong>Interaction</strong> Tap a node to keep its immediate inheritance neighborhood bright while the rest of the graph fades back.</p>
-          </article>
-          <article class="emb-explainer__panel" data-tax-explainer-panel="tax-communities">
-            <span class="emb-explainer__eyebrow">Communities</span>
-            <p><strong>Semantic neighborhoods.</strong> Communities cluster symbols that are tightly connected structurally and semantically.</p>
-            <p><strong>Use it for</strong> identifying feature slices, bridge-heavy modules, and cross-boundary seams that may need cleanup.</p>
-            <p><strong>Interaction</strong> Compare community cards, cross-edge counts, and highlighted nodes to see which clusters are cohesive versus leaky.</p>
-          </article>
-        </div>
-      </section>
-
-      <!-- STRUCTURE SUB-TAB -->
-      <div id="tax-structure" style="flex:1;position:relative">
-        <div id="tax-structure-cy" style="position:absolute;inset:0;background:#0d1117"></div>
-        <div style="position:absolute;bottom:16px;left:16px;display:flex;gap:12px;align-items:center;background:rgba(13,17,23,0.85);padding:6px 12px;border:1px solid #30363d;font-size:11px;color:#8b949e">
-          <label>Depth <input type="range" id="tax-depth" min="1" max="5" value="3" style="width:80px;vertical-align:middle"> <span id="tax-depth-val">3</span></label>
-        </div>
-        <div id="tax-structure-legend" style="position:absolute;top:12px;right:12px;background:rgba(13,17,23,0.85);padding:8px 12px;border:1px solid #30363d;font-size:10px;color:#8b949e;display:flex;flex-direction:column;gap:2px"></div>
-      </div>
-
-      <!-- INHERITANCE SUB-TAB -->
-      <div id="tax-inheritance" style="flex:1;position:relative;display:none">
-        <div id="tax-inheritance-cy" style="position:absolute;inset:0;background:#0d1117"></div>
-        <div id="tax-inh-stats" style="position:absolute;top:12px;right:12px;background:rgba(13,17,23,0.85);padding:8px 12px;border:1px solid #30363d;font-size:11px;color:#8b949e"></div>
-      </div>
-
-      <!-- COMMUNITIES SUB-TAB -->
-      <div id="tax-communities" style="flex:1;position:relative;display:none">
-        <div id="tax-communities-cy" style="position:absolute;inset:0;background:#0d1117"></div>
-        <div id="tax-comm-stats" style="position:absolute;top:12px;right:12px;background:rgba(13,17,23,0.85);padding:8px 12px;border:1px solid #30363d;font-size:11px;color:#8b949e"></div>
-        <div id="tax-comm-legend" style="position:absolute;top:12px;left:12px;background:rgba(13,17,23,0.85);padding:8px 12px;border:1px solid #30363d;font-size:10px;color:#8b949e;display:flex;flex-direction:column;gap:2px;max-height:40%;overflow-y:auto"></div>
-        <div id="tax-comm-profiles" style="position:absolute;right:12px;bottom:12px;width:360px;max-width:calc(100% - 24px);max-height:52%;overflow-y:auto;background:rgba(13,17,23,0.9);border:1px solid #30363d;padding:10px 12px;display:flex;flex-direction:column;gap:10px"></div>
-      </div>
-    </div>
-
-    <script>
-    (function() {
-      const taxonomyData = __TAXONOMY_JSON__;
-      const TAX_COLORS = {
-        Repository:'#f0883e', Directory:'#d29922', File:'#8b949e', Module:'#f778ba',
-        Class:'#d2a8ff', Function:'#7ee787', Variable:'#79c0ff', Interface:'#58a6ff',
-        Struct:'#f778ba', Enum:'#ff7b72', Trait:'#a5d6ff', Macro:'#ffa657',
-        Union:'#ff7b72', Annotation:'#d2a8ff', Record:'#f778ba', Property:'#79c0ff',
-      };
-      const TAX_SIZES = {
-        Repository:28, Directory:22, File:16, Module:14,
-        Class:14, Function:10, Variable:8, Interface:14,
-      };
-      const TAX_EXPLAINER_COPY = {
-        'tax-structure': {
-          label: 'Structure',
-          lede: '<strong>Structure</strong> shows the containment map from repository and directories down to files and symbols, so you can trace where code lives before you drill into relationships.',
-        },
-        'tax-inheritance': {
-          label: 'Inheritance',
-          lede: '<strong>Inheritance</strong> isolates the type hierarchy, making it easier to read parent-child contracts, implementations, and deep base-class chains.',
-        },
-        'tax-communities': {
-          label: 'Communities',
-          lede: '<strong>Communities</strong> groups nodes into semantic and structural neighborhoods so you can spot cohesive feature slices and leaky cross-boundary bridges.',
-        },
-      };
-
-      function updateTaxonomyExplainer(paneId) {
-        const meta = TAX_EXPLAINER_COPY[paneId] || TAX_EXPLAINER_COPY['tax-structure'];
-        const ledeEl = document.getElementById('tax-explainer-lede');
-        const currentEl = document.getElementById('tax-explainer-current');
-        if (ledeEl) ledeEl.innerHTML = meta.lede;
-        if (currentEl) currentEl.textContent = meta.label;
-        document.querySelectorAll('[data-tax-explainer-panel]').forEach(panel => {
-          panel.classList.toggle('active', panel.dataset.taxExplainerPanel === paneId);
-        });
-      }
-
-      // ── Sub-tab switching ──
-      document.querySelectorAll('[data-tax-pane]').forEach(btn => {
-        btn.addEventListener('click', () => {
-          document.querySelectorAll('[data-tax-pane]').forEach(b => {
-            b.style.color='#8b949e'; b.style.borderBottomColor='transparent'; b.classList.remove('active');
-          });
-          btn.style.color='#58a6ff'; btn.style.borderBottomColor='#58a6ff'; btn.classList.add('active');
-          document.getElementById('tax-structure').style.display = btn.dataset.taxPane==='tax-structure'?'block':'none';
-          document.getElementById('tax-inheritance').style.display = btn.dataset.taxPane==='tax-inheritance'?'block':'none';
-          document.getElementById('tax-communities').style.display = btn.dataset.taxPane==='tax-communities'?'flex':'none';
-          updateTaxonomyExplainer(btn.dataset.taxPane);
-        });
-      });
-      updateTaxonomyExplainer('tax-structure');
-
-      // ── Lazy Cytoscape loader ──
-      function loadScript(src, cb) {
-        const s = document.createElement('script');
-        s.src = src; s.onload = cb; document.head.appendChild(s);
-      }
-
-      function escapeTaxHtml(value) {
-        return String(value ?? '').replace(/[&<>"']/g, ch => ({
-          '&': '&amp;',
-          '<': '&lt;',
-          '>': '&gt;',
-          '"': '&quot;',
-          "'": '&#39;',
-        }[ch]));
-      }
-
-      function initTaxonomyViews() {
-        if (typeof cytoscapeDagre !== 'undefined') cytoscape.use(cytoscapeDagre);
-        initStructureView();
-        initInheritanceView();
-        initCommunitiesView();
-
-        const taxExplainer = document.getElementById('tax-explainer');
-        const taxExplainerToggle = document.getElementById('tax-explainer-toggle');
-        if (taxExplainer && taxExplainerToggle && !taxExplainer.dataset.boundToggle) {
-          taxExplainerToggle.addEventListener('click', () => {
-            const collapsed = taxExplainer.classList.toggle('collapsed');
-            taxExplainerToggle.setAttribute('aria-expanded', String(!collapsed));
-            taxExplainerToggle.setAttribute('title', collapsed ? 'Show tips' : 'Hide tips');
-          });
-          taxExplainer.dataset.boundToggle = 'true';
-        }
-      }
-
-      // ── Structure view ──
-      function initStructureView() {
-        const data = taxonomyData && taxonomyData.structure;
-        if (!data || !data.nodes || data.nodes.length === 0) {
-          document.getElementById('tax-structure-cy').innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#8b949e">No structure data. Index a repository first.</div>';
-          return;
-        }
-
-        const depthSlider = document.getElementById('tax-depth');
-        const depthVal = document.getElementById('tax-depth-val');
-        const statsEl = document.getElementById('tax-stats');
-        const legendEl = document.getElementById('tax-structure-legend');
-
-        // Compute depth per node
-        const parentMap = {};
-        data.nodes.forEach(n => { parentMap[n.id] = n.parent; });
-        const depthCache = {};
-        function nodeDepth(id) {
-          if (depthCache[id] !== undefined) return depthCache[id];
-          let d = 0, cur = id;
-          while (parentMap[cur]) { d++; cur = parentMap[cur]; if (d > 10) break; }
-          depthCache[id] = d;
-          return d;
-        }
-
-        let maxDepth = parseInt(depthSlider.value);
-
-        function buildElements() {
-          const visible = data.nodes.filter(n => nodeDepth(n.id) <= maxDepth);
-          const visibleIds = new Set(visible.map(n => n.id));
-          return visible.map(n => ({
-            data: {
-              id: n.id, label: n.label, type: n.type,
-              parent: (n.parent && visibleIds.has(n.parent)) ? n.parent : undefined,
-              path: n.path, line: n.line,
-            }
-          }));
-        }
-
-        function updateStats() {
-          const s = data.stats;
-          const parts = Object.entries(s).map(([k,v]) => v + ' ' + k);
-          statsEl.textContent = parts.join(' · ');
-        }
-
-        // Legend
-        const seenTypes = new Set(data.nodes.map(n => n.type));
-        legendEl.innerHTML = Array.from(seenTypes).sort().map(t =>
-          '<div><span style="display:inline-block;width:8px;height:8px;background:' +
-          (TAX_COLORS[t]||'#8b949e') + ';margin-right:6px"></span>' + t + '</div>'
-        ).join('');
-
-        const cy = cytoscape({
-          container: document.getElementById('tax-structure-cy'),
-          elements: buildElements(),
-          style: [
-            { selector: 'node', style: {
-              'background-color': function(ele) { return TAX_COLORS[ele.data('type')] || '#8b949e'; },
-              'label': 'data(label)', 'font-size': 9, 'color': '#8b949e',
-              'text-halign': 'center', 'text-valign': 'bottom',
-              'width': function(ele) { return TAX_SIZES[ele.data('type')] || 10; },
-              'height': function(ele) { return TAX_SIZES[ele.data('type')] || 10; },
-            }},
-            { selector: ':parent', style: {
-              'background-opacity': 0.06, 'border-width': 1,
-              'border-color': function(ele) { return TAX_COLORS[ele.data('type')] || '#30363d'; },
-              'text-valign': 'top', 'text-halign': 'center', 'font-size': 10,
-              'color': function(ele) { return TAX_COLORS[ele.data('type')] || '#8b949e'; },
-            }},
-            { selector: '.faded', style: { opacity: 0.08 }},
-            { selector: '.hit', style: { opacity: 1, 'z-index': 10 }},
-          ],
-          layout: { name: 'dagre', rankDir: 'TB', animate: false, spacingFactor: 1.1 },
-          minZoom: 0.1, maxZoom: 4,
-        });
-
-        updateStats();
-
-        depthSlider.addEventListener('input', function() {
-          maxDepth = parseInt(this.value);
-          depthVal.textContent = maxDepth;
-          cy.json({ elements: buildElements() });
-          cy.layout({ name: 'dagre', rankDir: 'TB', animate: false, spacingFactor: 1.1 }).run();
-        });
-
-        // Click → highlight subtree
-        cy.on('tap', 'node', function(e) {
-          cy.elements().removeClass('faded hit');
-          cy.elements().addClass('faded');
-          const target = e.target;
-          const subtree = target.union(target.descendants());
-          subtree.removeClass('faded').addClass('hit');
-        });
-        cy.on('tap', function(e) { if (e.target === cy) cy.elements().removeClass('faded hit'); });
-
-        // Search
-        const searchInput = document.getElementById('tax-search');
-        searchInput.addEventListener('input', function() {
-          const q = this.value.trim().toLowerCase();
-          cy.elements().removeClass('faded hit');
-          if (!q) return;
-          const matches = cy.nodes().filter(n => (n.data('label')||'').toLowerCase().includes(q));
-          if (matches.length === 0) return;
-          cy.elements().addClass('faded');
-          matches.union(matches.ancestors()).removeClass('faded').addClass('hit');
-        });
-      }
-
-      // ── Inheritance view ──
-      function initInheritanceView() {
-        const data = taxonomyData && taxonomyData.inheritance;
-        if (!data || !data.nodes || data.nodes.length === 0) {
-          document.getElementById('tax-inheritance-cy').innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#8b949e">No inheritance relationships found.</div>';
-          return;
-        }
-
-        const statsEl = document.getElementById('tax-inh-stats');
-        const s = data.stats;
-        statsEl.innerHTML = s.trees + ' tree(s) · ' + s.total_nodes + ' nodes · ' +
-          s.inherits_edges + ' inherits · ' + s.implements_edges + ' implements';
-
-        const elements = [
-          ...data.nodes.map(n => ({
-            data: { id: n.id, label: n.label, type: n.type, path: n.path, line: n.line }
-          })),
-          ...data.edges.map((e, i) => ({
-            data: { id: 'inh-e-' + i, source: e.source, target: e.target, edgeType: e.type }
-          })),
-        ];
-
-        const cy = cytoscape({
-          container: document.getElementById('tax-inheritance-cy'),
-          elements: elements,
-          style: [
-            { selector: 'node', style: {
-              'background-color': function(ele) { return TAX_COLORS[ele.data('type')] || '#8b949e'; },
-              'label': 'data(label)', 'font-size': 10, 'color': '#c9d1d9',
-              'text-halign': 'center', 'text-valign': 'bottom',
-              'width': 14, 'height': 14,
-            }},
-            { selector: 'edge', style: {
-              'line-color': function(ele) { return ele.data('edgeType')==='INHERITS' ? '#d2a8ff' : '#58a6ff'; },
-              'target-arrow-shape': 'triangle',
-              'target-arrow-color': function(ele) { return ele.data('edgeType')==='INHERITS' ? '#d2a8ff' : '#58a6ff'; },
-              'curve-style': 'straight', 'width': 2, 'opacity': 0.7,
-            }},
-            { selector: '.faded', style: { opacity: 0.08 }},
-            { selector: '.hit', style: { opacity: 1, 'z-index': 10 }},
-          ],
-          layout: { name: 'dagre', rankDir: 'BT', animate: false, spacingFactor: 1.2 },
-          minZoom: 0.1, maxZoom: 4,
-        });
-
-        cy.on('tap', 'node', function(e) {
-          cy.elements().removeClass('faded hit');
-          cy.elements().addClass('faded');
-          e.target.closedNeighborhood().removeClass('faded').addClass('hit');
-        });
-        cy.on('tap', function(e) { if (e.target === cy) cy.elements().removeClass('faded hit'); });
-      }
-
-      // ── Communities view ──
-      function initCommunitiesView() {
-        const data = taxonomyData && taxonomyData.communities;
-        if (!data || !data.communities || data.communities.length === 0) {
-          document.getElementById('tax-communities-cy').innerHTML =
-            '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#8b949e">' +
-            'No community data. Run <code style="background:#161b22;padding:2px 6px;border:1px solid #30363d">kkg embed</code> first to enable semantic community detection.</div>';
-          return;
-        }
-
-        const COMM_PALETTE = [
-          '#7ee787','#58a6ff','#d2a8ff','#f0883e','#f778ba',
-          '#ff7b72','#d29922','#a5d6ff','#79c0ff','#ffa657',
-          '#8b949e','#7ee787','#58a6ff','#d2a8ff','#f0883e',
-        ];
-
-        const statsEl = document.getElementById('tax-comm-stats');
-        const legendEl = document.getElementById('tax-comm-legend');
-        const profilesEl = document.getElementById('tax-comm-profiles');
-        const s = data.stats;
-        const couplingRatio = s.total_edges > 0 ? (s.cross_community_edges / s.total_edges * 100).toFixed(1) : '0.0';
-        statsEl.innerHTML = s.communities + ' communities &middot; ' + s.total_nodes + ' nodes &middot; ' +
-          s.structural_edges + ' structural &middot; ' + s.semantic_edges + ' semantic &middot; ' +
-          '<span style="color:'+(parseFloat(couplingRatio)>30?'#f85149':'#7ee787')+'">' +
-          s.cross_community_edges + ' cross-boundary (' + couplingRatio + '% coupling)</span>';
-
-        // Build community color map
-        const nodeToComm = {};
-        data.communities.forEach(c => {
-          c.members.forEach(m => { nodeToComm[m.uid] = c.id; });
-        });
-
-        // Community size map for node scaling
-        const commSizeMap = {};
-        data.communities.forEach(c => { commSizeMap[c.id] = c.size; });
-        const maxCommSize = Math.max(...data.communities.map(c => c.size), 1);
-
-        // Per-community cross-edge counts
-        const commCrossCount = {};
-        (data.cross_edges || []).forEach(e => {
-          commCrossCount[e.source_community] = (commCrossCount[e.source_community]||0) + 1;
-          commCrossCount[e.target_community] = (commCrossCount[e.target_community]||0) + 1;
-        });
-
-        // Legend with coupling density
-        legendEl.innerHTML = data.communities.map(c => {
-          const cross = commCrossCount[c.id] || 0;
-          const densityTag = cross > 0 ? ' <span style="color:#f0883e;font-size:10px">' + cross + ' cross</span>' : '';
-          return '<div style="display:flex;align-items:center;gap:4px;margin-bottom:2px">' +
-            '<span style="display:inline-block;width:10px;height:10px;border-radius:2px;background:' +
-            COMM_PALETTE[c.id % COMM_PALETTE.length] + '"></span>' +
-            '<span>C' + c.id + '</span>' +
-            '<span style="color:#8b949e;font-size:10px">(' + c.size + ' nodes)</span>' +
-            densityTag + '</div>';
-        }).join('');
-
-        function renderCommunityProfiles() {
-          if (!profilesEl) return;
-          const cards = data.communities.map(c => {
-            const profile = c.profile || {};
-            const dominant = (profile.dominant_types || []).map(item =>
-              '<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 7px;border:1px solid #30363d;color:#c9d1d9;background:#161b22;font-size:10px">' +
-              escapeTaxHtml(item.type) + ' <strong style="color:#58a6ff">' + escapeTaxHtml(item.count) + '</strong></span>'
-            ).join('');
-            const hotspots = (profile.hotspots || []).map(item =>
-              '<div style="display:flex;justify-content:space-between;gap:8px;font-size:10px;color:#8b949e">' +
-              '<code style="color:#9ecbff;background:none">' + escapeTaxHtml(item.path) + '</code>' +
-              '<span>' + escapeTaxHtml(item.count) + '</span></div>'
-            ).join('');
-            const members = (profile.sample_members || []).map(item =>
-              '<div style="font-size:10px;color:#8b949e;display:flex;justify-content:space-between;gap:8px">' +
-              '<span><strong style="color:#e6edf3">' + escapeTaxHtml(item.name) + '</strong> <span style="color:#58a6ff">' + escapeTaxHtml(item.type) + '</span></span>' +
-              '<code style="color:#6e7681;background:none">' + escapeTaxHtml(item.path) + '</code></div>'
-            ).join('');
-            const rationale = (profile.rationale || []).map(item =>
-              '<div style="padding:8px 9px;border:1px solid #21262d;background:#0d1117">' +
-              '<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">' +
-              '<span style="display:inline-block;padding:1px 6px;background:#f0883e22;color:#f0883e;border:1px solid #f0883e55;font-size:10px;font-weight:600">' + escapeTaxHtml(item.tag) + '</span>' +
-              '<strong style="color:#e6edf3;font-size:10px">' + escapeTaxHtml(item.symbol) + '</strong>' +
-              '<span style="color:#6e7681;font-size:10px">' + escapeTaxHtml(item.path) + (item.line ? ':' + escapeTaxHtml(item.line) : '') + '</span>' +
-              '</div>' +
-              '<div style="font-size:11px;line-height:1.45;color:#c9d1d9">' + escapeTaxHtml(item.text) + '</div>' +
-              '</div>'
-            ).join('');
-            const shapeColor = profile.shape === 'bridge-heavy' ? '#f85149' : '#7ee787';
-            return '<article data-community-card="' + c.id + '" style="padding:10px;border:1px solid #30363d;background:#11161d;display:flex;flex-direction:column;gap:8px;cursor:pointer">' +
-              '<div style="display:flex;align-items:center;gap:8px">' +
-              '<span style="display:inline-block;width:11px;height:11px;border-radius:2px;background:' + COMM_PALETTE[c.id % COMM_PALETTE.length] + '"></span>' +
-              '<strong style="color:#e6edf3">Community ' + c.id + '</strong>' +
-              '<span style="font-size:10px;color:#8b949e">' + c.size + ' nodes</span>' +
-              '<span style="margin-left:auto;font-size:10px;color:' + shapeColor + '">' + escapeTaxHtml(profile.shape || 'mixed') + '</span>' +
-              '</div>' +
-              '<div style="font-size:11px;line-height:1.45;color:#9ba6b3">' + escapeTaxHtml(profile.summary || 'Community summary unavailable.') + '</div>' +
-              '<div style="display:flex;justify-content:space-between;font-size:10px;color:#8b949e">' +
-              '<span>' + (profile.cross_edge_count || 0) + ' cross edges</span>' +
-              '<span>' + ((profile.rationale || []).length) + ' WHY/HACK/NOTE hits</span></div>' +
-              '<div><div style="font-size:10px;color:#58a6ff;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.08em">Types</div>' +
-              '<div style="display:flex;flex-wrap:wrap;gap:6px">' + (dominant || '<span style="font-size:10px;color:#6e7681">No typed members</span>') + '</div></div>' +
-              '<div><div style="font-size:10px;color:#58a6ff;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.08em">Hotspots</div>' +
-              '<div style="display:flex;flex-direction:column;gap:3px">' + (hotspots || '<span style="font-size:10px;color:#6e7681">No file paths recorded</span>') + '</div></div>' +
-              '<div><div style="font-size:10px;color:#58a6ff;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.08em">Representative symbols</div>' +
-              '<div style="display:flex;flex-direction:column;gap:3px">' + (members || '<span style="font-size:10px;color:#6e7681">No symbol samples yet</span>') + '</div></div>' +
-              '<div><div style="font-size:10px;color:#58a6ff;margin-bottom:4px;text-transform:uppercase;letter-spacing:0.08em">Rationale comments (WHY/HACK/NOTE)</div>' +
-              '<div style="display:flex;flex-direction:column;gap:6px">' + (rationale || '<div style="font-size:10px;color:#6e7681">No WHY/HACK/NOTE comments captured for this community yet.</div>') + '</div></div>' +
-              '</article>';
-          }).join('');
-          profilesEl.innerHTML =
-            '<div style="display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #21262d;padding-bottom:6px">' +
-            '<strong style="color:#e6edf3;font-size:12px">Community profiles</strong>' +
-            '<span style="font-size:10px;color:#8b949e">click a card or node to focus</span></div>' +
-            cards;
-        }
-
-        // Build Cytoscape elements — nodes colored by community
-        const nodeSet = new Set();
-        const elements = [];
-        data.communities.forEach(c => {
-          c.members.forEach(m => {
-            if (!nodeSet.has(m.uid)) {
-              nodeSet.add(m.uid);
-              elements.push({
-                data: { id: m.uid, label: m.name, community: c.id, type: m.type, path: m.path }
-              });
-            }
-          });
-        });
-        data.edges.forEach((e, i) => {
-          if (nodeSet.has(e.source) && nodeSet.has(e.target)) {
-            elements.push({
-              data: {
-                id: 'comm-e-' + i, source: e.source, target: e.target,
-                edgeType: e.type, provenance: e.provenance, confidence: e.confidence,
-              }
-            });
-          }
-        });
-
-        const cy = cytoscape({
-          container: document.getElementById('tax-communities-cy'),
-          elements: elements,
-          style: [
-            { selector: 'node', style: {
-              'background-color': function(ele) {
-                return COMM_PALETTE[ele.data('community') % COMM_PALETTE.length];
-              },
-              'label': 'data(label)', 'font-size': 9, 'color': '#8b949e',
-              'text-halign': 'center', 'text-valign': 'bottom',
-              'width': function(ele) {
-                var s = commSizeMap[ele.data('community')] || 1;
-                return 6 + Math.round(14 * s / maxCommSize);
-              },
-              'height': function(ele) {
-                var s = commSizeMap[ele.data('community')] || 1;
-                return 6 + Math.round(14 * s / maxCommSize);
-              },
-            }},
-            { selector: 'edge', style: {
-              'line-color': function(ele) {
-                var src = nodeToComm[ele.data('source')];
-                var tgt = nodeToComm[ele.data('target')];
-                if (src !== undefined && tgt !== undefined && src !== tgt) return '#f85149';
-                if (ele.data('provenance') === 'inferred') return '#d29922';
-                return '#30363d';
-              },
-              'width': function(ele) {
-                var src = nodeToComm[ele.data('source')];
-                var tgt = nodeToComm[ele.data('target')];
-                if (src !== undefined && tgt !== undefined && src !== tgt) return 2;
-                return ele.data('provenance') === 'inferred' ? 1.5 : 1;
-              },
-              'opacity': function(ele) {
-                var src = nodeToComm[ele.data('source')];
-                var tgt = nodeToComm[ele.data('target')];
-                if (src !== undefined && tgt !== undefined && src !== tgt) return 0.7;
-                return 0.3;
-              },
-              'curve-style': 'straight',
-            }},
-            { selector: '.faded', style: { opacity: 0.06 }},
-            { selector: '.hit', style: { opacity: 1, 'z-index': 10 }},
-          ],
-          layout: { name: 'cose', animate: false, nodeRepulsion: function() { return 8000; },
-                    idealEdgeLength: function() { return 80; }, numIter: 500 },
-          minZoom: 0.1, maxZoom: 4,
-        });
-
-        function setFocusedCommunity(comm) {
-          cy.elements().removeClass('faded hit');
-          cy.elements().addClass('faded');
-          cy.nodes().filter(n => n.data('community') === comm).removeClass('faded').addClass('hit');
-          cy.edges().filter(edge => {
-            const src = nodeToComm[edge.data('source')];
-            const tgt = nodeToComm[edge.data('target')];
-            return src === comm || tgt === comm;
-          }).removeClass('faded').addClass('hit');
-          if (profilesEl) {
-            profilesEl.querySelectorAll('[data-community-card]').forEach(card => {
-              const active = Number(card.dataset.communityCard) === comm;
-              card.style.borderColor = active ? '#58a6ff' : '#30363d';
-              card.style.background = active ? '#161b22' : '#11161d';
-            });
-            const selected = profilesEl.querySelector('[data-community-card="' + comm + '"]');
-            if (selected) selected.scrollIntoView({block:'nearest'});
-          }
-        }
-
-        function clearFocusedCommunity() {
-          cy.elements().removeClass('faded hit');
-          if (profilesEl) {
-            profilesEl.querySelectorAll('[data-community-card]').forEach(card => {
-              card.style.borderColor = '#30363d';
-              card.style.background = '#11161d';
-            });
-          }
-        }
-
-        renderCommunityProfiles();
-        if (profilesEl) {
-          profilesEl.querySelectorAll('[data-community-card]').forEach(card => {
-            card.addEventListener('click', () => {
-              setFocusedCommunity(Number(card.dataset.communityCard));
-            });
-          });
-        }
-
-        // Click community node → highlight its community
-        cy.on('tap', 'node', function(e) {
-          const comm = e.target.data('community');
-          setFocusedCommunity(comm);
-        });
-        cy.on('tap', function(e) { if (e.target === cy) clearFocusedCommunity(); });
-      }
-
-      // ── Lazy init entry point ──
-      window._taxInit = function() {
-        if (typeof cytoscape === 'undefined') {
-          loadScript('https://unpkg.com/cytoscape@3.28.1/dist/cytoscape.min.js', function() {
-            loadScript('https://unpkg.com/dagre@0.8.5/dist/dagre.min.js', function() {
-              loadScript('https://unpkg.com/cytoscape-dagre@2.5.0/cytoscape-dagre.js', function() {
-                initTaxonomyViews();
-              });
-            });
-          });
-        } else {
-          initTaxonomyViews();
-        }
-      };
-    })();
-    </script>
-  </div>
 </div>
 <div class="modal-overlay" id="about-overlay" style="display:none">
   <div class="modal">
@@ -1646,7 +1077,6 @@ const statCards = document.querySelectorAll("[data-stat-card]");
 let embLoaded = false;
 let embAdvanced = false;
 let stdLoaded = false;
-let taxLoaded = false;
 let activeStatTarget = "graph-nodes";
 
 function loadEmbIframe() {
@@ -1704,10 +1134,6 @@ tabs.forEach(tab => {
     if (tab.dataset.pane === "pane-standards" && !stdLoaded) {
       if (window._stdInit) window._stdInit();
       stdLoaded = true;
-    }
-    if (tab.dataset.pane === "pane-taxonomy" && !taxLoaded) {
-      if (window._taxInit) window._taxInit();
-      taxLoaded = true;
     }
   });
 });
@@ -1801,49 +1227,6 @@ document.addEventListener("keydown", (e) => {
       if (window._kkgLoaded) window._kkgLoaded("pane-standards");
     };
   }
-  /* Taxonomy: _taxInit loads Cytoscape scripts asynchronously, then calls
-     initTaxonomyViews().  We must wait for initTaxonomyViews to actually
-     run before dismissing the loader — not just _taxInit returning.
-
-     The observer + fallback timer are NOT started at page load — they are
-     deferred to when _taxInit is first invoked (i.e. when the user clicks
-     the Taxonomy tab).  This prevents the 12s fallback from expiring on
-     a tab the user never opened. */
-  var origTaxInit = window._taxInit;
-  if (origTaxInit) {
-    window._taxInit = function() {
-      origTaxInit();
-      /* Now that _taxInit has been called, start watching for render. */
-      var taxPane = document.getElementById("pane-taxonomy");
-      if (!taxPane) { if (window._kkgLoaded) window._kkgLoaded("pane-taxonomy"); return; }
-      var taxContainers = taxPane.querySelectorAll("[id$='-cy']");
-      if (taxContainers.length === 0) { if (window._kkgLoaded) window._kkgLoaded("pane-taxonomy"); return; }
-      var taxDismissed = false;
-      var observer = new MutationObserver(function() {
-        if (taxDismissed) return;
-        for (var i = 0; i < taxContainers.length; i++) {
-          if (taxContainers[i].querySelector("canvas")) {
-            taxDismissed = true;
-            observer.disconnect();
-            if (window._kkgLoaded) window._kkgLoaded("pane-taxonomy");
-            return;
-          }
-        }
-      });
-      for (var i = 0; i < taxContainers.length; i++) {
-        observer.observe(taxContainers[i], { childList: true, subtree: true });
-      }
-      /* Fallback: if no canvas appears within 12s after tab activation
-         (script load failure, empty data, etc.), dismiss anyway. */
-      setTimeout(function() {
-        if (!taxDismissed) {
-          taxDismissed = true;
-          observer.disconnect();
-          if (window._kkgLoaded) window._kkgLoaded("pane-taxonomy");
-        }
-      }, 12000);
-    };
-  }
 })();
 </script>
 </body>
@@ -1855,7 +1238,6 @@ def _dashboard_html(
     emb_count: int,
     standards_json: str,
     violations_json: str = "[]",
-    taxonomy_json: str = "null",
     *,
     layout: str,
     project_slug: str = "default",
@@ -1899,7 +1281,6 @@ def _dashboard_html(
     out = out.replace("__IFRAME_3D__", iframe_3d)
     out = out.replace("__STANDARDS_JSON__", standards_json)
     out = out.replace("__VIOLATIONS_JSON__", violations_json)
-    out = out.replace("__TAXONOMY_JSON__", taxonomy_json)
 
     # Loading animation overlays
     out = out.replace("__LOADING_CSS__", LOADING_CSS)
@@ -1908,7 +1289,6 @@ def _dashboard_html(
     out = out.replace("__LOADER_3D__", loader_html("pane-3d"))
     out = out.replace("__LOADER_EMB__", loader_html("pane-embeddings", "Loading embeddings\u2026"))
     out = out.replace("__LOADER_STD__", loader_html("pane-standards", "Analyzing standards\u2026"))
-    out = out.replace("__LOADER_TAX__", loader_html("pane-taxonomy", "Building taxonomy\u2026"))
     return out
 
 
@@ -1954,237 +1334,6 @@ def _run_audit_for_viz(conn: Any) -> str:
         return "[]"
 
 
-_RATIONALE_TABLES = {
-    "Annotation",
-    "Class",
-    "Enum",
-    "Function",
-    "Interface",
-    "Macro",
-    "Property",
-    "Record",
-    "Struct",
-    "Trait",
-    "Union",
-    "Variable",
-}
-_RATIONALE_LINE_RE = re.compile(
-    r"^\s*(?:[#/*;!-]+\s*)?(WHY|HACK|NOTE)\s*[:\-]\s*(.+?)\s*$",
-    re.IGNORECASE,
-)
-
-
-def _short_path(path: str, *, parts: int = 2) -> str:
-    """Return a compact tail segment for long repo paths."""
-    raw = (path or "").replace("\\", "/").strip()
-    if not raw:
-        return "unknown"
-    chunks = [chunk for chunk in raw.split("/") if chunk]
-    if len(chunks) <= parts:
-        return "/".join(chunks)
-    return "/".join(chunks[-parts:])
-
-
-def _truncate_text(text: str, *, max_chars: int = 160) -> str:
-    """Collapse whitespace and cap long rationale snippets."""
-    compact = " ".join((text or "").split())
-    if len(compact) <= max_chars:
-        return compact
-    return compact[: max_chars - 3].rstrip() + "..."
-
-
-def _extract_rationale_comments(text: str, *, max_items: int = 6) -> list[dict[str, str]]:
-    """Extract WHY/HACK/NOTE comments from source or docstring text."""
-    if not text:
-        return []
-
-    notes: list[dict[str, str]] = []
-    seen: set[tuple[str, str]] = set()
-    for raw_line in text.splitlines():
-        line = raw_line.strip().strip("*/").strip()
-        match = _RATIONALE_LINE_RE.match(line)
-        if not match:
-            continue
-        tag = match.group(1).upper()
-        snippet = _truncate_text(match.group(2).strip().strip("*/").strip())
-        if not snippet:
-            continue
-        key = (tag, snippet.lower())
-        if key in seen:
-            continue
-        seen.add(key)
-        notes.append({"tag": tag, "text": snippet})
-        if len(notes) >= max_items:
-            break
-    return notes
-
-
-def _fetch_symbol_context(conn: Any, member: dict[str, Any]) -> dict[str, Any] | None:
-    """Fetch source/docstring fields for a community member when available."""
-    table = member.get("type")
-    uid = member.get("uid")
-    if table not in _RATIONALE_TABLES or not uid:
-        return None
-
-    query = (
-        f"MATCH (n:`{table}`) WHERE n.uid = $uid "
-        "RETURN n.name, n.path, n.line_number, n.docstring, n.source LIMIT 1"
-    )
-    try:
-        result = conn.execute(query, parameters={"uid": uid})
-    except Exception:
-        return None
-    if not result.has_next():
-        return None
-
-    row = result.get_next()
-    return {
-        "name": row[0] or member.get("name") or uid,
-        "path": row[1] or member.get("path") or "",
-        "line": row[2] or member.get("line") or 0,
-        "docstring": row[3] or "",
-        "source": row[4] or "",
-    }
-
-
-def _build_community_profile(
-    conn: Any,
-    community: dict[str, Any],
-    *,
-    cross_edge_count: int,
-) -> dict[str, Any]:
-    """Summarize a Louvain community for the taxonomy profile rail."""
-    members = sorted(
-        community.get("members", []),
-        key=lambda item: (
-            str(item.get("type") or ""),
-            str(item.get("path") or ""),
-            str(item.get("name") or ""),
-        ),
-    )
-    type_counts = Counter(str(member.get("type") or "unknown") for member in members)
-    path_counts = Counter(
-        _short_path(str(member.get("path") or ""))
-        for member in members
-        if member.get("path")
-    )
-
-    dominant_types = [
-        {"type": item_type, "count": count}
-        for item_type, count in type_counts.most_common(3)
-    ]
-    hotspots = [
-        {"path": item_path, "count": count}
-        for item_path, count in path_counts.most_common(3)
-    ]
-    sample_members = [
-        {
-            "name": member.get("name") or "(anonymous)",
-            "type": member.get("type") or "unknown",
-            "path": _short_path(str(member.get("path") or "")),
-        }
-        for member in members[:4]
-    ]
-
-    rationale: list[dict[str, Any]] = []
-    seen_rationale: set[tuple[str, str, str]] = set()
-    for member in members[:12]:
-        context = _fetch_symbol_context(conn, member)
-        if context is None:
-            continue
-        note_source = "\n".join(
-            part for part in (context["docstring"], context["source"]) if part
-        )
-        for note in _extract_rationale_comments(note_source, max_items=4):
-            key = (note["tag"], note["text"].lower(), context["name"])
-            if key in seen_rationale:
-                continue
-            seen_rationale.add(key)
-            rationale.append(
-                {
-                    "tag": note["tag"],
-                    "text": note["text"],
-                    "symbol": context["name"],
-                    "path": _short_path(context["path"]),
-                    "line": context["line"],
-                }
-            )
-            if len(rationale) >= 4:
-                break
-        if len(rationale) >= 4:
-            break
-
-    primary_type = dominant_types[0]["type"] if dominant_types else "mixed"
-    primary_hotspot = hotspots[0]["path"] if hotspots else "mixed paths"
-    size = int(community.get("size") or len(members))
-    summary = (
-        f"{primary_type} cluster centered on {primary_hotspot} with "
-        f"{cross_edge_count} cross-community edge(s)."
-    )
-
-    return {
-        "summary": summary,
-        "cross_edge_count": cross_edge_count,
-        "dominant_types": dominant_types,
-        "hotspots": hotspots,
-        "sample_members": sample_members,
-        "rationale": rationale,
-        "shape": "bridge-heavy" if cross_edge_count >= max(size, 1) else "contained",
-    }
-
-
-def _annotate_taxonomy_profiles(data: dict[str, Any], conn: Any) -> dict[str, Any]:
-    """Attach profile-card metadata to community records in taxonomy data."""
-    community_payload = data.get("communities")
-    if not isinstance(community_payload, dict):
-        return data
-
-    comm_list = community_payload.get("communities")
-    if not isinstance(comm_list, list):
-        return data
-
-    cross_counts: Counter[int] = Counter()
-    for edge in community_payload.get("cross_edges", []):
-        src = edge.get("source_community")
-        dst = edge.get("target_community")
-        if isinstance(src, int):
-            cross_counts[src] += 1
-        if isinstance(dst, int):
-            cross_counts[dst] += 1
-
-    for community in comm_list:
-        comm_id = int(community.get("id", -1))
-        community["profile"] = _build_community_profile(
-            conn,
-            community,
-            cross_edge_count=cross_counts.get(comm_id, 0),
-        )
-    return data
-
-
-def _load_taxonomy_json(conn: Any, *, limit: int) -> str:
-    """Fetch taxonomy data and enrich community payloads for the dashboard."""
-    from .viz_taxonomy import fetch_taxonomy_data
-
-    print("Fetching taxonomy data...", file=sys.stderr)
-    data = fetch_taxonomy_data(conn, limit=limit)
-    _annotate_taxonomy_profiles(data, conn)
-
-    structure_nodes = len(data.get("structure", {}).get("nodes", []))
-    inheritance_nodes = data.get("inheritance", {}).get("stats", {}).get(
-        "total_nodes", 0
-    )
-    community_payload = data.get("communities") or {}
-    community_count = community_payload.get("stats", {}).get("communities", 0)
-    print(
-        f"  taxonomy: {structure_nodes} structure nodes, "
-        f"{inheritance_nodes} inheritance nodes, "
-        f"{community_count} communities",
-        file=sys.stderr,
-    )
-    return json.dumps(data)
-
-
 def _copy_projector_bundle(dest: Path) -> None:
     """Stage projector assets even when importlib resources lacks a file origin."""
     try:
@@ -2223,19 +1372,11 @@ def _prepare_dashboard_serve_dir(
     except Exception:
         pass
 
-    tax_json = "null"
-    try:
-        tax_conn = get_kuzu_connection()
-        tax_json = _load_taxonomy_json(tax_conn, limit=limit)
-    except Exception:
-        pass
-
     html = _dashboard_html(
         graph,
         len(emb_nodes),
         standards_json,
         violations_json,
-        tax_json,
         layout=layout,
         project_slug=project_slug,
         graph_limit=limit,
