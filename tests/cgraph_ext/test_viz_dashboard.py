@@ -17,6 +17,7 @@ import codegraphcontext_ext.commands.viz_dashboard as viz_dashboard_mod
 from typer.testing import CliRunner
 
 from codegraphcontext_ext.commands.viz_dashboard import (
+    _collect_dashboard_count_details,
     _annotate_taxonomy_profiles,
     _dashboard_html,
     _extract_rationale_comments,
@@ -332,6 +333,93 @@ def test_dashboard_html_wires_three_tabs_including_embeddings():
     assert "institutional knowledge" in html
     assert "Credits" in html
     assert "Cytoscape.js" in html
+
+
+def test_dashboard_html_includes_clickable_stats_explainer():
+    graph = {
+        "nodes": [{"id": "u1", "name": "foo", "path": "a.py", "line": 1, "type": "Function"}],
+        "edges": [],
+    }
+    count_details = {
+        "full_node_counts": {"File": 10, "Module": 2, "Class": 4, "Function": 6, "Variable": 8},
+        "full_node_total": 30,
+        "full_edge_counts": {"CONTAINS": 11, "CALLS": 22, "IMPORTS": 33, "INHERITS": 44},
+        "full_edge_total": 110,
+        "embeddable_node_counts": {"Function": 6, "Class": 4},
+        "embeddable_total": 10,
+        "embedding_counts": {"Function": 5, "Class": 3},
+        "stored_embedding_total": 8,
+    }
+    html = _dashboard_html(
+        graph,
+        8,
+        "[]",
+        "[]",
+        layout="cose",
+        graph_limit=500,
+        count_details=count_details,
+    )
+
+    assert 'id="stats-panel"' in html
+    assert 'id="stats-panel-close"' in html
+    assert 'data-stat-target="graph-nodes"' in html
+    assert 'data-stat-target="graph-edges"' in html
+    assert 'data-stat-target="embeddings"' in html
+    assert 'data-stat-card="graph-nodes"' in html
+    assert 'data-stat-card="graph-edges"' in html
+    assert 'data-stat-card="embeddings"' in html
+    assert "These counts come from different slices of the project." in html
+    assert "--limit 500" in html
+    assert "Function and Class" in html
+    assert "Full visualization-scope total: <code>30</code>" in html
+    assert "Type breakdown: <code>File 10" in html
+    assert "Relationship breakdown: <code>CONTAINS 11" in html
+    assert "Embeddable symbols in graph scope: <code>10</code>" in html
+    assert "Stored vector breakdown: <code>Function 5" in html
+    assert "Coverage: <code>8 / 10 (80.0%)</code>" in html
+    assert "not meant to be numerically identical" in html
+
+
+def test_dashboard_html_stats_explainer_js_supports_toggle_and_focus():
+    graph = {
+        "nodes": [{"id": "u1", "name": "foo", "path": "a.py", "line": 1, "type": "Function"}],
+        "edges": [],
+    }
+    html = _dashboard_html(graph, 7, "[]", "[]", layout="cose")
+
+    assert 'const statButtons = document.querySelectorAll("[data-stat-target]");' in html
+    assert "function openStatsPanel(target)" in html
+    assert "function closeStatsPanel()" in html
+    assert 'if (e.key === "Escape" && !statsPanel.hidden) closeStatsPanel();' in html
+
+
+def test_collect_dashboard_count_details_reports_visualization_totals():
+    class _CountConn:
+        def execute(self, query, **_kwargs):
+            rows = {
+                "MATCH (n:`File`) RETURN count(n)": [(10,)],
+                "MATCH (n:`Module`) RETURN count(n)": [(2,)],
+                "MATCH (n:`Class`) RETURN count(n)": [(4,)],
+                "MATCH (n:`Function`) RETURN count(n)": [(6,)],
+                "MATCH (n:`Variable`) RETURN count(n)": [(8,)],
+                "MATCH ()-[r:CONTAINS]->() RETURN count(r)": [(11,)],
+                "MATCH ()-[r:CALLS]->() RETURN count(r)": [(22,)],
+                "MATCH ()-[r:IMPORTS]->() RETURN count(r)": [(33,)],
+                "MATCH ()-[r:INHERITS]->() RETURN count(r)": [(44,)],
+                "MATCH (n:`Function`) WHERE n.`embedding` IS NOT NULL RETURN count(n)": [(5,)],
+                "MATCH (n:`Class`) WHERE n.`embedding` IS NOT NULL RETURN count(n)": [(3,)],
+            }
+            return FakeResult(rows.get(query, []))
+
+    details = _collect_dashboard_count_details(_CountConn())
+
+    assert details["full_node_total"] == 30
+    assert details["full_edge_total"] == 110
+    assert details["embeddable_total"] == 10
+    assert details["stored_embedding_total"] == 8
+    assert details["full_node_counts"]["Variable"] == 8
+    assert details["full_edge_counts"]["IMPORTS"] == 33
+    assert details["embedding_counts"]["Class"] == 3
 
 
 def test_dashboard_html_srcdoc_escapes_inner_html():

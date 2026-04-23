@@ -29,6 +29,7 @@ from typing import Any, Optional
 import typer
 
 from ..embeddings.fetch import fetch_embedded_nodes
+from ..embeddings.schema import EMBEDDABLE_TABLES, EMBEDDING_COLUMN
 from ..embeddings.runtime import probe_backend_support
 from ..io.json_stdout import emit_json
 from ..io.kuzu import get_kuzu_connection
@@ -45,6 +46,8 @@ from ..viz_server import (
 from ..loading_animation import LOADING_CSS, LOADING_JS, loader_html
 from .viz_graph import (
     _LAYOUTS,
+    _NODE_TABLES,
+    _REL_QUERIES,
     _fetch_graph,
     _generate_html as _generate_graph_html,
 )
@@ -113,6 +116,104 @@ def _close_kuzu_connection() -> None:
         pass
 
 
+def _human_join(parts: tuple[str, ...]) -> str:
+    """Render a short human-readable list for UI copy."""
+    if not parts:
+        return "none"
+    if len(parts) == 1:
+        return parts[0]
+    if len(parts) == 2:
+        return f"{parts[0]} and {parts[1]}"
+    return f"{', '.join(parts[:-1])}, and {parts[-1]}"
+
+
+def _query_single_count(conn: Any, query: str) -> int | None:
+    """Run a count query and return the integer result when available."""
+    try:
+        result = conn.execute(query)
+    except Exception:
+        return None
+    try:
+        if not result.has_next():
+            return 0
+        row = result.get_next()
+    except Exception:
+        return None
+
+    value: Any
+    if isinstance(row, dict):
+        value = next(iter(row.values()), 0)
+    elif isinstance(row, (list, tuple)):
+        value = row[0] if row else 0
+    else:
+        value = row
+
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return None
+
+
+def _sum_known_counts(counts: dict[str, int | None]) -> int | None:
+    """Sum count values only when every entry is known."""
+    if not counts or any(value is None for value in counts.values()):
+        return None
+    return sum(int(value) for value in counts.values() if value is not None)
+
+
+def _format_count(value: int | None) -> str:
+    """Render count text for dashboard placeholders."""
+    return str(value) if value is not None else "Unavailable"
+
+
+def _format_breakdown(counts: dict[str, int | None]) -> str:
+    """Render a one-line breakdown string for dashboard placeholders."""
+    if not counts or any(value is None for value in counts.values()):
+        return "Unavailable"
+    return " · ".join(f"{label} {value}" for label, value in counts.items())
+
+
+def _format_coverage(stored: int, total: int | None) -> str:
+    """Render embedding coverage text against the embeddable total."""
+    if total is None or total <= 0:
+        return "Unavailable"
+    return f"{stored} / {total} ({(stored / total) * 100:.1f}%)"
+
+
+def _collect_dashboard_count_details(conn: Any) -> dict[str, Any]:
+    """Collect full visualization-scope totals and embedding coverage inputs."""
+    full_node_counts = {
+        table: _query_single_count(conn, f"MATCH (n:`{table}`) RETURN count(n)")
+        for table in _NODE_TABLES
+    }
+    full_edge_counts = {
+        rel_name: _query_single_count(conn, f"MATCH ()-[r:{rel_name}]->() RETURN count(r)")
+        for rel_name, _query in _REL_QUERIES
+    }
+    embeddable_node_counts = {
+        table: _query_single_count(conn, f"MATCH (n:`{table}`) RETURN count(n)")
+        for table in EMBEDDABLE_TABLES
+    }
+    embedding_counts = {
+        table: _query_single_count(
+            conn,
+            f"MATCH (n:`{table}`) WHERE n.`{EMBEDDING_COLUMN}` IS NOT NULL RETURN count(n)",
+        )
+        for table in EMBEDDABLE_TABLES
+    }
+
+    return {
+        "full_node_counts": full_node_counts,
+        "full_node_total": _sum_known_counts(full_node_counts),
+        "full_edge_counts": full_edge_counts,
+        "full_edge_total": _sum_known_counts(full_edge_counts),
+        "embeddable_node_counts": embeddable_node_counts,
+        "embeddable_total": _sum_known_counts(embeddable_node_counts),
+        "embedding_counts": embedding_counts,
+        "stored_embedding_total": _sum_known_counts(embedding_counts),
+    }
+
+
 _DASHBOARD_TEMPLATE = """<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -132,17 +233,65 @@ _DASHBOARD_TEMPLATE = """<!DOCTYPE html>
          background: #0d1117; color: #c9d1d9; overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
   button, input, select, textarea { font-family: inherit; }
   #nav h1 { font-family: "Antic Didone", "Antic Slab", Georgia, serif; }
-  #nav .stats { font-family: "Antic", "Antic Slab", Georgia, sans-serif; letter-spacing: 0.02em; }
+  #nav .stats, .stats-shell, .stats-panel { font-family: "Antic", "Antic Slab", Georgia, sans-serif; letter-spacing: 0.02em; }
   .emb-explainer__body h3 { font-family: "Antic Didone", "Antic Slab", Georgia, serif;
                             letter-spacing: 0.12em; }
   .emb-explainer__body kbd { font-family: "Antic", "Antic Slab", Georgia, sans-serif; }
   /* Square every control: no rounded corners anywhere in the dashboard chrome. */
   .tab, .emb-explainer__controls button, .emb-explainer__chevron,
   .emb-explainer__body kbd { border-radius: 0 !important; }
-  #nav { padding: 12px 24px; border-bottom: 1px solid #30363d; display: flex; align-items: center; gap: 24px; flex-shrink: 0; }
+  #nav { padding: 12px 24px; border-bottom: 1px solid #30363d; display: flex; align-items: center; gap: 24px; flex-shrink: 0; flex-wrap: wrap; }
   #nav h1 { font-size: 16px; font-weight: 600; color: #c9d1d9; }
   #nav .stats { font-size: 12px; color: #8b949e; margin-right: auto; }
-  .tab-bar { display: flex; gap: 4px; }
+  .stats-shell { display: flex; flex-wrap: wrap; gap: 6px; margin-right: auto; }
+  .stats-pill {
+    display: inline-flex; align-items: baseline; gap: 6px;
+    padding: 6px 10px; font-size: 12px; color: #9ba6b3; background: #11161d;
+    border: 1px solid #30363d; cursor: pointer; transition: color 0.12s, border-color 0.12s, background 0.12s;
+  }
+  .stats-pill:hover { color: #e6edf3; border-color: #58a6ff; background: #161b22; }
+  .stats-pill.active { color: #58a6ff; border-color: #58a6ff; background: #161b22; }
+  .stats-pill__value { font-size: 13px; color: #e6edf3; }
+  .stats-pill.active .stats-pill__value { color: inherit; }
+  .stats-pill__label { text-transform: lowercase; }
+  .stats-panel {
+    flex-shrink: 0; border-bottom: 1px solid #30363d; background: linear-gradient(180deg, #11161d 0%, #0d1117 100%);
+  }
+  .stats-panel[hidden] { display: none !important; }
+  .stats-panel__bar {
+    display: flex; align-items: center; gap: 12px; padding: 10px 24px 8px 24px;
+    border-bottom: 1px solid #21262d;
+  }
+  .stats-panel__lede { flex: 1; font-size: 12px; line-height: 1.5; color: #e6edf3; }
+  .stats-panel__lede strong { color: #58a6ff; font-weight: 600; }
+  .stats-panel__close {
+    width: 26px; height: 26px; padding: 0; border: 1px solid #30363d; background: transparent;
+    color: #9ba6b3; cursor: pointer; transition: color 0.12s, border-color 0.12s, background 0.12s;
+  }
+  .stats-panel__close:hover { color: #e6edf3; border-color: #58a6ff; background: #161b22; }
+  .stats-panel__body {
+    display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; padding: 12px 24px 14px 24px;
+  }
+  .stats-card {
+    padding: 12px; border: 1px solid #21262d; background: #11161d; color: #9ba6b3;
+    transition: border-color 0.12s, background 0.12s, box-shadow 0.12s;
+  }
+  .stats-card.active { border-color: #58a6ff; background: #161b22; box-shadow: inset 0 0 0 1px rgba(88,166,255,0.22); }
+  .stats-card__eyebrow {
+    display: inline-block; margin-bottom: 8px; font-size: 10px; text-transform: uppercase;
+    letter-spacing: 0.1em; color: #58a6ff;
+  }
+  .stats-card__metric { margin-bottom: 8px; font-size: 17px; color: #e6edf3; }
+  .stats-card p { margin: 0 0 8px 0; font-size: 11px; line-height: 1.55; }
+  .stats-card p:last-child { margin-bottom: 0; }
+  .stats-card code, .stats-panel__footnote code {
+    font-family: ui-monospace, SFMono-Regular, monospace; font-size: 10px;
+    background: #0d1117; border: 1px solid #30363d; padding: 1px 4px; color: #e6edf3;
+  }
+  .stats-panel__footnote {
+    padding: 0 24px 14px 24px; font-size: 11px; line-height: 1.55; color: #9ba6b3;
+  }
+  .tab-bar { display: flex; gap: 4px; flex-wrap: wrap; }
   .tab { padding: 8px 16px; font-size: 13px; color: #8b949e; background: transparent;
          border: 1px solid transparent; border-radius: 6px; cursor: pointer; font-family: inherit;
          transition: background 0.12s; }
@@ -318,6 +467,9 @@ _DASHBOARD_TEMPLATE = """<!DOCTYPE html>
     width: 1px;
     background: #30363d;
   }
+  @media (max-width: 1100px) {
+    .stats-panel__body { grid-template-columns: 1fr; }
+  }
 __LOADING_CSS__
 </style>
 </head>
@@ -327,7 +479,20 @@ __LOADING_CSS__
   <select id="project-switcher" title="Switch project" style="background:#1c2128;color:#c9d1d9;border:1px solid #30363d;padding:4px 8px;font-size:12px;font-family:inherit;cursor:pointer;margin-left:8px;">
     <option value="">__CURRENT_PROJECT__</option>
   </select>
-  <div class="stats">__NODE_COUNT__ nodes &middot; __EDGE_COUNT__ edges &middot; __EMB_COUNT__ embeddings</div>
+  <div class="stats-shell" id="stats-shell" aria-label="Dashboard count details">
+    <button type="button" class="stats-pill" data-stat-target="graph-nodes" aria-controls="stats-panel" aria-expanded="false">
+      <span class="stats-pill__value">__NODE_COUNT__</span>
+      <span class="stats-pill__label">nodes</span>
+    </button>
+    <button type="button" class="stats-pill" data-stat-target="graph-edges" aria-controls="stats-panel" aria-expanded="false">
+      <span class="stats-pill__value">__EDGE_COUNT__</span>
+      <span class="stats-pill__label">edges</span>
+    </button>
+    <button type="button" class="stats-pill" data-stat-target="embeddings" aria-controls="stats-panel" aria-expanded="false">
+      <span class="stats-pill__value">__EMB_COUNT__</span>
+      <span class="stats-pill__label">embeddings</span>
+    </button>
+  </div>
   <div class="tab-bar" id="tab-bar">
     <button class="tab active" data-pane="pane-2d">2D Graph</button>
     <button class="tab" data-pane="pane-3d">3D Graph</button>
@@ -337,6 +502,41 @@ __LOADING_CSS__
   </div>
   <button type="button" id="about-btn">About</button>
 </div>
+<section class="stats-panel" id="stats-panel" aria-label="Dashboard count details" hidden>
+  <div class="stats-panel__bar">
+    <div class="stats-panel__lede">
+      <strong>These counts come from different slices of the project.</strong> The 2D and 3D graph tabs use a preview fetch for responsiveness, while the Embeddings tab loads every stored vector for embeddable symbols. Click any count again to collapse this panel.
+    </div>
+    <button type="button" class="stats-panel__close" id="stats-panel-close" aria-label="Close count details">&times;</button>
+  </div>
+  <div class="stats-panel__body" id="stats-panel-body">
+    <article class="stats-card active" data-stat-card="graph-nodes">
+      <span class="stats-card__eyebrow">Graph Preview Nodes</span>
+      <div class="stats-card__metric">__NODE_COUNT__ rendered nodes</div>
+      <p>The 2D and 3D graph panes render the nodes fetched into the preview graph, not the full repository total.</p>
+      <p>Full visualization-scope total: <code>__FULL_NODE_TOTAL__</code>. Type breakdown: <code>__FULL_NODE_BREAKDOWN__</code>.</p>
+      <p>Dashboard launch currently uses <code>--limit __GRAPH_LIMIT__</code> per node table, so the preview can top out well below the full graph size.</p>
+    </article>
+    <article class="stats-card" data-stat-card="graph-edges">
+      <span class="stats-card__eyebrow">Graph Preview Edges</span>
+      <div class="stats-card__metric">__EDGE_COUNT__ rendered edges</div>
+      <p>Edges count only when both endpoints survived the preview fetch and the relationship query returned them.</p>
+      <p>Full visualization-scope total: <code>__FULL_EDGE_TOTAL__</code>. Relationship breakdown: <code>__FULL_EDGE_BREAKDOWN__</code>.</p>
+      <p>Each relation query also uses <code>--limit __GRAPH_LIMIT__</code>, so this is a rendered edge count, not a global edge total.</p>
+    </article>
+    <article class="stats-card" data-stat-card="embeddings">
+      <span class="stats-card__eyebrow">Embedding Dataset</span>
+      <div class="stats-card__metric">__EMB_COUNT__ stored embeddings</div>
+      <p>The Embeddings tab loads every non-null vector for embeddable symbol types: <code>__EMB_TYPES__</code>.</p>
+      <p>Embeddable symbols in graph scope: <code>__EMBEDDABLE_TOTAL__</code>. Graph-side breakdown: <code>__EMBEDDABLE_BREAKDOWN__</code>.</p>
+      <p>Stored vector breakdown: <code>__EMBEDDING_BREAKDOWN__</code>. Coverage: <code>__EMBEDDING_COVERAGE__</code>.</p>
+      <p>This fetch is not capped by the graph preview limit, so it can exceed the rendered node count. It can also be lower if some embeddable symbols have not been embedded yet.</p>
+    </article>
+  </div>
+  <div class="stats-panel__footnote">
+    Why the numbers differ: graph counts are preview-limited for fast rendering, while embedding counts reflect stored vectors for embeddable symbols only. They describe related datasets, but they are not meant to be numerically identical.
+  </div>
+</section>
 <div id="panes">
   <!-- 2D pane is visible on load; srcdoc set immediately.  3D pane is
        hidden on load and Chrome refuses WebGL for invisible iframes — so
@@ -1439,10 +1639,15 @@ const panes = document.querySelectorAll(".pane");
 const simpleBtn = document.getElementById("emb-simple-btn");
 const advancedBtn = document.getElementById("emb-advanced-btn");
 const embIframe = document.getElementById("emb-iframe");
+const statsPanel = document.getElementById("stats-panel");
+const statsClose = document.getElementById("stats-panel-close");
+const statButtons = document.querySelectorAll("[data-stat-target]");
+const statCards = document.querySelectorAll("[data-stat-card]");
 let embLoaded = false;
 let embAdvanced = false;
 let stdLoaded = false;
 let taxLoaded = false;
+let activeStatTarget = "graph-nodes";
 
 function loadEmbIframe() {
   embIframe.src = embAdvanced ? "projector/?advanced=1" : "projector/";
@@ -1454,6 +1659,28 @@ function setEmbMode(advanced) {
   simpleBtn.classList.toggle("active", !advanced);
   advancedBtn.classList.toggle("active", advanced);
   if (embLoaded) loadEmbIframe();
+}
+
+function syncStatDetails(target) {
+  activeStatTarget = target;
+  statButtons.forEach(btn => {
+    const active = btn.dataset.statTarget === target && !statsPanel.hidden;
+    btn.classList.toggle("active", active);
+    btn.setAttribute("aria-expanded", String(active));
+  });
+  statCards.forEach(card => {
+    card.classList.toggle("active", card.dataset.statCard === target);
+  });
+}
+
+function closeStatsPanel() {
+  statsPanel.hidden = true;
+  syncStatDetails(activeStatTarget);
+}
+
+function openStatsPanel(target) {
+  statsPanel.hidden = false;
+  syncStatDetails(target);
 }
 
 function promoteDataSrcdoc(paneEl) {
@@ -1485,6 +1712,19 @@ tabs.forEach(tab => {
   });
 });
 
+statButtons.forEach(btn => {
+  btn.addEventListener("click", () => {
+    const target = btn.dataset.statTarget;
+    if (!statsPanel.hidden && activeStatTarget === target) {
+      closeStatsPanel();
+      return;
+    }
+    openStatsPanel(target);
+  });
+});
+
+statsClose.addEventListener("click", closeStatsPanel);
+
 simpleBtn.addEventListener("click", () => setEmbMode(false));
 advancedBtn.addEventListener("click", () => setEmbMode(true));
 
@@ -1505,6 +1745,9 @@ aboutBtn.addEventListener("click", () => { aboutOverlay.style.display = "flex"; 
 aboutClose.addEventListener("click", () => { aboutOverlay.style.display = "none"; });
 aboutOverlay.addEventListener("click", (e) => {
   if (e.target === aboutOverlay) aboutOverlay.style.display = "none";
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !statsPanel.hidden) closeStatsPanel();
 });
 
 /* ── project switcher ──────── */
@@ -1616,6 +1859,8 @@ def _dashboard_html(
     *,
     layout: str,
     project_slug: str = "default",
+    graph_limit: int = 500,
+    count_details: Optional[dict[str, Any]] = None,
 ) -> str:
     """Build the dashboard chrome.  The Embeddings tab iframes to `projector/`,
     which is served as a sibling directory by the HTTP server."""
@@ -1625,12 +1870,31 @@ def _dashboard_html(
 
     iframe_2d = _html.escape(inner_2d, quote=True)
     iframe_3d = _html.escape(inner_3d, quote=True)
+    count_details = count_details or {}
+    full_node_counts = dict(count_details.get("full_node_counts") or {})
+    full_edge_counts = dict(count_details.get("full_edge_counts") or {})
+    embeddable_node_counts = dict(count_details.get("embeddable_node_counts") or {})
+    embedding_counts = dict(count_details.get("embedding_counts") or {})
+    embeddable_total = count_details.get("embeddable_total")
 
     out = _DASHBOARD_TEMPLATE
     out = out.replace("__CURRENT_PROJECT__", project_slug)
     out = out.replace("__NODE_COUNT__", str(len(graph["nodes"])))
     out = out.replace("__EDGE_COUNT__", str(len(graph["edges"])))
     out = out.replace("__EMB_COUNT__", str(emb_count))
+    out = out.replace("__GRAPH_LIMIT__", str(graph_limit))
+    out = out.replace(
+        "__EMB_TYPES__",
+        _human_join(tuple(str(part) for part in EMBEDDABLE_TABLES)),
+    )
+    out = out.replace("__FULL_NODE_TOTAL__", _format_count(count_details.get("full_node_total")))
+    out = out.replace("__FULL_NODE_BREAKDOWN__", _format_breakdown(full_node_counts))
+    out = out.replace("__FULL_EDGE_TOTAL__", _format_count(count_details.get("full_edge_total")))
+    out = out.replace("__FULL_EDGE_BREAKDOWN__", _format_breakdown(full_edge_counts))
+    out = out.replace("__EMBEDDABLE_TOTAL__", _format_count(embeddable_total))
+    out = out.replace("__EMBEDDABLE_BREAKDOWN__", _format_breakdown(embeddable_node_counts))
+    out = out.replace("__EMBEDDING_BREAKDOWN__", _format_breakdown(embedding_counts))
+    out = out.replace("__EMBEDDING_COVERAGE__", _format_coverage(emb_count, embeddable_total))
     out = out.replace("__IFRAME_2D__", iframe_2d)
     out = out.replace("__IFRAME_3D__", iframe_3d)
     out = out.replace("__STANDARDS_JSON__", standards_json)
@@ -1940,6 +2204,7 @@ def _prepare_dashboard_serve_dir(
     layout: str,
     limit: int = 500,
     project_slug: str = "default",
+    count_details: Optional[dict[str, Any]] = None,
 ) -> Path:
     """Create a tempdir with dashboard index.html + projector/ subdir.
 
@@ -1973,6 +2238,8 @@ def _prepare_dashboard_serve_dir(
         tax_json,
         layout=layout,
         project_slug=project_slug,
+        graph_limit=limit,
+        count_details=count_details,
     )
     (serve_dir / "index.html").write_text(html, encoding="utf-8")
 
@@ -2044,6 +2311,7 @@ def viz_dashboard_command(
 
         print("Fetching embeddings...", file=sys.stderr)
         emb_nodes = fetch_embedded_nodes(conn)
+        count_details = _collect_dashboard_count_details(conn)
 
         serve_dir = _prepare_dashboard_serve_dir(
             graph,
@@ -2051,6 +2319,7 @@ def viz_dashboard_command(
             layout=layout,
             limit=limit,
             project_slug=target.slug,
+            count_details=count_details,
         )
         _close_kuzu_connection()
         kuzu_released = True
