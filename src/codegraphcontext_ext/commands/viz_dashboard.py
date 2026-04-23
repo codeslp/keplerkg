@@ -100,7 +100,11 @@ def _rule_principle(rule_id: str, category: str) -> str:
 
 
 def _close_kuzu_connection() -> None:
-    """Release the upstream Kuzu singleton once dashboard data is materialized."""
+    """Release the upstream Kuzu singleton once dashboard data is materialized.
+
+    FalkorDB uses a different manager path and does not currently need an
+    explicit close here; the helper remains Kuzu-specific on purpose.
+    """
     try:
         from codegraphcontext.core.database_kuzu import KuzuDBManager
 
@@ -1763,7 +1767,7 @@ def _fetch_symbol_context(conn: Any, member: dict[str, Any]) -> dict[str, Any] |
         "RETURN n.name, n.path, n.line_number, n.docstring, n.source LIMIT 1"
     )
     try:
-        result = conn.execute(query, uid=uid)
+        result = conn.execute(query, parameters={"uid": uid})
     except Exception:
         return None
     if not result.has_next():
@@ -2013,10 +2017,6 @@ def viz_dashboard_command(
     """
 
     target = activate_project(project)
-    previous_runtime_db = os.environ.get("CGC_RUNTIME_DB_TYPE")
-    # Project-aware dashboard invocations always target the activated Kuzu store,
-    # even when the caller's shell has a different global DEFAULT_DATABASE.
-    os.environ["CGC_RUNTIME_DB_TYPE"] = "kuzudb"
     kuzu_released = False
 
     try:
@@ -2080,7 +2080,3 @@ def viz_dashboard_command(
     finally:
         if not kuzu_released:
             _close_kuzu_connection()
-        if previous_runtime_db is None:
-            os.environ.pop("CGC_RUNTIME_DB_TYPE", None)
-        else:
-            os.environ["CGC_RUNTIME_DB_TYPE"] = previous_runtime_db

@@ -9,6 +9,9 @@ Commands:
 - help: Displays help information.
 - version: Show the installed version.
 """
+import contextlib
+import functools
+import io
 import typer
 from rich.console import Console
 from rich.table import Table
@@ -18,6 +21,8 @@ import asyncio
 import logging
 import json
 import os
+import sys
+import threading
 from pathlib import Path
 from importlib.metadata import version as pkg_version, PackageNotFoundError
 
@@ -92,9 +97,191 @@ console = Console(stderr=True)
 # Configure basic logging for the application.
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(name)s - %(message)s')
 
+_KNOWN_MACOS_STDERR_PATTERNS = (
+    b"MallocStackLogging: can't turn off malloc stack logging because it was not enabled.",
+)
+
+PROJECT_OPTION_HELP = (
+    "Target project slug. Routes the active local backend to "
+    "/Volumes/zombie/cgraph/db/<slug>/<backend>."
+)
+
+
+def _is_known_macos_stderr_line(line: bytes) -> bool:
+    """Return whether a native stderr line matches the known macOS malloc-noise."""
+    return any(pattern in line for pattern in _KNOWN_MACOS_STDERR_PATTERNS)
+
+
+@contextlib.contextmanager
+def _suppress_known_macos_stderr():
+    """Filter a small set of known-noisy native stderr lines during one CLI run.
+
+    Native libraries can write directly to file descriptor 2, bypassing Python's
+    ``warnings`` and ``logging`` plumbing. Redirect stderr through a pipe so we
+    can drop the specific malloc-stack-logging warning while preserving all
+    other stderr output.
+    """
+    try:
+        stderr_fd = sys.stderr.fileno()
+    except (AttributeError, io.UnsupportedOperation, OSError, ValueError):
+        yield
+        return
+
+    saved_stderr_fd = os.dup(stderr_fd)
+    read_fd, write_fd = os.pipe()
+    buffered = bytearray()
+
+    def _forward_filtered_stderr() -> None:
+        try:
+            while True:
+                chunk = os.read(read_fd, 4096)
+                if not chunk:
+                    break
+                buffered.extend(chunk)
+                while True:
+                    newline_index = buffered.find(b"\n")
+                    if newline_index < 0:
+                        break
+                    line = bytes(buffered[: newline_index + 1])
+                    del buffered[: newline_index + 1]
+                    if not _is_known_macos_stderr_line(line):
+                        os.write(saved_stderr_fd, line)
+
+            if buffered and not _is_known_macos_stderr_line(buffered):
+                os.write(saved_stderr_fd, bytes(buffered))
+        finally:
+            try:
+                os.close(read_fd)
+            except OSError:
+                pass
+
+    filter_thread = threading.Thread(
+        target=_forward_filtered_stderr,
+        name="kkg-stderr-filter",
+        daemon=True,
+    )
+    filter_thread.start()
+
+    try:
+        os.dup2(write_fd, stderr_fd)
+        os.close(write_fd)
+        yield
+    finally:
+        os.dup2(saved_stderr_fd, stderr_fd)
+        filter_thread.join(timeout=1)
+        os.close(saved_stderr_fd)
+
+
+def _wrap_non_force_embed_fetch(fetch_fn):
+    """Always fetch the leading NULL window when resuming non-force embed runs."""
+
+    @functools.wraps(fetch_fn)
+    def _wrapped(conn, table, *, force, batch_size, offset):
+        effective_offset = offset if force else 0
+        return fetch_fn(
+            conn,
+            table,
+            force=force,
+            batch_size=batch_size,
+            offset=effective_offset,
+        )
+
+    _wrapped._kkg_non_force_resume_wrapped = True
+    return _wrapped
+
+
+def _embed_device_override() -> Optional[str]:
+    override = os.environ.get("CGRAPH_EMBED_DEVICE")
+    if override:
+        return override.strip()
+    return "cpu" if sys.platform == "darwin" else None
+
+
+def _embed_batch_size_override() -> Optional[int]:
+    override = os.environ.get("CGRAPH_EMBED_BATCH_SIZE")
+    if not override:
+        return 8 if sys.platform == "darwin" else None
+
+    try:
+        value = int(override)
+    except ValueError:
+        return 8 if sys.platform == "darwin" else None
+
+    return value if value > 0 else (8 if sys.platform == "darwin" else None)
+
+
+def _sentence_transformer_model_kwargs() -> dict[str, object]:
+    kwargs: dict[str, object] = {"trust_remote_code": True}
+    device = _embed_device_override()
+    if device:
+        kwargs["device"] = device
+    return kwargs
+
+
+def _embed_encode_kwargs() -> dict[str, object]:
+    kwargs: dict[str, object] = {"show_progress_bar": False}
+    batch_size = _embed_batch_size_override()
+    if batch_size is not None:
+        kwargs["batch_size"] = batch_size
+    return kwargs
+
+
+def _apply_embed_runtime_guards() -> None:
+    """Patch embed runtime behavior without editing the extension-owned files."""
+    try:
+        from codegraphcontext_ext.commands import embed as embed_command
+        from codegraphcontext_ext.embeddings import providers as embedding_providers
+    except ImportError:
+        return
+
+    if not getattr(embed_command._fetch_nodes, "_kkg_non_force_resume_wrapped", False):
+        embed_command._fetch_nodes = _wrap_non_force_embed_fetch(embed_command._fetch_nodes)
+
+    if not getattr(embed_command._fetch_name_nodes, "_kkg_non_force_resume_wrapped", False):
+        embed_command._fetch_name_nodes = _wrap_non_force_embed_fetch(
+            embed_command._fetch_name_nodes
+        )
+
+    if not getattr(embedding_providers.LocalProvider._load_model, "_kkg_runtime_guarded", False):
+
+        def _load_model_with_runtime_defaults(self):
+            if self._model is not None:
+                return
+            try:
+                from sentence_transformers import SentenceTransformer
+            except ImportError:
+                raise RuntimeError(
+                    "sentence-transformers is required for local embeddings. "
+                    "Install with: pip install sentence-transformers"
+                )
+            self._model = SentenceTransformer(
+                self._config.model,
+                **_sentence_transformer_model_kwargs(),
+            )
+            print(
+                f"Loaded embedding model {self._config.model}",
+                file=sys.stderr,
+            )
+
+        _load_model_with_runtime_defaults._kkg_runtime_guarded = True
+        embedding_providers.LocalProvider._load_model = _load_model_with_runtime_defaults
+
+    if not getattr(embedding_providers.LocalProvider.embed_texts, "_kkg_runtime_guarded", False):
+
+        def _embed_texts_with_runtime_defaults(self, texts: list[str]) -> list[list[float]]:
+            self._load_model()
+            embeddings = self._model.encode(texts, **_embed_encode_kwargs())
+            return [
+                vec.tolist() if hasattr(vec, "tolist") else list(vec)
+                for vec in embeddings
+            ]
+
+        _embed_texts_with_runtime_defaults._kkg_runtime_guarded = True
+        embedding_providers.LocalProvider.embed_texts = _embed_texts_with_runtime_defaults
+
 
 def _activate_project_target(project: Optional[str], *, start_dir: Optional[Path] = None) -> None:
-    """Route the current CLI process to a project-specific Kuzu store."""
+    """Route the current CLI process to a project-specific local store."""
     if project is None and start_dir is None:
         return
 
@@ -104,6 +291,26 @@ def _activate_project_target(project: Optional[str], *, start_dir: Optional[Path
         return
 
     activate_project(project, start_dir=start_dir)
+
+
+def _current_database_backend(default: str = "falkordb") -> str:
+    return (
+        os.environ.get("CGC_RUNTIME_DB_TYPE")
+        or os.environ.get("DEFAULT_DATABASE")
+        or default
+    ).lower()
+
+
+def _query_scalar(db_manager, query: str, field: str) -> int:
+    with db_manager.get_driver().session() as session:
+        record = session.run(query).single()
+
+    if record is None:
+        return 0
+    if field in record:
+        return int(record[field])
+    values = list(record.values())
+    return int(values[0]) if values else 0
 
 
 def get_version() -> str:
@@ -132,7 +339,7 @@ def mcp_setup():
     - Cline, RooCode, Amazon Q Developer
     - OpenCode (prints stdio config + link to vendor docs)
     
-    Works with KuzuDB by default (no database setup needed).
+    Works with FalkorDB Lite by default (no database setup needed).
     """
     console.print("\n[bold cyan]MCP Client Setup[/bold cyan]")
     console.print("Configure your IDE or CLI tool to use KeplerKG.\n")
@@ -158,7 +365,7 @@ def mcp_start():
     except ValueError as e:
         # This typically happens if credentials are still not found after all checks.
         console.print(f"[bold red]Configuration Error:[/bold red] {e}")
-        console.print("Please run `kkg neo4j setup` or use KuzuDB (default).")
+        console.print("Please run `kkg neo4j setup` or use FalkorDB Lite (default).")
     except KeyboardInterrupt:
         # Handle graceful shutdown on Ctrl+C.
         console.print("\n[bold yellow]Server stopped by user.[/bold yellow]")
@@ -219,7 +426,7 @@ def neo4j_setup():
     - Hosted (Neo4j AuraDB or remote instance)
     - Connect to existing Neo4j instance
     
-    Note: This is optional. KeplerKG works with KuzuDB by default.
+    Note: This is optional. KeplerKG works with FalkorDB Lite by default.
     """
     console.print("\n[bold cyan]Neo4j Database Setup[/bold cyan]")
     console.print("Configure Neo4j database connection for KeplerKG.\n")
@@ -274,7 +481,7 @@ def context_create(
 ):
     """Create a new logical context."""
     if database is None:
-        database = config_manager.get_config_value("DEFAULT_DATABASE") or "kuzudb"
+        database = config_manager.get_config_value("DEFAULT_DATABASE") or "falkordb"
     config_manager.create_context(name, database, db_path)
 
 @context_app.command("delete")
@@ -407,10 +614,10 @@ def _load_credentials():
         except Exception:
             # Factory failed entirely — still show a best-guess
             from codegraphcontext.core import _is_falkordb_available, _is_kuzudb_available
-            if _is_kuzudb_available():
-                default_db = "kuzudb"
-            elif _is_falkordb_available():
+            if _is_falkordb_available():
                 default_db = "falkordb"
+            elif _is_kuzudb_available():
+                default_db = "kuzudb"
             else:
                 default_db = "neo4j"
 
@@ -862,7 +1069,7 @@ def doctor():
         default_db = (
             os.environ.get("CGC_RUNTIME_DB_TYPE")
             or os.environ.get("DEFAULT_DATABASE")
-            or config.get("DEFAULT_DATABASE", "kuzudb")
+            or config.get("DEFAULT_DATABASE", "falkordb")
         ).lower()
         console.print(f"   Default database: {default_db}")
         
@@ -977,14 +1184,24 @@ def doctor():
     
     # 6. Check KeplerKG graph health (nodes, CALLS edges, embeddings)
     console.print("\n[bold]6. Checking Graph Health (KeplerKG)...[/bold]")
+    db_manager = None
     try:
-        from codegraphcontext_ext.io.kuzu import get_kuzu_connection
-        conn = get_kuzu_connection()
+        from codegraphcontext.core import get_database_manager
 
-        result = conn.execute("MATCH (f:Function) RETURN count(f)")
-        func_count = result.get_next()[0]
-        result = conn.execute("MATCH (c:Class) RETURN count(c)")
-        class_count = result.get_next()[0]
+        ctx = config_manager.resolve_context(cwd=Path.cwd())
+        os.environ["CGC_RUNTIME_DB_TYPE"] = ctx.database
+        db_manager = get_database_manager(db_path=ctx.db_path)
+
+        func_count = _query_scalar(
+            db_manager,
+            "MATCH (f:Function) RETURN count(f) AS count",
+            "count",
+        )
+        class_count = _query_scalar(
+            db_manager,
+            "MATCH (c:Class) RETURN count(c) AS count",
+            "count",
+        )
 
         if func_count > 0:
             console.print(f"   [green]✓[/green] Graph populated: {func_count} functions, {class_count} classes")
@@ -992,8 +1209,11 @@ def doctor():
             console.print(f"   [yellow]⚠[/yellow] Graph is empty — run: kkg index")
             all_checks_passed = False
 
-        result = conn.execute("MATCH ()-[c:CALLS]->() RETURN count(c)")
-        calls_count = result.get_next()[0]
+        calls_count = _query_scalar(
+            db_manager,
+            "MATCH ()-[c:CALLS]->() RETURN count(c) AS count",
+            "count",
+        )
         if calls_count > 0:
             console.print(f"   [green]✓[/green] CALLS edges: {calls_count}")
         else:
@@ -1002,10 +1222,11 @@ def doctor():
                 f"       Enable SCIP: set SCIP_INDEXER=true in ~/.codegraphcontext/.env, then kkg index --force"
             )
 
-        result = conn.execute(
-            "MATCH (f:Function) WHERE f.embedding IS NOT NULL RETURN count(f)"
+        emb_count = _query_scalar(
+            db_manager,
+            "MATCH (f:Function) WHERE f.embedding IS NOT NULL RETURN count(f) AS count",
+            "count",
         )
-        emb_count = result.get_next()[0]
         if emb_count > 0:
             console.print(f"   [green]✓[/green] Embeddings: {emb_count} functions embedded")
         else:
@@ -1013,7 +1234,12 @@ def doctor():
             all_checks_passed = False
 
     except Exception as e:
-        console.print(f"   [dim]Skipped graph checks (KuzuDB not accessible: {e})[/dim]")
+        console.print(f"   [dim]Skipped graph checks (backend not accessible: {e})[/dim]")
+    finally:
+        try:
+            db_manager.close_driver()
+        except Exception:
+            pass
 
     # Final summary
     console.print("\n" + "=" * 60)
@@ -1048,7 +1274,7 @@ def index(
     project: Optional[str] = typer.Option(
         None,
         "--project",
-        help="Target project slug. Routes KUZUDB_PATH to /Volumes/zombie/cgraph/db/<slug>/kuzudb.",
+        help=PROJECT_OPTION_HELP,
     ),
 ):
     """
@@ -1068,23 +1294,25 @@ def index(
     else:
         index_helper(path, context)
 
-    # Post-index check: warn if zero CALLS edges (graph-based features degraded)
-    try:
-        from codegraphcontext_ext.io.kuzu import get_kuzu_connection
-        conn = get_kuzu_connection()
-        result = conn.execute("MATCH ()-[c:CALLS]->() RETURN count(c)")
-        calls_count = result.get_next()[0]
-        if calls_count == 0:
-            console.print(
-                "\n[yellow]Warning: 0 CALLS edges in the graph.[/yellow]\n"
-                "  Graph-based features (blast-radius, impact, execution-flow,\n"
-                "  fan-out audit rules) will return empty results.\n"
-                "  To extract call relationships, enable SCIP indexing:\n"
-                "    Set SCIP_INDEXER=true in ~/.codegraphcontext/.env\n"
-                "    Then run: kkg index --force\n"
-            )
-    except Exception:
-        pass  # Don't block index on diagnostic failures
+    # Post-index check: the current Kuzu-backed graph adapters still rely on
+    # CALLS edges, so keep this warning only on Kuzu-backed invocations.
+    if _current_database_backend() == "kuzudb":
+        try:
+            from codegraphcontext_ext.io.kuzu import get_kuzu_connection
+            conn = get_kuzu_connection()
+            result = conn.execute("MATCH ()-[c:CALLS]->() RETURN count(c)")
+            calls_count = result.get_next()[0]
+            if calls_count == 0:
+                console.print(
+                    "\n[yellow]Warning: 0 CALLS edges in the graph.[/yellow]\n"
+                    "  Graph-based features (blast-radius, impact, execution-flow,\n"
+                    "  fan-out audit rules) will return empty results.\n"
+                    "  To extract call relationships, enable SCIP indexing:\n"
+                    "    Set SCIP_INDEXER=true in ~/.codegraphcontext/.env\n"
+                    "    Then run: kkg index --force\n"
+                )
+        except Exception:
+            pass  # Don't block index on diagnostic failures
 
 @app.command()
 def clean(
@@ -1245,7 +1473,7 @@ def watch(
     project: Optional[str] = typer.Option(
         None,
         "--project",
-        help="Target project slug. Routes KUZUDB_PATH to /Volumes/zombie/cgraph/db/<slug>/kuzudb.",
+        help=PROJECT_OPTION_HELP,
     ),
 ):
     """
@@ -2373,7 +2601,7 @@ def index_abbrev(
     project: Optional[str] = typer.Option(
         None,
         "--project",
-        help="Target project slug. Routes KUZUDB_PATH to /Volumes/zombie/cgraph/db/<slug>/kuzudb.",
+        help=PROJECT_OPTION_HELP,
     ),
 ):
     """Shortcut for 'kkg index'"""
@@ -2412,7 +2640,7 @@ def watch_abbrev(
     project: Optional[str] = typer.Option(
         None,
         "--project",
-        help="Target project slug. Routes KUZUDB_PATH to /Volumes/zombie/cgraph/db/<slug>/kuzudb.",
+        help=PROJECT_OPTION_HELP,
     ),
 ):
     """Shortcut for 'kkg watch'"""
@@ -2473,6 +2701,9 @@ def main(
     """
     # Initialize context object for sharing state with subcommands
     ctx.ensure_object(dict)
+
+    if sys.platform == "darwin":
+        ctx.with_resource(_suppress_known_macos_stderr())
     
     if database:
         os.environ["CGC_RUNTIME_DB_TYPE"] = database
@@ -2485,6 +2716,9 @@ def main(
         console.print(f"KeplerKG [bold cyan]{get_version()}[/bold cyan]")
         raise typer.Exit()
 
+    if ctx.invoked_subcommand == "embed":
+        _apply_embed_runtime_guards()
+
     if ctx.invoked_subcommand is None:
         console.print("[bold green]👋 Welcome to KeplerKG (kkg)![/bold green]\n")
         console.print("KeplerKG is both an [bold cyan]MCP server[/bold cyan] and a [bold cyan]CLI toolkit[/bold cyan] for code analysis.\n")
@@ -2494,7 +2728,7 @@ def main(
         console.print("🛠️  [bold]For CLI Toolkit Mode (direct usage):[/bold]")
         console.print("   • [cyan]kkg index .[/cyan] - Index your current directory")
         console.print("   • [cyan]kkg list[/cyan] - List indexed repositories\n")
-        console.print("📊 [bold]Using Neo4j instead of KuzuDB?[/bold]")
+        console.print("📊 [bold]Using Neo4j instead of FalkorDB Lite?[/bold]")
         console.print("     Run [cyan]kkg neo4j setup[/cyan] (or [cyan]kkg n[/cyan]) to configure Neo4j\n")
         console.print("📈 [bold]Want visual graph output?[/bold]")
         console.print("     Add [cyan]-V[/cyan] or [cyan]--visual[/cyan] to any analyze/find command\n")

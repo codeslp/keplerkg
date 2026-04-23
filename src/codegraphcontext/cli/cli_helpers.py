@@ -54,12 +54,21 @@ def _initialize_services(cli_context_flag: Optional[str] = None) -> tuple[Any, A
         if ctx.database:
             os.environ['CGC_RUNTIME_DB_TYPE'] = ctx.database
 
-        # Spec 004 project targeting: when the active backend is KùzuDB and a
-        # project-scoped KUZUDB_PATH is already exported by the CLI wrapper,
-        # prefer it over the context registry's global path.
-        project_db_path = os.environ.get("KUZUDB_PATH")
-        if ctx.database and ctx.database.lower() == "kuzudb" and project_db_path:
+        # Spec 004 / Spec 006: when the CLI wrapper exported a project-scoped
+        # local backend path, prefer it over the context registry's global path.
+        project_path_env = {
+            "kuzudb": "KUZUDB_PATH",
+            "falkordb": "FALKORDB_PATH",
+        }.get((ctx.database or "").lower())
+        project_db_path = os.environ.get(project_path_env) if project_path_env else None
+        if project_db_path:
             ctx.db_path = project_db_path
+
+        try:
+            from codegraphcontext_ext.project import reset_local_db_manager
+            reset_local_db_manager(ctx.database, ctx.db_path)
+        except Exception:
+            pass
         
         # Pass the exact DB path resolved from the context
         db_manager = get_database_manager(db_path=ctx.db_path)

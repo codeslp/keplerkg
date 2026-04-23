@@ -108,6 +108,12 @@ class MCPServer:
             if ctx.database:
                 os.environ['CGC_RUNTIME_DB_TYPE'] = ctx.database
 
+            try:
+                from codegraphcontext_ext.project import reset_local_db_manager
+                reset_local_db_manager(ctx.database, ctx.db_path)
+            except Exception:
+                pass
+
             self.db_manager = get_database_manager(db_path=ctx.db_path)
             self.db_manager.get_driver()
 
@@ -295,6 +301,11 @@ class MCPServer:
                 pass
 
             os.environ['CGC_RUNTIME_DB_TYPE'] = local_db
+            try:
+                from codegraphcontext_ext.project import reset_local_db_manager
+                reset_local_db_manager(local_db, new_db_path)
+            except Exception:
+                pass
             new_manager = get_database_manager(db_path=new_db_path)
             new_manager.get_driver()
 
