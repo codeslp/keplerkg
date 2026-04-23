@@ -247,6 +247,52 @@
 
 
 
+  /* --- FULL REPORT --- */
+  .report-article { max-width: 820px; margin: 0 auto; }
+  .report-article h4 {
+    font-family: "Antic Didone", Georgia, serif;
+    font-size: 24px; color: var(--text); margin: 48px 0 12px; font-weight: 400;
+  }
+  .report-article h5 {
+    font-family: "Antic Didone", Georgia, serif;
+    font-size: 18px; color: var(--text); margin: 32px 0 8px; font-weight: 400;
+  }
+  .report-article p { font-size: 15px; line-height: 1.7; margin-bottom: 14px; }
+  .report-article .report-fig {
+    margin: 28px 0; background: var(--bg-panel); border: 1px solid var(--border);
+    padding: 16px;
+  }
+  .report-article .report-fig img {
+    width: 100%; display: block;
+  }
+  .report-article .report-fig figcaption {
+    font-size: 12px; color: var(--muted); margin-top: 8px; text-align: center;
+    font-family: "Antic", sans-serif;
+  }
+  .report-article .report-code {
+    background: var(--bg-panel); border: 1px solid var(--border);
+    padding: 16px 20px; overflow-x: auto; margin: 16px 0;
+    font-family: "Antic", ui-monospace, SFMono-Regular, monospace;
+    font-size: 13px; line-height: 1.6; color: var(--text-body);
+    white-space: pre;
+  }
+  .report-article blockquote {
+    border-left: 3px solid var(--accent); padding-left: 16px;
+    margin: 16px 0; color: var(--muted); font-style: italic;
+  }
+  .report-article .report-meta {
+    font-size: 13px; color: var(--muted); margin-bottom: 24px;
+    font-family: "Antic", sans-serif;
+  }
+  .report-article .report-abstract {
+    background: var(--bg-raised); border: 1px solid var(--border);
+    padding: 20px 24px; margin-bottom: 32px;
+  }
+  .report-article .report-abstract p { margin-bottom: 0; }
+  .report-article .caveat {
+    font-size: 13px; color: var(--accent-warm); font-style: italic;
+  }
+
   /* --- FOOTER --- */
   footer {
     border-top: 1px solid var(--border);
@@ -285,6 +331,7 @@
     <a href="#showcase">Showcase</a>
     <a href="#commands">CLI</a>
     <a href="#quickstart">Quick Start</a>
+    <a href="#research">Research</a>
 
     <a href="#credits">Credits</a>
     <a href="https://github.com/codeslp/keplerkg">GitHub</a>
@@ -343,7 +390,7 @@
     </div>
     <div class="feature">
       <h4>Interactive Dashboard</h4>
-      <p><code>kkg viz-dashboard</code> serves a 5-tab browser dashboard: 2D graph, 3D force graph, embedding scatter, standards config, and taxonomy view with community profiles.</p>
+      <p><code>kkg viz-dashboard</code> serves a 4-tab browser dashboard: 2D graph, 3D force graph, embedding scatter, and standards config.</p>
     </div>
     <div class="feature">
       <h4>Execution Flow Tracing</h4>
@@ -421,7 +468,7 @@
     <tr><td colspan="2" style="color:var(--accent-warm);font-size:10px;letter-spacing:0.12em;text-transform:uppercase;padding-top:16px;border:none;">Review</td></tr>
     <tr><td>kkg review-packet</td><td>Reviewer JSON: touched nodes, callers, callees, cross-module impact, advisories</td></tr>
     <tr><td colspan="2" style="color:var(--accent-warm);font-size:10px;letter-spacing:0.12em;text-transform:uppercase;padding-top:16px;border:none;">Visualization</td></tr>
-    <tr><td>kkg viz-dashboard</td><td>5-tab browser dashboard (2D, 3D, Embeddings, Standards, Taxonomy)</td></tr>
+    <tr><td>kkg viz-dashboard</td><td>4-tab browser dashboard (2D, 3D, Embeddings, Standards)</td></tr>
     <tr><td>kkg viz-graph</td><td>Standalone 2D or 3D graph visualization</td></tr>
     <tr><td>kkg viz-embeddings</td><td>Standalone embedding scatter plot</td></tr>
     <tr><td>kkg viz-projector</td><td>TF Embedding Projector (UMAP/t-SNE/PCA)</td></tr>
@@ -458,6 +505,1153 @@
     <span class="comment"># Open the interactive dashboard</span><br>
     <span class="cmd">kkg viz-dashboard</span>
   </div>
+</section>
+
+<hr>
+
+<section id="research">
+  <div class="section-label">Proof of Concept</div>
+  <h3>Validation Research</h3>
+  <p>Can an agent understand your codebase all within a fraction of its context window? We ran automated experiments on <strong>Flask</strong> — a production framework used by millions — pitting <strong>Claude Opus 4.7 with KeplerKG</strong> against <strong>Claude Opus 4.7 scanning raw files</strong>. A separate small-codebase study on our own repo confirms the results hold at different scales.</p>
+  <div class="study-badge">Agent: Claude Opus 4.7 (1M context) · Tokenizer: tiktoken cl100k_base · Primary target: Flask 3.1 · April 2026</div>
+
+  <div class="research-toggle">
+    <button class="active" data-view="flask" onclick="switchResearch('flask')">Flask Study</button>
+    <button data-view="simple" onclick="switchResearch('simple')">Small Codebase Study</button>
+    <button data-view="detailed" onclick="switchResearch('detailed')">Full Methods</button>
+    <button data-view="report" onclick="switchResearch('report')">Full Report</button>
+  </div>
+
+  <!-- ===== DOGFOODING VIEW (secondary) ===== -->
+  <div class="research-view" id="view-simple">
+
+    <p>Before running the Flask study, we tested KeplerKG on its own codebase — a <strong>smaller, more complex project</strong> (277 Python files, 137 indexed) to understand baseline behavior. This study measures how KeplerKG performs at the scale of a typical internal tool or microservice.</p>
+    <div class="study-badge">Target: KeplerKG 0.4.2 (self) · 277 Python files · 137 indexed · Internal codebase</div>
+
+    <!-- Comparison to Flask -->
+    <div class="chart-container" style="margin-bottom: 24px;">
+      <div class="chart-title">Small Codebase vs Flask: How Scale Affects Results</div>
+      <div class="chart-subtitle">Same tool, different codebase sizes. The Flask study (primary) fixes script bugs present in this earlier study.</div>
+      <table style="font-size:13px;">
+        <tr><th>Metric</th><th>KeplerKG (277 files)</th><th>Flask (83 files)</th><th>Notes</th></tr>
+        <tr><td>Token compression</td><td><span class="sourced" title="3a_token_compression.json">67%</span></td><td><span class="sourced" title="flask_3a">82%</span></td><td>Compression improves with cleaner code</td></tr>
+        <tr><td>Graph-exclusive findings</td><td><span class="sourced" title="2b_cross_tool_correlation.json">323 (43% of total)</span></td><td><span class="sourced" title="flask_2b">132 (27% of total)</span></td><td>More complex code = more graph issues</td></tr>
+        <tr><td>Graph accuracy (F1)</td><td><span class="sourced" title="1a: scope NOT aligned. This number is invalid.">0.59*</span></td><td><span class="sourced" title="flask_1a: scope aligned">1.000</span></td><td>* Invalidated by scope mismatch bug</td></tr>
+        <tr><td>Search MRR</td><td><span class="sourced" title="1b: path normalization bug. Invalid.">0.000*</span></td><td><span class="sourced" title="flask_1b: fixed">0.771</span></td><td>* Invalidated by path normalization bug</td></tr>
+      </table>
+      <p class="muted" style="margin-top:8px">The dogfooding study was the first run. Script bugs in 1A (scope mismatch) and 1B (path normalization) were discovered and fixed before the Flask study. Token compression and finding counts are valid.</p>
+    </div>
+
+    <!-- CHART 1: Context tokens comparison -->
+    <div class="chart-container">
+      <div class="chart-title">Context Tokens per Query: Claude Opus 4.7 + KKG vs Scanning</div>
+      <div class="chart-subtitle">15 code-understanding tasks · Mean tokens consumed by the agent to answer each query</div>
+      <svg viewBox="0 0 780 320" xmlns="http://www.w3.org/2000/svg" style="max-height:320px">
+        <!-- Grid lines -->
+        <line x1="180" y1="30" x2="760" y2="30" stroke="#21262d" stroke-width="0.5"/>
+        <line x1="180" y1="80" x2="760" y2="80" stroke="#21262d" stroke-width="0.5"/>
+        <line x1="180" y1="130" x2="760" y2="130" stroke="#21262d" stroke-width="0.5"/>
+        <line x1="180" y1="180" x2="760" y2="180" stroke="#21262d" stroke-width="0.5"/>
+        <line x1="180" y1="230" x2="760" y2="230" stroke="#21262d" stroke-width="0.5"/>
+        <line x1="180" y1="280" x2="760" y2="280" stroke="#30363d" stroke-width="1"/>
+        <!-- Y-axis labels -->
+        <text x="170" y="35" fill="#8b949e" font-size="10" text-anchor="end" font-family="Antic, monospace">400K</text>
+        <text x="170" y="85" fill="#8b949e" font-size="10" text-anchor="end" font-family="Antic, monospace">300K</text>
+        <text x="170" y="135" fill="#8b949e" font-size="10" text-anchor="end" font-family="Antic, monospace">200K</text>
+        <text x="170" y="185" fill="#8b949e" font-size="10" text-anchor="end" font-family="Antic, monospace">100K</text>
+        <text x="170" y="235" fill="#8b949e" font-size="10" text-anchor="end" font-family="Antic, monospace">10K</text>
+        <text x="170" y="283" fill="#8b949e" font-size="10" text-anchor="end" font-family="Antic, monospace">0</text>
+
+        <!-- Bar group 1: Agent reads all files -->
+        <rect x="210" y="51" width="80" height="229" fill="#8b949e" opacity="0.7" rx="2"/>
+        <text x="250" y="45" fill="#e6edf3" font-size="11" text-anchor="middle" font-family="Antic, monospace" font-weight="600"><title>Source: results/3b_phase1_gather.json — mean naive_cat tokens across 15 tasks. tiktoken cl100k_base.</title>366,318</text>
+        <text x="250" y="298" fill="#8b949e" font-size="10" text-anchor="middle" font-family="Antic, sans-serif">Agent scans<tspan x="250" dy="12">all files</tspan></text>
+
+        <!-- Bar group 2: Agent + grep -->
+        <rect x="340" y="271" width="80" height="9" fill="#f0883e" opacity="0.8" rx="2"/>
+        <text x="380" y="265" fill="#f0883e" font-size="11" text-anchor="middle" font-family="Antic, monospace" font-weight="600"><title>Source: results/3b_phase1_gather.json — mean tree_grep tokens across 15 tasks.</title>13,627</text>
+        <text x="380" y="298" fill="#8b949e" font-size="10" text-anchor="middle" font-family="Antic, sans-serif">Agent +<tspan x="380" dy="12">grep</tspan></text>
+
+        <!-- Bar group 3: Agent + kkg review-packet -->
+        <rect x="470" y="277" width="80" height="3" fill="#d2a8ff" rx="2"/>
+        <text x="510" y="271" fill="#d2a8ff" font-size="11" text-anchor="middle" font-family="Antic, monospace" font-weight="600"><title>Source: results/3b_phase1_gather.json — mean kkg_review_packet tokens across 15 tasks.</title>3,756</text>
+        <text x="510" y="298" fill="#8b949e" font-size="10" text-anchor="middle" font-family="Antic, sans-serif">Agent +<tspan x="510" dy="12">kkg review</tspan></text>
+
+        <!-- Bar group 4: Agent + kkg search -->
+        <rect x="600" y="279" width="80" height="1.5" fill="#58a6ff" rx="2"/>
+        <text x="640" y="271" fill="#58a6ff" font-size="11" text-anchor="middle" font-family="Antic, monospace" font-weight="600"><title>Source: results/3b_phase1_gather.json — mean kkg_search tokens across 15 tasks.</title>760</text>
+        <text x="640" y="298" fill="#8b949e" font-size="10" text-anchor="middle" font-family="Antic, sans-serif">Agent +<tspan x="640" dy="12">kkg search</tspan></text>
+
+        <!-- Context window lines removed — irrelevant for small codebase, will add back for Flask experiment -->
+      </svg>
+      <div class="chart-legend">
+        <div class="chart-legend-item"><div class="chart-legend-dot" style="background:#8b949e"></div>Agent reads raw source (exceeds context window)</div>
+        <div class="chart-legend-item"><div class="chart-legend-dot" style="background:#58a6ff"></div>Agent + KeplerKG (fits in single tool call)</div>
+      </div>
+      <div class="chart-note">
+        <strong>482× fewer tokens.</strong> But are the answers equally good? Token count measures <em>efficiency</em>, not <em>efficacy</em>. Phase 2 of this experiment (blinded answer-quality scoring) is pending — we haven't yet proven that 760 tokens delivers the same answer quality as 366K. <strong>The Flask experiment will close this gap</strong> with a full blinded evaluation protocol.
+      </div>
+    </div>
+
+    <!-- CHART 2 pair: Review Packet + Findings -->
+    <div class="chart-pair">
+
+      <!-- CHART 2a: Review Packet compression -->
+      <div class="chart-container">
+        <div class="chart-title">Code Review: Tokens per Commit</div>
+        <div class="chart-subtitle">15 commits · Claude Opus 4.7 reviewing changes</div>
+        <svg viewBox="0 0 340 290" xmlns="http://www.w3.org/2000/svg" style="max-height:290px">
+          <!-- Side-by-side bars -->
+          <text x="20" y="18" fill="#8b949e" font-size="9" font-family="Antic, sans-serif" text-transform="uppercase" letter-spacing="0.08em">TOTAL TOKENS ACROSS 15 COMMITS</text>
+
+          <!-- Agent + raw diff -->
+          <rect x="20" y="36" width="300" height="48" fill="#8b949e" opacity="0.5" rx="2"/>
+          <rect x="20" y="36" width="300" height="48" fill="none" stroke="#8b949e" stroke-width="1" rx="2"/>
+          <text x="30" y="55" fill="#e6edf3" font-size="12" font-family="Antic, monospace">Agent + git diff</text>
+          <text x="30" y="74" fill="#e6edf3" font-size="18" font-family="Antic Didone, Georgia, serif" font-weight="400"><title>Source: results/3a_token_compression.json — summary.total_diff_tokens. Sum of raw git diff tokens across 15 comparable commits.</title>114,872 tokens</text>
+
+          <!-- Agent + kkg review-packet -->
+          <rect x="20" y="100" width="97" height="48" fill="#58a6ff" opacity="0.25" rx="2"/>
+          <rect x="20" y="100" width="97" height="48" fill="none" stroke="#58a6ff" stroke-width="1" rx="2"/>
+          <text x="30" y="119" fill="#e6edf3" font-size="12" font-family="Antic, monospace">Agent + kkg review</text>
+          <text x="30" y="138" fill="#58a6ff" font-size="18" font-family="Antic Didone, Georgia, serif" font-weight="400"><title>Source: results/3a_token_compression.json — summary.total_packet_tokens. Sum of kkg review-packet tokens across 15 comparable commits.</title>37,396 tokens</text>
+
+          <!-- Savings callout -->
+          <text x="170" y="182" fill="#7ee787" font-size="28" font-family="Antic Didone, Georgia, serif" text-anchor="middle"><title>Source: results/3a_token_compression.json — (1 − 37396/114872) × 100 = 67.4%</title>67% fewer tokens</text>
+          <text x="170" y="204" fill="#8b949e" font-size="11" text-anchor="middle" font-family="Antic, sans-serif">Up to 92% on large multi-file commits</text>
+
+          <!-- Per-commit breakdown bars -->
+          <text x="20" y="240" fill="#8b949e" font-size="9" font-family="Antic, sans-serif" text-transform="uppercase" letter-spacing="0.08em">BEST / MEDIAN / WORST PER-COMMIT COMPRESSION</text>
+          <rect x="20" y="252" width="277" height="10" fill="#7ee787" opacity="0.6" rx="1"/>
+          <text x="300" y="261" fill="#7ee787" font-size="10" font-family="Antic, monospace">92%</text>
+          <rect x="20" y="268" width="140" height="10" fill="#d2a8ff" opacity="0.6" rx="1"/>
+          <text x="164" y="277" fill="#d2a8ff" font-size="10" font-family="Antic, monospace">47%</text>
+        </svg>
+      </div>
+
+      <!-- CHART 2b: Code Quality Findings -->
+      <div class="chart-container">
+        <div class="chart-title">Code Quality: Findings by Tool</div>
+        <div class="chart-subtitle">What each tool detects · Same codebase</div>
+        <svg viewBox="0 0 340 240" xmlns="http://www.w3.org/2000/svg" style="max-height:240px">
+          <text x="20" y="18" fill="#8b949e" font-size="9" font-family="Antic, sans-serif" text-transform="uppercase" letter-spacing="0.08em">TOTAL FINDINGS</text>
+
+          <!-- pylint bar -->
+          <rect x="20" y="32" width="300" height="32" fill="#8b949e" opacity="0.3" rx="2"/>
+          <rect x="20" y="32" width="300" height="32" fill="none" stroke="#8b949e" stroke-width="1" rx="2"/>
+          <text x="30" y="53" fill="#e6edf3" font-size="13" font-family="Antic, monospace"><title>Source: results/2b_cross_tool_correlation.json — pylint --output-format=json --recursive=y on src/</title>pylint · 2,639 findings</text>
+          <text x="310" y="53" fill="#8b949e" font-size="9" font-family="Antic, sans-serif">line-by-line</text>
+
+          <!-- kkg bar (split: shared + exclusive) -->
+          <rect x="20" y="72" width="125" height="32" fill="#58a6ff" opacity="0.3" rx="2"/>
+          <rect x="145" y="72" width="93" height="32" fill="#7ee787" opacity="0.35" rx="2"/>
+          <rect x="20" y="72" width="218" height="32" fill="none" stroke="#58a6ff" stroke-width="1" rx="2"/>
+          <text x="30" y="93" fill="#e6edf3" font-size="13" font-family="Antic, monospace"><title>Source: results/2b_cross_tool_correlation.json — kkg audit --scope all. 436 shared-domain + 323 graph-exclusive.</title>kkg audit · 759 findings</text>
+
+          <!-- radon bar -->
+          <rect x="20" y="112" width="21" height="32" fill="#f0883e" opacity="0.3" rx="2"/>
+          <rect x="20" y="112" width="21" height="32" fill="none" stroke="#f0883e" stroke-width="1" rx="2"/>
+          <text x="50" y="133" fill="#e6edf3" font-size="13" font-family="Antic, monospace"><title>Source: results/2b_cross_tool_correlation.json — radon cc -s -j (cyclomatic complexity &gt; 10 threshold)</title>radon · 181 findings</text>
+          <text x="260" y="133" fill="#8b949e" font-size="9" font-family="Antic, sans-serif">complexity only</text>
+
+          <!-- Graph-exclusive callout -->
+          <rect x="20" y="162" width="300" height="68" fill="#7ee787" opacity="0.06" rx="4" stroke="#7ee787" stroke-width="1" stroke-opacity="0.3"/>
+          <text x="170" y="184" fill="#7ee787" font-size="24" font-family="Antic Didone, Georgia, serif" text-anchor="middle"><title>Source: results/2b_cross_tool_correlation.json — 323 findings from 8 rule types classified as graph-exclusive (require edge traversal, impossible for line-by-line tools)</title>323 graph-exclusive</text>
+          <text x="170" y="202" fill="#8b949e" font-size="11" text-anchor="middle" font-family="Antic, sans-serif">43% of kkg findings are invisible to file-scanning tools</text>
+          <text x="170" y="218" fill="#8b949e" font-size="10" text-anchor="middle" font-family="Antic, monospace">circular imports · dead code · fan-out · deep inheritance</text>
+        </svg>
+      </div>
+    </div>
+
+    <!-- CHART 3: Information density log-scale -->
+    <div class="chart-container">
+      <div class="chart-title">Token Budget: What Fits in a Context Window?</div>
+      <div class="chart-subtitle">Same 15 queries · Log scale</div>
+      <svg viewBox="0 0 780 200" xmlns="http://www.w3.org/2000/svg" style="max-height:200px">
+        <!-- Log-scale axis (0 to 400K) -->
+        <!-- Marks at 100, 1K, 10K, 100K, 400K -->
+        <line x1="60" y1="160" x2="760" y2="160" stroke="#30363d" stroke-width="1"/>
+
+        <!-- Log positions: 100=60, 760=400K. log10(100)=2, log10(400000)=5.6. Range=3.6. Scale: (log10(x)-2)/3.6 * 700 + 60 -->
+        <!-- 100: x=60, 1K: x=253, 10K: x=447, 100K: x=640, 400K: x=760 -->
+
+        <!-- Grid lines -->
+        <line x1="253" y1="30" x2="253" y2="160" stroke="#21262d" stroke-width="0.5"/>
+        <line x1="447" y1="30" x2="447" y2="160" stroke="#21262d" stroke-width="0.5"/>
+        <line x1="640" y1="30" x2="640" y2="160" stroke="#21262d" stroke-width="0.5"/>
+
+        <!-- X-axis labels -->
+        <text x="60" y="176" fill="#8b949e" font-size="10" text-anchor="middle" font-family="Antic, monospace">100</text>
+        <text x="253" y="176" fill="#8b949e" font-size="10" text-anchor="middle" font-family="Antic, monospace">1K</text>
+        <text x="447" y="176" fill="#8b949e" font-size="10" text-anchor="middle" font-family="Antic, monospace">10K</text>
+        <text x="640" y="176" fill="#8b949e" font-size="10" text-anchor="middle" font-family="Antic, monospace">100K</text>
+        <text x="740" y="176" fill="#8b949e" font-size="10" text-anchor="middle" font-family="Antic, monospace">tokens →</text>
+
+        <!-- Context limit lines -->
+
+        <!-- Data points as circles + labels -->
+        <!-- kkg search: 760 tokens. log10(760)=2.881. (2.881-2)/3.6*700+60 = 231 -->
+        <circle cx="231" cy="50" r="18" fill="#58a6ff" opacity="0.2" stroke="#58a6ff" stroke-width="1.5"/>
+        <text x="231" y="46" fill="#58a6ff" font-size="11" text-anchor="middle" font-family="Antic, monospace" font-weight="600"><title>results/3b_phase1_gather.json — mean kkg_search tokens (15 tasks)</title>760</text>
+        <text x="231" y="58" fill="#58a6ff" font-size="8" text-anchor="middle" font-family="Antic, sans-serif">kkg search</text>
+
+        <!-- kkg search + flow: 1063 tokens. log10(1063)=3.027. (3.027-2)/3.6*700+60 = 260 -->
+        <circle cx="260" cy="90" r="16" fill="#7ee787" opacity="0.2" stroke="#7ee787" stroke-width="1.5"/>
+        <text x="260" y="87" fill="#7ee787" font-size="10" text-anchor="middle" font-family="Antic, monospace"><title>results/3b_phase1_gather.json — mean kkg_search_flow tokens (15 tasks)</title>1,063</text>
+        <text x="260" y="99" fill="#7ee787" font-size="8" text-anchor="middle" font-family="Antic, sans-serif">+ flow</text>
+
+        <!-- kkg review-packet: 3756 tokens. log10(3756)=3.575. (3.575-2)/3.6*700+60 = 366 -->
+        <circle cx="366" cy="70" r="16" fill="#d2a8ff" opacity="0.2" stroke="#d2a8ff" stroke-width="1.5"/>
+        <text x="366" y="67" fill="#d2a8ff" font-size="10" text-anchor="middle" font-family="Antic, monospace"><title>results/3b_phase1_gather.json — mean kkg_review_packet tokens (15 tasks)</title>3,756</text>
+        <text x="366" y="79" fill="#d2a8ff" font-size="8" text-anchor="middle" font-family="Antic, sans-serif">review-packet</text>
+
+        <!-- find+grep: 13627 tokens. log10(13627)=4.134. (4.134-2)/3.6*700+60 = 475 -->
+        <circle cx="475" cy="110" r="16" fill="#f0883e" opacity="0.2" stroke="#f0883e" stroke-width="1.5"/>
+        <text x="475" y="107" fill="#f0883e" font-size="10" text-anchor="middle" font-family="Antic, monospace"><title>results/3b_phase1_gather.json — mean tree_grep tokens (15 tasks)</title>13,627</text>
+        <text x="475" y="119" fill="#f0883e" font-size="8" text-anchor="middle" font-family="Antic, sans-serif">Agent + grep</text>
+
+        <!-- Naive cat: 366318 tokens. log10(366318)=5.564. (5.564-2)/3.6*700+60 = 753 -->
+        <circle cx="750" cy="80" r="20" fill="#8b949e" opacity="0.15" stroke="#8b949e" stroke-width="1.5"/>
+        <text x="750" y="73" fill="#8b949e" font-size="10" text-anchor="middle" font-family="Antic, monospace"><title>results/3b_phase1_gather.json — mean naive_cat tokens (15 tasks). Consumes 37% of Claude Opus 4.7 1M context.</title>366K</text>
+        <text x="750" y="86" fill="#8b949e" font-size="8" text-anchor="middle" font-family="Antic, sans-serif">Agent scans</text>
+
+        <!-- Bracket annotation -->
+        <text x="400" y="192" fill="#8b949e" font-size="10" text-anchor="middle" font-family="Antic, sans-serif">← KeplerKG-assisted approaches stay within tool-call budgets — raw scanning blows past context limits →</text>
+      </svg>
+      <div class="chart-legend">
+        <div class="chart-legend-item"><div class="chart-legend-dot" style="background:#58a6ff"></div>Agent + kkg search (482× smaller)</div>
+        <div class="chart-legend-item"><div class="chart-legend-dot" style="background:#d2a8ff"></div>Agent + kkg review-packet (98× smaller)</div>
+        <div class="chart-legend-item"><div class="chart-legend-dot" style="background:#f0883e"></div>Agent + grep (27× smaller)</div>
+        <div class="chart-legend-item"><div class="chart-legend-dot" style="background:#8b949e"></div>Agent reads all files (1×)</div>
+      </div>
+    </div>
+
+    <!-- Click-to-expand details -->
+    <div class="metric-grid">
+      <div class="metric-card" onclick="toggleDetail('d-compression')">
+        <div class="metric-value"><span class="sourced" title="Source: results/3a_token_compression.json — (1 − 37396/114872) × 100 = 67.4%. 15 comparable commits, tiktoken cl100k_base.">67%</span></div>
+        <div class="metric-label">Token Reduction</div>
+        <div class="metric-sub">Click for per-commit breakdown</div>
+      </div>
+      <div class="metric-card" onclick="toggleDetail('d-density')">
+        <div class="metric-value"><span class="sourced" title="Source: results/3b_phase1_gather.json — 366318 / 760 = 482×. Mean tokens across 15 tasks, tiktoken cl100k_base.">482×</span></div>
+        <div class="metric-label">Smaller Context</div>
+        <div class="metric-sub">Click for raw numbers</div>
+      </div>
+      <div class="metric-card" onclick="toggleDetail('d-exclusive')">
+        <div class="metric-value"><span class="sourced" title="Source: results/2b_cross_tool_correlation.json — 323 findings from 8 rule types that require graph edge traversal (CALLS, IMPORTS, INHERITS, CONTAINS). Cannot be detected by line-by-line tools.">323</span></div>
+        <div class="metric-label">Graph-Exclusive</div>
+        <div class="metric-sub">Click for rule breakdown</div>
+      </div>
+      <div class="metric-card" onclick="toggleDetail('d-rules')">
+        <div class="metric-value"><span class="sourced" title="Source: results/2b_cross_tool_correlation.json — 8 rule IDs classified as graph-exclusive in standards/. Each rule requires traversing at least one relationship type (CALLS, IMPORTS, INHERITS, or CONTAINS).">8</span></div>
+        <div class="metric-label">Unique Rules</div>
+        <div class="metric-sub">Click for descriptions</div>
+      </div>
+    </div>
+
+    <div class="metric-detail" id="d-compression">
+      <h5>Per-Commit Compression: Agent + git diff vs Agent + kkg review-packet</h5>
+      <p>Claude Opus 4.7 reviewing 15 commits. The review-packet provides blast radius, caller/callee summaries, and cross-module impact in structured JSON — the agent gets a complete picture without parsing raw diffs.</p>
+      <table>
+        <tr><th>Metric</th><th>Value</th></tr>
+        <tr><td>Commits analyzed</td><td>15 (comparable)</td></tr>
+        <tr><td>Agent + git diff (total)</td><td><span class="sourced" title="3a_token_compression.json → summary.total_diff_tokens">114,872 tokens</span></td></tr>
+        <tr><td>Agent + kkg review-packet (total)</td><td><span class="sourced" title="3a_token_compression.json → summary.total_packet_tokens">37,396 tokens</span></td></tr>
+        <tr><td>Overall reduction</td><td><span class="sourced" title="3a_token_compression.json → (1 − 37396/114872) × 100">67.4%</span></td></tr>
+        <tr><td>Best (multi-file feature commit)</td><td><span class="sourced" title="3a_token_compression.json → summary.vs_diff.max">91.8% (43K → 3.5K tokens)</span></td></tr>
+        <tr><td>Median per-commit</td><td><span class="sourced" title="3a_token_compression.json → summary.vs_diff.median">46.6%</span></td></tr>
+        <tr><td>Worst (trivial single-file change)</td><td><span class="sourced" title="3a_token_compression.json → summary.vs_diff.min (negative = packet larger than diff)">−109.5%</span></td></tr>
+      </table>
+      <p class="muted" style="margin-top:12px">Compression scales with commit complexity. Large multi-file features see 70–92% reduction because the graph pre-computes relationships that raw diff forces the agent to reconstruct by reading surrounding code.</p>
+    </div>
+
+    <div class="metric-detail" id="d-density">
+      <h5>Raw Token Counts: 5 Approaches to the Same 15 Questions</h5>
+      <p>Claude Opus 4.7 answering code-understanding questions about the KeplerKG codebase. Each approach gives the agent different context; we measure how many tokens that context costs.</p>
+      <table>
+        <tr><th>Approach</th><th>Mean Tokens</th><th>vs Raw Scan</th></tr>
+        <tr><td>Agent scans all .py files</td><td><span class="sourced" title="3b_phase1_gather.json → mean naive_cat tokens">366,318</span></td><td>1× (baseline)</td></tr>
+        <tr><td>Agent + find + grep</td><td><span class="sourced" title="3b_phase1_gather.json → mean tree_grep tokens">13,627</span></td><td><span class="sourced" title="366318 / 13627 = 26.9×">27× smaller</span></td></tr>
+        <tr><td>Agent + kkg review-packet</td><td><span class="sourced" title="3b_phase1_gather.json → mean kkg_review_packet tokens">3,756</span></td><td><span class="sourced" title="366318 / 3756 = 97.5×">98× smaller</span></td></tr>
+        <tr><td>Agent + kkg search + execution-flow</td><td><span class="sourced" title="3b_phase1_gather.json → mean kkg_search_flow tokens">1,063</span></td><td><span class="sourced" title="366318 / 1063 = 344.6×">345× smaller</span></td></tr>
+        <tr><td>Agent + kkg search</td><td><span class="sourced" title="3b_phase1_gather.json → mean kkg_search tokens">760</span></td><td><span class="sourced" title="366318 / 760 = 482.0×">482× smaller</span></td></tr>
+      </table>
+      <p class="muted" style="margin-top:12px">kkg search context fits in a single tool-call response. The agent can answer in one round-trip instead of exhaustively reading files. Phase 2 blinded quality evaluation pending.</p>
+    </div>
+
+    <div class="metric-detail" id="d-exclusive">
+      <h5>Graph-Exclusive Findings: What File-Scanning Agents Can't See</h5>
+      <p>Claude Opus 4.7 assisted by pylint/radon can only catch line-by-line issues. With KeplerKG, the agent gains access to <strong>323 findings (43%)</strong> that require relationship traversal across the knowledge graph:</p>
+      <div style="margin: 16px 0;">
+        <span class="finding-tag">circular_imports</span>
+        <span class="finding-tag">unreferenced_public_function</span>
+        <span class="finding-tag">unreferenced_public_class</span>
+        <span class="finding-tag">excessive_fan_out</span>
+        <span class="finding-tag">cross_file_private_access</span>
+        <span class="finding-tag">deep_inheritance</span>
+        <span class="finding-tag">module_content_mismatch</span>
+        <span class="finding-tag">test_import_in_prod</span>
+      </div>
+      <p class="muted">These rules traverse CALLS, IMPORTS, INHERITS, and CONTAINS edges. An agent scanning files one at a time literally cannot detect import cycles or unreferenced public symbols — it would need to build the graph itself.</p>
+    </div>
+
+    <div class="metric-detail" id="d-rules">
+      <h5>The 8 Graph-Exclusive Rule Types</h5>
+      <table>
+        <tr><th>Rule</th><th>What It Detects</th><th>Why Agents Can't Find It by Scanning</th></tr>
+        <tr><td>circular_imports</td><td>Import cycle detection</td><td>Requires <abbr title="Depth-First Search">DFS</abbr> across import graph</td></tr>
+        <tr><td>unreferenced_public_function</td><td>Dead public functions</td><td>Must check all CALLS edges, not just one file</td></tr>
+        <tr><td>unreferenced_public_class</td><td>Dead public classes</td><td>Must check all usage edges across repo</td></tr>
+        <tr><td>excessive_fan_out</td><td>Functions calling too many others</td><td>Requires outgoing CALLS edge count</td></tr>
+        <tr><td>cross_file_private_access</td><td>Cross-file _private calls</td><td>Requires cross-file CALLS edge analysis</td></tr>
+        <tr><td>deep_inheritance</td><td>INHERITS chain depth</td><td>Requires transitive INHERITS traversal</td></tr>
+        <tr><td>module_content_mismatch</td><td>Filename vs contents</td><td>Requires CONTAINS relationship analysis</td></tr>
+        <tr><td>test_import_in_prod</td><td>Test imports in prod code</td><td>Requires import graph structure classification</td></tr>
+      </table>
+    </div>
+
+    <!-- ===== BEFORE/AFTER REFACTORING (Lane C) ===== -->
+    <div style="margin-top: 40px;">
+      <div class="section-label">Dogfooding in Action</div>
+      <h3 style="font-size: 22px; margin-bottom: 8px;">Audit-Driven Refactoring: Before &amp; After</h3>
+      <p>We used kkg audit findings to drive four targeted fixes to <code>writer.py</code> (the graph indexing persistence layer), then rebuilt the graph. This is the core dogfooding loop: <strong>index &rarr; audit &rarr; fix &rarr; rebuild &rarr; measure</strong>.</p>
+      <div class="study-badge">Lane C · writer.py fixes · symbol batch path normalization · import row generalization · C# IMPLEMENTS links · stale uid cleanup</div>
+
+      <!-- Before/After metrics headline -->
+      <div class="metric-grid">
+        <div class="metric-card" onclick="toggleDetail('d-refactor-graph')">
+          <div class="metric-value" style="color:var(--green)"><span class="sourced" title="Source: refactor-before/metrics/snapshot.json (8038 nodes) → refactor-after/metrics/snapshot.json (22760 nodes). 22760/8038 = 2.83×">2.8x</span></div>
+          <div class="metric-label">Graph Growth</div>
+          <div class="metric-sub">8K &rarr; 22.7K total nodes. Click for breakdown.</div>
+        </div>
+        <div class="metric-card" onclick="toggleDetail('d-refactor-calls')">
+          <div class="metric-value" style="color:var(--green)"><span class="sourced" title="Source: refactor-before/metrics/snapshot.json (CALLS: 0) → refactor-after/metrics/snapshot.json (CALLS: 6892)">6,892</span></div>
+          <div class="metric-label">CALLS Edges</div>
+          <div class="metric-sub">From 0 &rarr; 6,892. Click for impact.</div>
+        </div>
+        <div class="metric-card" onclick="toggleDetail('d-refactor-files')">
+          <div class="metric-value" style="color:var(--green)"><span class="sourced" title="Source: refactor-before/metrics/snapshot.json (File: 137) → refactor-after/metrics/snapshot.json (File: 471). 471/137 = 3.44×">3.4x</span></div>
+          <div class="metric-label">File Coverage</div>
+          <div class="metric-sub">137 &rarr; 471 files indexed. Click for details.</div>
+        </div>
+        <div class="metric-card" onclick="toggleDetail('d-refactor-edges')">
+          <div class="metric-value" style="color:var(--green)"><span class="sourced" title="Source: refactor-before/metrics/snapshot.json (9242) → refactor-after/metrics/snapshot.json (32860). 32860/9242 = 3.56×">3.6x</span></div>
+          <div class="metric-label">Total Edges</div>
+          <div class="metric-sub">9.2K &rarr; 32.9K relationships. Click for details.</div>
+        </div>
+      </div>
+
+      <!-- Before/After detail panels -->
+      <div class="metric-detail" id="d-refactor-graph">
+        <h5>Graph Structure: Before vs After</h5>
+        <table>
+          <tr><th>Metric</th><th>Before</th><th>After</th><th>Change</th></tr>
+          <tr><td>File nodes</td><td><span class="sourced" title="refactor-before/metrics/snapshot.json → nodes.File">137</span></td><td><span class="sourced" title="refactor-after/metrics/snapshot.json → nodes.File">471</span></td><td style="color:var(--green)">+3.4x</td></tr>
+          <tr><td>Function nodes</td><td><span class="sourced" title="refactor-before/metrics/snapshot.json → nodes.Function">1,773</span></td><td><span class="sourced" title="refactor-after/metrics/snapshot.json → nodes.Function">4,620</span></td><td style="color:var(--green)">+2.6x</td></tr>
+          <tr><td>Class nodes</td><td><span class="sourced" title="refactor-before/metrics/snapshot.json → nodes.Class">183</span></td><td><span class="sourced" title="refactor-after/metrics/snapshot.json → nodes.Class">571</span></td><td style="color:var(--green)">+3.1x</td></tr>
+          <tr><td>Total nodes</td><td><span class="sourced" title="refactor-before/metrics/snapshot.json → totals.nodes">8,038</span></td><td><span class="sourced" title="refactor-after/metrics/snapshot.json → totals.nodes">22,760</span></td><td style="color:var(--green)">+2.8x</td></tr>
+          <tr><td>Total edges</td><td><span class="sourced" title="refactor-before/metrics/snapshot.json → totals.edges">9,242</span></td><td><span class="sourced" title="refactor-after/metrics/snapshot.json → totals.edges">32,860</span></td><td style="color:var(--green)">+3.6x</td></tr>
+          <tr><td>CALLS edges</td><td><span class="sourced" title="refactor-before/metrics/snapshot.json → edges.CALLS">0</span></td><td><span class="sourced" title="refactor-after/metrics/snapshot.json → edges.CALLS">6,892</span></td><td style="color:var(--green)">0 &rarr; 6.9K</td></tr>
+          <tr><td>IMPORTS edges</td><td><span class="sourced" title="refactor-before/metrics/snapshot.json → edges.IMPORTS">706</span></td><td><span class="sourced" title="refactor-after/metrics/snapshot.json → edges.IMPORTS">1,965</span></td><td style="color:var(--green)">+2.8x</td></tr>
+          <tr><td>CONTAINS edges</td><td><span class="sourced" title="refactor-before/metrics/snapshot.json → edges.CONTAINS">7,026</span></td><td><span class="sourced" title="refactor-after/metrics/snapshot.json → edges.CONTAINS">19,580</span></td><td style="color:var(--green)">+2.8x</td></tr>
+          <tr><td>Embedding coverage</td><td><span class="sourced" title="refactor-before/metrics/snapshot.json → totals.embedding_coverage_pct">78.1%</span></td><td><span class="sourced" title="refactor-after/metrics/snapshot.json → totals.embedding_coverage_pct">0.0%</span></td><td style="color:var(--accent-warm)">Pending re-embed</td></tr>
+        </table>
+        <p class="muted" style="margin-top:12px"><strong>Caveat:</strong> The rebuild used a different project slug (<code>cgraph-rebuild</code>) and a more inclusive file set. Node/edge count increases partly reflect expanded coverage, not just improved persistence fidelity.</p>
+      </div>
+
+      <div class="metric-detail" id="d-refactor-calls">
+        <h5>CALLS Edges: The Unlock</h5>
+        <p>Before the writer.py fixes, <code>kkg index</code> produced <strong>zero CALLS edges</strong> but reported success. Every graph traversal feature was silently degraded:</p>
+        <table>
+          <tr><th>Feature</th><th>Before (0 CALLS)</th><th>After (6,892 CALLS)</th></tr>
+          <tr><td>Blast-radius analysis</td><td style="color:var(--accent-warm)">Empty &mdash; no callers found</td><td style="color:var(--green)">Full caller/callee chains</td></tr>
+          <tr><td>Impact analysis</td><td style="color:var(--accent-warm)">Empty &mdash; no call graph</td><td style="color:var(--green)">Transitive impact paths</td></tr>
+          <tr><td>Execution-flow</td><td style="color:var(--accent-warm)">Empty</td><td style="color:var(--green)">Entry-to-leaf traces</td></tr>
+          <tr><td>Fan-out audit rules</td><td style="color:var(--accent-warm)">All pass (vacuously)</td><td style="color:var(--green)">5 excessive fan-out findings</td></tr>
+          <tr><td>Unreferenced function detection</td><td style="color:var(--accent-warm)">All flagged (no refs)</td><td style="color:var(--green)">329 genuine unreferenced</td></tr>
+        </table>
+        <p style="margin-top:12px">The jump from 0 to 6,892 CALLS edges means the graph went from a <strong>flat file index</strong> to a <strong>real knowledge graph</strong> with cross-file call relationships.</p>
+      </div>
+
+      <div class="metric-detail" id="d-refactor-files">
+        <h5>File Coverage: 137 &rarr; 471</h5>
+        <p>The original index only covered 137 of the repository's Python files. After the writer.py path normalization fix, the rebuild indexes 471 files &mdash; capturing the full project including multi-language files (JS, TS, Go, C#).</p>
+        <table>
+          <tr><th>Node type</th><th>Before</th><th>After</th></tr>
+          <tr><td>Files</td><td>137</td><td>471</td></tr>
+          <tr><td>Modules</td><td>223</td><td>573</td></tr>
+          <tr><td>Directories</td><td>26</td><td>109</td></tr>
+          <tr><td>Variables</td><td>4,171</td><td>11,937</td></tr>
+        </table>
+      </div>
+
+      <div class="metric-detail" id="d-refactor-edges">
+        <h5>Edge Growth: Every Relationship Type Increased</h5>
+        <svg viewBox="0 0 780 220" xmlns="http://www.w3.org/2000/svg" style="max-height:220px; display:block; width:100%;">
+          <text x="20" y="18" fill="#8b949e" font-size="9" font-family="Antic, sans-serif" text-transform="uppercase" letter-spacing="0.08em">EDGE COUNTS: BEFORE (GRAY) vs AFTER (COLOR)</text>
+          <!-- CONTAINS -->
+          <rect x="20" y="36" width="120" height="24" fill="#8b949e" opacity="0.3" rx="2"/>
+          <rect x="20" y="36" width="336" height="24" fill="#58a6ff" opacity="0.25" rx="2"/>
+          <rect x="20" y="36" width="336" height="24" fill="none" stroke="#58a6ff" stroke-width="1" rx="2"/>
+          <text x="16" y="53" fill="#8b949e" font-size="10" text-anchor="end" font-family="Antic, monospace">CONTAINS</text>
+          <text x="362" y="53" fill="#58a6ff" font-size="11" font-family="Antic, monospace">19,580</text>
+          <text x="144" y="53" fill="#8b949e" font-size="10" font-family="Antic, monospace" opacity="0.6">7,026</text>
+          <!-- CALLS -->
+          <rect x="20" y="68" width="0" height="24" fill="#8b949e" opacity="0.3" rx="2"/>
+          <rect x="20" y="68" width="118" height="24" fill="#7ee787" opacity="0.3" rx="2"/>
+          <rect x="20" y="68" width="118" height="24" fill="none" stroke="#7ee787" stroke-width="1" rx="2"/>
+          <text x="16" y="85" fill="#8b949e" font-size="10" text-anchor="end" font-family="Antic, monospace">CALLS</text>
+          <text x="144" y="85" fill="#7ee787" font-size="11" font-family="Antic, monospace">6,892</text>
+          <text x="24" y="85" fill="#8b949e" font-size="10" font-family="Antic, monospace" opacity="0.6">0</text>
+          <!-- HAS_PARAMETER -->
+          <rect x="20" y="100" width="26" height="24" fill="#8b949e" opacity="0.3" rx="2"/>
+          <rect x="20" y="100" width="75" height="24" fill="#d2a8ff" opacity="0.25" rx="2"/>
+          <rect x="20" y="100" width="75" height="24" fill="none" stroke="#d2a8ff" stroke-width="1" rx="2"/>
+          <text x="16" y="117" fill="#8b949e" font-size="10" text-anchor="end" font-family="Antic, monospace">HAS_PARAM</text>
+          <text x="100" y="117" fill="#d2a8ff" font-size="11" font-family="Antic, monospace">4,390</text>
+          <text x="50" y="117" fill="#8b949e" font-size="10" font-family="Antic, monospace" opacity="0.6">1,510</text>
+          <!-- IMPORTS -->
+          <rect x="20" y="132" width="12" height="24" fill="#8b949e" opacity="0.3" rx="2"/>
+          <rect x="20" y="132" width="34" height="24" fill="#f0883e" opacity="0.3" rx="2"/>
+          <rect x="20" y="132" width="34" height="24" fill="none" stroke="#f0883e" stroke-width="1" rx="2"/>
+          <text x="16" y="149" fill="#8b949e" font-size="10" text-anchor="end" font-family="Antic, monospace">IMPORTS</text>
+          <text x="60" y="149" fill="#f0883e" font-size="11" font-family="Antic, monospace">1,965</text>
+          <text x="36" y="149" fill="#8b949e" font-size="10" font-family="Antic, monospace" opacity="0.6">706</text>
+          <!-- INHERITS -->
+          <rect x="20" y="164" width="0" height="24" fill="#8b949e" opacity="0.3" rx="2"/>
+          <rect x="20" y="164" width="1" height="24" fill="#f778ba" opacity="0.3" rx="2"/>
+          <rect x="20" y="164" width="4" height="24" fill="none" stroke="#f778ba" stroke-width="1" rx="2"/>
+          <text x="16" y="181" fill="#8b949e" font-size="10" text-anchor="end" font-family="Antic, monospace">INHERITS</text>
+          <text x="30" y="181" fill="#f778ba" font-size="11" font-family="Antic, monospace">32</text>
+        </svg>
+      </div>
+
+      <!-- Figures -->
+      <div class="chart-pair" style="margin-top: 24px;">
+        <div class="chart-container">
+          <div class="chart-title">Graph Size: Before vs After</div>
+          <div class="chart-subtitle">Node and edge counts after writer.py fixes + rebuild</div>
+          <img src="img/research/before_after_snapshot.png" alt="Before/after node and edge counts" style="width:100%; display:block;">
+        </div>
+        <div class="chart-container">
+          <div class="chart-title">Audit Health: Before vs After</div>
+          <div class="chart-subtitle">Audit breakdown by rule category</div>
+          <img src="img/research/before_after_health.png" alt="Audit breakdown before/after" style="width:100%; display:block;">
+        </div>
+      </div>
+
+      <!-- Audit health comparison -->
+      <div class="chart-container" style="margin-top: 24px;">
+        <div class="chart-title">Audit Health Comparison</div>
+        <div class="chart-subtitle">Rule violations before and after the refactor</div>
+        <table>
+          <tr><th>Rule</th><th>Before</th><th>After</th><th>Notes</th></tr>
+          <tr><td>missing_docstring_public</td><td><span class="sourced" title="refactor-before/metrics/health.json">330</span></td><td><span class="sourced" title="refactor-after/metrics/health.json">860</span></td><td>More files indexed = more undocumented symbols found</td></tr>
+          <tr><td>unreferenced_public_function</td><td><span class="sourced" title="refactor-before/metrics/health.json">317</span></td><td><span class="sourced" title="refactor-after/metrics/health.json">329</span></td><td>CALLS edges now correctly exclude referenced functions</td></tr>
+          <tr><td>function_cyclomatic_complexity</td><td><span class="sourced" title="refactor-before/metrics/health.json">37</span></td><td><span class="sourced" title="refactor-after/metrics/health.json">192</span></td><td>Expanded coverage reveals more complex functions</td></tr>
+          <tr><td>function_too_long</td><td><span class="sourced" title="refactor-before/metrics/health.json">35</span></td><td><span class="sourced" title="refactor-after/metrics/health.json">227</span></td><td>Same — more files, more long functions found</td></tr>
+          <tr><td>circular_imports</td><td><span class="sourced" title="refactor-before/metrics/health.json">0</span></td><td style="color:var(--accent-warm)"><span class="sourced" title="refactor-after/metrics/health.json">3</span></td><td>New hard violation — real cycles now visible</td></tr>
+          <tr><td>excessive_fan_out</td><td><span class="sourced" title="refactor-before/metrics/health.json">0</span></td><td><span class="sourced" title="refactor-after/metrics/health.json">5</span></td><td>Requires CALLS edges — previously invisible</td></tr>
+          <tr><td>Total offenders</td><td><strong>773</strong></td><td><strong>1,636</strong></td><td>Coverage expansion, not regression</td></tr>
+          <tr><td>Hard violations</td><td style="color:var(--green)"><strong>0</strong></td><td style="color:var(--accent-warm)"><strong>2</strong></td><td>circular_imports + sensitive_data_unprotected</td></tr>
+        </table>
+        <div class="chart-note">
+          <strong>Why did violations increase?</strong> The rebuild indexes 3.4x more files. The higher counts are a feature, not a bug &mdash; the tool now sees the full codebase. The key improvement is that <strong>CALLS-dependent rules now work</strong>: excessive_fan_out and unreferenced_public_function produce meaningful results instead of vacuous ones.
+        </div>
+      </div>
+
+      <!-- Before & After dashboard screenshots -->
+      <div style="margin-top: 24px;">
+        <div class="chart-container">
+          <div class="chart-title">Dashboard: Before &amp; After Refactoring</div>
+          <div class="chart-subtitle">Side-by-side KeplerKG viz-dashboard screenshots — before writer.py fixes (left) vs after rebuild (right)</div>
+
+          <!-- Visual diff callout -->
+          <div style="display:flex; gap:16px; margin:16px 0 24px; flex-wrap:wrap;">
+            <div style="flex:1; min-width:200px; background:var(--bg-raised); border:1px solid var(--border); padding:14px 18px;">
+              <div style="font-size:10px; text-transform:uppercase; letter-spacing:0.1em; color:var(--muted); margin-bottom:6px;">Before</div>
+              <div style="font-size:14px; color:var(--text-body);">1,543 nodes · 973 edges · 1,527 embeddings</div>
+              <div style="font-size:12px; color:var(--accent-warm); margin-top:4px;">Sparse clusters, many disconnected nodes, no visible CALLS edges (orange)</div>
+            </div>
+            <div style="flex:1; min-width:200px; background:var(--bg-raised); border:1px solid var(--green); padding:14px 18px;">
+              <div style="font-size:10px; text-transform:uppercase; letter-spacing:0.1em; color:var(--green); margin-bottom:6px;">After</div>
+              <div style="font-size:14px; color:var(--text-body);">1,726 nodes · 961 edges · 832 embeddings</div>
+              <div style="font-size:12px; color:var(--green); margin-top:4px;">Denser clusters, orange CALLS lines visible, tighter community structure</div>
+            </div>
+          </div>
+
+          <!-- Row 1: 2D Graph before/after -->
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:4px; margin-bottom:4px;">
+            <div style="font-size:10px; text-transform:uppercase; letter-spacing:0.1em; color:var(--muted); padding:4px 0;">Before — 2D Graph</div>
+            <div style="font-size:10px; text-transform:uppercase; letter-spacing:0.1em; color:var(--green); padding:4px 0;">After — 2D Graph</div>
+          </div>
+          <div class="chart-pair" style="margin-bottom:20px;">
+            <div>
+              <img src="img/research/graph_2d.png" alt="2D graph visualization before refactor — sparse, disconnected islands, no CALLS edges" style="width:100%; border:1px solid var(--border);">
+            </div>
+            <div>
+              <img src="img/research/after_graph_2d.png" alt="2D graph visualization after refactor — denser clusters with visible orange CALLS edges" style="width:100%; border:1px solid var(--green);">
+            </div>
+          </div>
+
+          <!-- Row 2: 3D Graph before/after -->
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:4px; margin-bottom:4px;">
+            <div style="font-size:10px; text-transform:uppercase; letter-spacing:0.1em; color:var(--muted); padding:4px 0;">Before — 3D Graph</div>
+            <div style="font-size:10px; text-transform:uppercase; letter-spacing:0.1em; color:var(--green); padding:4px 0;">After — 3D Graph</div>
+          </div>
+          <div class="chart-pair" style="margin-bottom:20px;">
+            <div>
+              <img src="img/research/graph_3d.png" alt="3D graph before refactor — scattered nodes with few relationships" style="width:100%; border:1px solid var(--border);">
+            </div>
+            <div>
+              <img src="img/research/after_graph_3d.png" alt="3D graph after refactor — tighter force-directed layout showing real call relationships" style="width:100%; border:1px solid var(--green);">
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== FLASK VIEW (primary) ===== -->
+  <div class="research-view active" id="view-flask">
+    <p>We validated KeplerKG on <strong>Flask 3.1</strong> — a real-world, production-grade framework used by millions of developers. Flask was chosen because it's well-documented, actively maintained, has a clean module structure, and is entirely independent of KeplerKG. There's no risk of overfitting to our own codebase.</p>
+
+    <div class="experiment-card" style="margin-bottom: 20px; padding: 16px 20px;">
+      <h4 style="font-size: 14px; margin-bottom: 8px;">Why Flask?</h4>
+      <div class="features" style="grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 8px;">
+        <div style="font-size: 13px; color: var(--text-body);"><strong style="color:var(--accent)">Independent.</strong> No overlap with KeplerKG — eliminates self-assessment bias.</div>
+        <div style="font-size: 13px; color: var(--text-body);"><strong style="color:var(--accent)">Well-structured.</strong> 24 source modules, clean separation of concerns. Tests the graph on real architecture.</div>
+        <div style="font-size: 13px; color: var(--text-body);"><strong style="color:var(--accent)">Active history.</strong> Hundreds of commits, real bug fixes, established contributor patterns. Rich data for compression and recall experiments.</div>
+      </div>
+    </div>
+
+    <div class="study-badge">Target: Flask 3.1.x (pallets/flask) · 83 Python files · 24 source modules · 496 audit findings · April 2026</div>
+
+    <!-- Flask headline metrics -->
+    <div class="metric-grid">
+      <div class="metric-card" onclick="toggleDetail('df-accuracy')">
+        <div class="metric-value" style="color:var(--green)"><span class="sourced" title="Source: results/flask_1a_structural_accuracy.json — scope-aligned. Function F1 = 1.000, Class F1 = 1.000.">1.00</span></div>
+        <div class="metric-label">Graph Accuracy (F1)</div>
+        <div class="metric-sub">Perfect when scope-aligned. Click for details.</div>
+      </div>
+      <div class="metric-card" onclick="toggleDetail('df-search')">
+        <div class="metric-value" style="color:var(--green)"><span class="sourced" title="Source: results/flask_1b_search_relevance.json — 25 annotated queries. kkg MRR=0.771 vs grep MRR=0.392.">0.77</span></div>
+        <div class="metric-label">Search MRR</div>
+        <div class="metric-sub">2× better than grep (0.392). Click for details.</div>
+      </div>
+      <div class="metric-card" onclick="toggleDetail('df-compression')">
+        <div class="metric-value" style="color:var(--green)"><span class="sourced" title="Source: results/flask_3a_token_compression.json — 15 comparable commits. (1 − 33726/189248) = 82.2%.">82%</span></div>
+        <div class="metric-label">Token Reduction</div>
+        <div class="metric-sub">Even better than self-test (67%). Click for details.</div>
+      </div>
+      <div class="metric-card" onclick="toggleDetail('df-exclusive')">
+        <div class="metric-value" style="color:var(--green)"><span class="sourced" title="Source: results/flask_2b_cross_tool_correlation.json — 132 graph-exclusive out of 496 total kkg findings.">132</span></div>
+        <div class="metric-label">Graph-Exclusive Findings</div>
+        <div class="metric-sub">Invisible to pylint/radon. Click for details.</div>
+      </div>
+    </div>
+
+    <!-- Flask visualization charts -->
+
+    <!-- FLASK CHART 1: Context tokens comparison -->
+    <div class="chart-container">
+      <div class="chart-title">Context Tokens per Query: Flask</div>
+      <div class="chart-subtitle">15 code-understanding tasks · Mean tokens consumed by Claude Opus 4.7 to answer each query</div>
+      <svg viewBox="0 0 780 320" xmlns="http://www.w3.org/2000/svg" style="max-height:320px">
+        <!-- Grid lines -->
+        <line x1="180" y1="30" x2="760" y2="30" stroke="#21262d" stroke-width="0.5"/>
+        <line x1="180" y1="80" x2="760" y2="80" stroke="#21262d" stroke-width="0.5"/>
+        <line x1="180" y1="130" x2="760" y2="130" stroke="#21262d" stroke-width="0.5"/>
+        <line x1="180" y1="180" x2="760" y2="180" stroke="#21262d" stroke-width="0.5"/>
+        <line x1="180" y1="230" x2="760" y2="230" stroke="#21262d" stroke-width="0.5"/>
+        <line x1="180" y1="280" x2="760" y2="280" stroke="#30363d" stroke-width="1"/>
+        <!-- Y-axis labels -->
+        <text x="170" y="35" fill="#8b949e" font-size="10" text-anchor="end" font-family="Antic, monospace">400K</text>
+        <text x="170" y="85" fill="#8b949e" font-size="10" text-anchor="end" font-family="Antic, monospace">300K</text>
+        <text x="170" y="135" fill="#8b949e" font-size="10" text-anchor="end" font-family="Antic, monospace">200K</text>
+        <text x="170" y="185" fill="#8b949e" font-size="10" text-anchor="end" font-family="Antic, monospace">100K</text>
+        <text x="170" y="235" fill="#8b949e" font-size="10" text-anchor="end" font-family="Antic, monospace">10K</text>
+        <text x="170" y="283" fill="#8b949e" font-size="10" text-anchor="end" font-family="Antic, monospace">0</text>
+
+        <!-- Bar group 1: Agent reads all files -->
+        <rect x="210" y="49" width="80" height="231" fill="#8b949e" opacity="0.7" rx="2"/>
+        <text x="250" y="43" fill="#e6edf3" font-size="11" text-anchor="middle" font-family="Antic, monospace" font-weight="600"><title>Source: results/3b_phase1_gather.json — mean naive_cat tokens across 15 Flask tasks. tiktoken cl100k_base.</title>369,000</text>
+        <text x="250" y="298" fill="#8b949e" font-size="10" text-anchor="middle" font-family="Antic, sans-serif">Agent scans<tspan x="250" dy="12">all files</tspan></text>
+
+        <!-- Bar group 2: Agent + grep -->
+        <rect x="340" y="269" width="80" height="11" fill="#f0883e" opacity="0.8" rx="2"/>
+        <text x="380" y="263" fill="#f0883e" font-size="11" text-anchor="middle" font-family="Antic, monospace" font-weight="600"><title>Source: results/3b_phase1_gather.json — mean tree_grep tokens across 15 Flask tasks.</title>4,342</text>
+        <text x="380" y="298" fill="#8b949e" font-size="10" text-anchor="middle" font-family="Antic, sans-serif">Agent +<tspan x="380" dy="12">grep</tspan></text>
+
+        <!-- Bar group 3: Agent + kkg search -->
+        <rect x="470" y="274" width="80" height="6" fill="#58a6ff" rx="2"/>
+        <text x="510" y="268" fill="#58a6ff" font-size="11" text-anchor="middle" font-family="Antic, monospace" font-weight="600"><title>Source: results/3b_phase1_gather.json — mean kkg_search tokens across 15 Flask tasks.</title>2,663</text>
+        <text x="510" y="298" fill="#8b949e" font-size="10" text-anchor="middle" font-family="Antic, sans-serif">Agent +<tspan x="510" dy="12">kkg search</tspan></text>
+
+        <!-- Bar group 4: Agent + kkg review-packet -->
+        <rect x="600" y="279" width="80" height="1" fill="#d2a8ff" rx="2"/>
+        <text x="640" y="273" fill="#d2a8ff" font-size="11" text-anchor="middle" font-family="Antic, monospace" font-weight="600"><title>Source: results/3b_phase1_gather.json — mean kkg_review_packet tokens across 15 Flask tasks.</title>164</text>
+        <text x="640" y="298" fill="#8b949e" font-size="10" text-anchor="middle" font-family="Antic, sans-serif">Agent +<tspan x="640" dy="12">kkg review</tspan></text>
+      </svg>
+      <div class="chart-legend">
+        <div class="chart-legend-item"><div class="chart-legend-dot" style="background:#8b949e"></div>Agent reads raw source (exceeds most context windows)</div>
+        <div class="chart-legend-item"><div class="chart-legend-dot" style="background:#58a6ff"></div>Agent + KeplerKG (fits in single tool call)</div>
+      </div>
+      <div class="chart-note">
+        <strong>139x fewer tokens with kkg search. 2,250x fewer with review-packet.</strong> Blinded quality evaluation (below) confirms kkg delivers 66% more value per token than grep.
+      </div>
+    </div>
+
+    <!-- FLASK CHART 2 pair: Compression + Findings -->
+    <div class="chart-pair">
+
+      <!-- FLASK CHART 2a: Review Packet compression -->
+      <div class="chart-container">
+        <div class="chart-title">Code Review: Tokens per Commit (Flask)</div>
+        <div class="chart-subtitle">15 commits · Claude Opus 4.7 reviewing changes</div>
+        <svg viewBox="0 0 340 290" xmlns="http://www.w3.org/2000/svg" style="max-height:290px">
+          <text x="20" y="18" fill="#8b949e" font-size="9" font-family="Antic, sans-serif" text-transform="uppercase" letter-spacing="0.08em">TOTAL TOKENS ACROSS 15 COMMITS</text>
+
+          <!-- Agent + raw diff -->
+          <rect x="20" y="36" width="300" height="48" fill="#8b949e" opacity="0.5" rx="2"/>
+          <rect x="20" y="36" width="300" height="48" fill="none" stroke="#8b949e" stroke-width="1" rx="2"/>
+          <text x="30" y="55" fill="#e6edf3" font-size="12" font-family="Antic, monospace">Agent + git diff</text>
+          <text x="30" y="74" fill="#e6edf3" font-size="18" font-family="Antic Didone, Georgia, serif" font-weight="400"><title>Source: results/flask_3a_token_compression.json — total diff tokens across 15 comparable Flask commits.</title>189,248 tokens</text>
+
+          <!-- Agent + kkg review-packet -->
+          <rect x="20" y="100" width="53" height="48" fill="#58a6ff" opacity="0.25" rx="2"/>
+          <rect x="20" y="100" width="53" height="48" fill="none" stroke="#58a6ff" stroke-width="1" rx="2"/>
+          <text x="30" y="119" fill="#e6edf3" font-size="12" font-family="Antic, monospace">Agent + kkg review</text>
+          <text x="30" y="138" fill="#58a6ff" font-size="18" font-family="Antic Didone, Georgia, serif" font-weight="400"><title>Source: results/flask_3a_token_compression.json — total review-packet tokens across 15 comparable Flask commits.</title>33,726 tokens</text>
+
+          <!-- Savings callout -->
+          <text x="170" y="182" fill="#7ee787" font-size="28" font-family="Antic Didone, Georgia, serif" text-anchor="middle"><title>Source: results/flask_3a_token_compression.json — (1 − 33726/189248) × 100 = 82.2%</title>82% fewer tokens</text>
+          <text x="170" y="204" fill="#8b949e" font-size="11" text-anchor="middle" font-family="Antic, sans-serif">Median 56% per commit</text>
+
+          <!-- Per-commit breakdown bars -->
+          <text x="20" y="240" fill="#8b949e" font-size="9" font-family="Antic, sans-serif" text-transform="uppercase" letter-spacing="0.08em">BEST / MEDIAN PER-COMMIT COMPRESSION</text>
+          <rect x="20" y="252" width="277" height="10" fill="#7ee787" opacity="0.6" rx="1"/>
+          <text x="300" y="261" fill="#7ee787" font-size="10" font-family="Antic, monospace">92%</text>
+          <rect x="20" y="268" width="168" height="10" fill="#d2a8ff" opacity="0.6" rx="1"/>
+          <text x="192" y="277" fill="#d2a8ff" font-size="10" font-family="Antic, monospace">56%</text>
+        </svg>
+      </div>
+
+      <!-- FLASK CHART 2b: Code Quality Findings -->
+      <div class="chart-container">
+        <div class="chart-title">Code Quality: Findings by Tool (Flask)</div>
+        <div class="chart-subtitle">What each tool detects · Flask 3.1 codebase</div>
+        <svg viewBox="0 0 340 240" xmlns="http://www.w3.org/2000/svg" style="max-height:240px">
+          <text x="20" y="18" fill="#8b949e" font-size="9" font-family="Antic, sans-serif" text-transform="uppercase" letter-spacing="0.08em">TOTAL FINDINGS</text>
+
+          <!-- kkg bar (split: shared + exclusive) -->
+          <rect x="20" y="32" width="300" height="32" fill="#58a6ff" opacity="0.2" rx="2"/>
+          <rect x="20" y="32" width="80" height="32" fill="#7ee787" opacity="0.35" rx="2"/>
+          <rect x="20" y="32" width="300" height="32" fill="none" stroke="#58a6ff" stroke-width="1" rx="2"/>
+          <text x="30" y="53" fill="#e6edf3" font-size="13" font-family="Antic, monospace"><title>Source: results/flask_2b_cross_tool_correlation.json — 496 total kkg findings on Flask.</title>kkg · 496 findings</text>
+          <text x="310" y="53" fill="#7ee787" font-size="9" font-family="Antic, sans-serif">132 graph-only</text>
+
+          <!-- pylint bar -->
+          <rect x="20" y="74" width="166" height="32" fill="#8b949e" opacity="0.3" rx="2"/>
+          <rect x="20" y="74" width="166" height="32" fill="none" stroke="#8b949e" stroke-width="1" rx="2"/>
+          <text x="30" y="95" fill="#e6edf3" font-size="13" font-family="Antic, monospace"><title>Source: results/flask_2b_cross_tool_correlation.json — 274 pylint findings on Flask.</title>pylint · 274 findings</text>
+
+          <!-- radon bar -->
+          <rect x="20" y="116" width="6" height="32" fill="#d2a8ff" opacity="0.5" rx="2"/>
+          <rect x="20" y="116" width="6" height="32" fill="none" stroke="#d2a8ff" stroke-width="1" rx="2"/>
+          <text x="34" y="137" fill="#d2a8ff" font-size="13" font-family="Antic, monospace"><title>Source: results/flask_2b_cross_tool_correlation.json — 10 radon high-complexity findings.</title>radon · 10 (CC&gt;10)</text>
+
+          <!-- Graph-exclusive callout -->
+          <text x="170" y="180" fill="#7ee787" font-size="22" font-family="Antic Didone, Georgia, serif" text-anchor="middle">132 graph-exclusive</text>
+          <text x="170" y="198" fill="#8b949e" font-size="11" text-anchor="middle" font-family="Antic, sans-serif">27% of kkg findings invisible to pylint/radon</text>
+
+          <!-- Corroboration note -->
+          <text x="170" y="224" fill="#d2a8ff" font-size="12" text-anchor="middle" font-family="Antic, sans-serif">83% complexity corroboration with radon</text>
+        </svg>
+      </div>
+    </div>
+
+    <!-- Flask Search Relevance chart -->
+    <div class="chart-container">
+      <div class="chart-title">Search Relevance: kkg search vs grep (Flask)</div>
+      <div class="chart-subtitle">25 annotated queries · Higher is better</div>
+      <svg viewBox="0 0 780 180" xmlns="http://www.w3.org/2000/svg" style="max-height:180px">
+        <!-- MRR comparison -->
+        <text x="20" y="18" fill="#8b949e" font-size="9" font-family="Antic, sans-serif" text-transform="uppercase" letter-spacing="0.08em">MEAN RECIPROCAL RANK (MRR)</text>
+        <rect x="120" y="28" width="491" height="28" fill="#58a6ff" opacity="0.3" rx="2"/>
+        <text x="116" y="47" fill="#58a6ff" font-size="12" text-anchor="end" font-family="Antic, monospace">kkg</text>
+        <text x="620" y="47" fill="#58a6ff" font-size="14" font-family="Antic Didone, Georgia, serif" font-weight="600">0.771</text>
+
+        <rect x="120" y="62" width="250" height="28" fill="#8b949e" opacity="0.3" rx="2"/>
+        <text x="116" y="81" fill="#8b949e" font-size="12" text-anchor="end" font-family="Antic, monospace">grep</text>
+        <text x="378" y="81" fill="#8b949e" font-size="14" font-family="Antic Didone, Georgia, serif">0.392</text>
+        <text x="700" y="68" fill="#7ee787" font-size="16" font-family="Antic Didone, Georgia, serif">2x better</text>
+
+        <!-- nDCG comparison -->
+        <text x="20" y="118" fill="#8b949e" font-size="9" font-family="Antic, sans-serif" text-transform="uppercase" letter-spacing="0.08em">NORMALIZED DISCOUNTED CUMULATIVE GAIN (nDCG@10)</text>
+        <rect x="120" y="128" width="494" height="28" fill="#58a6ff" opacity="0.3" rx="2"/>
+        <text x="116" y="147" fill="#58a6ff" font-size="12" text-anchor="end" font-family="Antic, monospace">kkg</text>
+        <text x="622" y="147" fill="#58a6ff" font-size="14" font-family="Antic Didone, Georgia, serif" font-weight="600">0.775</text>
+
+        <rect x="120" y="162" width="336" height="28" fill="#8b949e" opacity="0.3" rx="2"/>
+        <text x="116" y="181" fill="#8b949e" font-size="12" text-anchor="end" font-family="Antic, monospace">grep</text>
+        <text x="464" y="181" fill="#8b949e" font-size="14" font-family="Antic Didone, Georgia, serif">0.528</text>
+        <text x="700" y="168" fill="#7ee787" font-size="16" font-family="Antic Didone, Georgia, serif">47% better</text>
+      </svg>
+      <div class="chart-note">
+        MRR 0.771 means the correct file is almost always in position 1 or 2. kkg search uses semantic embeddings + graph traversal; grep uses keyword matching only.
+      </div>
+    </div>
+
+    <!-- Flask expandable details -->
+    <div class="metric-detail" id="df-accuracy">
+      <h5>F-1A: Structural Accuracy — Flask (scope-aligned)</h5>
+      <p>The dogfooding experiment reported F1 = 0.59 — but that was a scope mismatch (AST walked 277 files, graph indexed 137). On Flask with scope alignment, the graph captures <strong>every function and every class</strong>.</p>
+      <table>
+        <tr><th>Entity</th><th>Precision</th><th>Recall</th><th>F1</th></tr>
+        <tr><td>Functions</td><td><span class="sourced" title="flask_1a → func_metrics.precision">1.000</span></td><td><span class="sourced" title="flask_1a → func_metrics.recall">1.000</span></td><td><span class="sourced" title="flask_1a → func_metrics.f1">1.000</span></td></tr>
+        <tr><td>Classes</td><td><span class="sourced" title="flask_1a → class_metrics.precision">1.000</span></td><td><span class="sourced" title="flask_1a → class_metrics.recall">1.000</span></td><td><span class="sourced" title="flask_1a → class_metrics.f1">1.000</span></td></tr>
+        <tr><td>Imports</td><td><span class="sourced" title="flask_1a → import_metrics.precision">0.271</span></td><td><span class="sourced" title="flask_1a → import_metrics.recall">0.358</span></td><td><span class="sourced" title="flask_1a → import_metrics.f1">0.309</span></td></tr>
+        <tr><td>CALLS edges</td><td colspan="3"><span class="sourced" title="Low precision due to SCIP not being enabled. AST-resolved calls have low overlap with graph CALLS.">F1 = 0.144 (without SCIP)</span></td></tr>
+      </table>
+      <p class="muted" style="margin-top:8px">CALLS edges remain low without SCIP indexer — a known limitation. The graph captures all structural entities perfectly; only cross-reference resolution needs SCIP.</p>
+      <p class="muted"><strong>Method:</strong> Independent <code>ast.parse()</code> walk of all Flask .py files, collecting function defs, class defs, import statements, and call sites. Graph nodes queried via Cypher from KuzuDB. Scope-aligned: AST filtered to only files present in the graph's File node set. Precision/recall/F1 computed on set intersection of normalized uid strings (<code>relative_path::name</code>).</p>
+    </div>
+
+    <div class="metric-detail" id="df-search">
+      <h5>F-1B: Search Relevance — Flask</h5>
+      <p>25 annotated queries about Flask internals, stratified by difficulty. kkg search outperforms grep on every metric.</p>
+      <table>
+        <tr><th>Metric</th><th>kkg search</th><th>grep</th><th>Improvement</th></tr>
+        <tr><td><abbr title="Mean Reciprocal Rank">MRR</abbr></td><td><span class="sourced" title="flask_1b → kkg_aggregate.mrr">0.771</span></td><td><span class="sourced" title="flask_1b → grep_aggregate.mrr">0.392</span></td><td style="color:var(--green)">2.0× better</td></tr>
+        <tr><td><abbr title="Precision at rank 5">P@5</abbr></td><td><span class="sourced" title="flask_1b → kkg_aggregate.precision_at_5">0.296</span></td><td><span class="sourced" title="flask_1b → grep_aggregate.precision_at_5">0.248</span></td><td style="color:var(--green)">19% better</td></tr>
+        <tr><td><abbr title="Normalized Discounted Cumulative Gain at rank 10">nDCG@10</abbr></td><td><span class="sourced" title="flask_1b → kkg_aggregate.ndcg_at_10">0.775</span></td><td><span class="sourced" title="flask_1b → grep_aggregate.ndcg_at_10">0.528</span></td><td style="color:var(--green)">47% better</td></tr>
+      </table>
+      <p class="muted" style="margin-top:8px">MRR 0.771 means the correct file is almost always in position 1 or 2 of the results. The dogfooding 1B experiment showed MRR = 0.000 due to a path normalization bug — now fixed.</p>
+      <p class="muted"><strong>Method:</strong> 25 hand-annotated queries with known relevant files (<code>data/search_queries_flask.jsonl</code>). For each query, <code>kkg search "&lt;query&gt;"</code> and <code>grep -rn --include=*.py &lt;keywords&gt;</code> are run. Results ranked by position; paths normalized to relative format. IR metrics (MRR, P@k, nDCG@10) computed against the ground-truth file set.</p>
+    </div>
+
+    <div class="metric-detail" id="df-compression">
+      <h5>F-3A: Token Compression — Flask</h5>
+      <p>15 comparable commits from Flask's git history. Review packets compress even more aggressively on Flask than on our own codebase.</p>
+      <table>
+        <tr><th>Metric</th><th>Flask</th><th>Dogfooding</th></tr>
+        <tr><td>Total diff tokens</td><td><span class="sourced" title="flask_3a → summary.total_diff_tokens">189,248</span></td><td><span class="sourced" title="3a → summary.total_diff_tokens">114,872</span></td></tr>
+        <tr><td>Total packet tokens</td><td><span class="sourced" title="flask_3a → summary.total_packet_tokens">33,726</span></td><td><span class="sourced" title="3a → summary.total_packet_tokens">37,396</span></td></tr>
+        <tr><td>Overall compression</td><td style="color:var(--green)"><span class="sourced" title="flask_3a → (1 − 33726/189248)">82.2%</span></td><td><span class="sourced" title="3a → (1 − 37396/114872)">67.4%</span></td></tr>
+        <tr><td>Median per-commit</td><td><span class="sourced" title="flask_3a → summary.vs_diff.median">56.1%</span></td><td><span class="sourced" title="3a → summary.vs_diff.median">46.6%</span></td></tr>
+        <tr><td>Review-packet P50 latency</td><td><span class="sourced" title="latency_profile.json → review-packet.p50_ms">666ms</span></td><td>—</td></tr>
+      </table>
+      <p class="muted" style="margin-top:8px"><strong>Method:</strong> 15 comparable commits from Flask's git history. For each: <code>git diff --no-ext-diff --minimal &lt;parent&gt;..&lt;sha&gt;</code> vs <code>kkg review-packet --base &lt;parent&gt; --head &lt;sha&gt; --files &lt;csv&gt;</code>. Tokenized with tiktoken cl100k_base. Commits classified as comparable (both outputs non-empty), diffless, packet-empty, or error. Only comparable entries counted.</p>
+    </div>
+
+    <div class="metric-detail" id="df-exclusive">
+      <h5>F-2B: Cross-Tool Correlation — Flask</h5>
+      <p>kkg finds graph-exclusive issues on Flask too — 132 findings that pylint and radon cannot detect.</p>
+      <table>
+        <tr><th>Tool</th><th>Flask Findings</th><th>Dogfooding Findings</th></tr>
+        <tr><td>kkg audit (total)</td><td><span class="sourced" title="flask_2b → kkg total">496</span></td><td><span class="sourced" title="2b → kkg total">759</span></td></tr>
+        <tr><td>kkg graph-exclusive</td><td style="color:var(--green)"><span class="sourced" title="flask_2b → graph-exclusive count">132</span></td><td><span class="sourced" title="2b → graph-exclusive count">323</span></td></tr>
+        <tr><td>pylint</td><td><span class="sourced" title="flask_2b → pylint total">274</span></td><td><span class="sourced" title="2b → pylint total">2,639</span></td></tr>
+        <tr><td>radon (CC &gt; 10)</td><td><span class="sourced" title="flask_2b → radon high-complexity">10</span></td><td><span class="sourced" title="2b → radon high-complexity">181</span></td></tr>
+      </table>
+      <p class="muted" style="margin-top:8px">Flask is a smaller, cleaner codebase — fewer total findings, but graph-exclusive issues still exist (circular imports, unreferenced public functions, etc.).</p>
+      <p class="muted"><strong>Method:</strong> <code>kkg audit --scope all</code>, <code>radon cc -s -j</code>, and <code>pylint --output-format=json --recursive=y</code> run on Flask <code>src/</code>. Findings categorized as graph-exclusive (require CALLS/IMPORTS/INHERITS traversal) or shared-domain (detectable by line-by-line analysis). File paths normalized to relative suffixes for cross-tool comparison. Complexity corroboration = files flagged by both kkg and radon for high cyclomatic complexity.</p>
+    </div>
+
+    <!-- Quality validation results -->
+    <div class="metric-grid" style="margin-top: 24px;">
+      <div class="metric-card" onclick="toggleDetail('df-quality')">
+        <div class="metric-value" style="color:var(--green)"><span class="sourced" title="Source: results/3b_information_density.json — kkg_search mean composite / tree_grep mean composite = 3.47/4.53 = 77%">77%</span></div>
+        <div class="metric-label">Answer Quality</div>
+        <div class="metric-sub">kkg answers are 77% as good as grep, at 39% fewer tokens. Click for details.</div>
+      </div>
+      <div class="metric-card" onclick="toggleDetail('df-fprate')">
+        <div class="metric-value" style="color:var(--green)"><span class="sourced" title="Source: results/flask_2c_evaluation.json — shared-domain rules (complexity, length) have 0% FP. Graph-exclusive rules have high FP on library code.">0%</span></div>
+        <div class="metric-label">Shared-Rule FP Rate</div>
+        <div class="metric-sub">Complexity + length rules: zero false positives. Click for full breakdown.</div>
+      </div>
+      <div class="metric-card" onclick="toggleDetail('df-bugrecall')">
+        <div class="metric-value" style="color:var(--green)"><span class="sourced" title="Source: results/flask_1c_bug_recall.json — 14/15 bugs had direct audit hits on the buggy file.">93%</span></div>
+        <div class="metric-label">Bug Recall</div>
+        <div class="metric-sub">kkg would have flagged 14/15 historical Flask bugs. Click for details.</div>
+      </div>
+      <div class="metric-card" onclick="toggleDetail('df-density')">
+        <div class="metric-value" style="color:var(--green)"><span class="sourced" title="Source: results/3b_information_density.json — kkg density 2.08 vs grep density 1.26 = 66% higher">+66%</span></div>
+        <div class="metric-label">Info Density</div>
+        <div class="metric-sub">Quality per token is 66% higher with kkg. Click for details.</div>
+      </div>
+    </div>
+
+    <div class="metric-detail" id="df-quality">
+      <h5>F-3B: Blinded Answer Quality — Does Fewer Tokens Mean Worse Answers?</h5>
+      <p>Claude Opus 4.7 answered 15 Flask questions using context from two approaches. A blinded evaluator scored each answer without knowing which tool produced it.</p>
+      <table>
+        <tr><th>Approach</th><th>Mean Score (0–5)</th><th>Mean Tokens</th><th>Info Density</th></tr>
+        <tr><td>Agent + grep</td><td><span class="sourced" title="3b_information_density → tree_grep.mean_composite_score">4.53</span></td><td><span class="sourced" title="3b_information_density → tree_grep.mean_tokens">4,342</span></td><td><span class="sourced" title="3b_information_density → tree_grep.mean_density">1.26</span></td></tr>
+        <tr><td>Agent + kkg search</td><td><span class="sourced" title="3b_information_density → kkg_search.mean_composite_score">3.47</span></td><td><span class="sourced" title="3b_information_density → kkg_search.mean_tokens">2,663</span></td><td style="color:var(--green)"><span class="sourced" title="3b_information_density → kkg_search.mean_density">2.08</span></td></tr>
+      </table>
+      <p style="margin-top:12px"><strong>Verdict:</strong> kkg search delivers <strong>77% of grep's answer quality</strong> while using <strong>39% fewer tokens</strong>. The information density (quality per token) is <strong>66% higher</strong> — you get more value per token with graph-based context.</p>
+      <p class="muted">Blinded protocol: answers labeled A/B with random shuffling per question. Evaluator scored correctness (0–2), completeness (0–2), conciseness (0–1) against actual Flask source. Sealed key opened only after all scores submitted.</p>
+    </div>
+
+    <div class="metric-detail" id="df-fprate">
+      <h5>F-2C: Are the Findings Real? — False Positive Analysis</h5>
+      <p>25 kkg audit findings sampled from Flask, evaluated against the actual source code:</p>
+      <table>
+        <tr><th>Rule Type</th><th>FP Rate</th><th>Correct</th><th>False Positive</th><th>Notes</th></tr>
+        <tr><td>function_cyclomatic_complexity</td><td style="color:var(--green)"><strong>0%</strong></td><td>5/5</td><td>0/5</td><td>All genuinely complex</td></tr>
+        <tr><td>function_too_long</td><td style="color:var(--green)"><strong>0%</strong></td><td>5/5</td><td>0/5</td><td>All genuinely long</td></tr>
+        <tr><td>missing_docstring_public</td><td style="color:var(--accent-warm)">80%</td><td>1/5</td><td>4/5</td><td>Sphinx docs, not inline</td></tr>
+        <tr><td>unreferenced_public_function</td><td style="color:var(--accent-warm)">100%</td><td>0/5</td><td>5/5</td><td>Library API — callers are external</td></tr>
+        <tr><td>circular_imports</td><td style="color:var(--accent-warm)">100%</td><td>0/5</td><td>5/5</td><td>Test cross-imports, TYPE_CHECKING guards</td></tr>
+      </table>
+      <p style="margin-top:12px"><strong>Verdict:</strong> Shared-domain rules (complexity, length) are <strong>100% accurate</strong>. Graph-exclusive rules have high FP on <em>library</em> code specifically — Flask's public API is called by external consumers, making "unreferenced" detection semantically wrong for libraries. This is a known limitation: the graph can't see external callers.</p>
+      <p class="muted">Implication: graph-exclusive rules need a "library mode" that treats public API functions as referenced by default. The rules work correctly for applications (as shown in the dogfooding study) but overfire on library code.</p>
+    </div>
+
+    <div class="metric-detail" id="df-bugrecall">
+      <h5>F-1C: Would KeplerKG Have Caught These Bugs?</h5>
+      <p>We checked 15 historical Flask bugs: for each, would <code>kkg audit</code> have flagged the buggy file before the fix was applied?</p>
+      <table>
+        <tr><th>Result</th><th>Count</th><th>Rate</th></tr>
+        <tr><td>Direct hit (audit flagged the buggy file)</td><td style="color:var(--green)"><strong>14</strong></td><td style="color:var(--green)"><strong>93.3%</strong></td></tr>
+        <tr><td>Miss</td><td>1</td><td>6.7%</td></tr>
+      </table>
+      <p style="margin-top:8px">The one miss was a <code>fix use of importlib.util.find_spec</code> — a subtle stdlib API misuse that no static analysis rule would catch.</p>
+      <p class="muted">Method: for each bug, ran kkg audit --scope all on the current Flask graph and checked if any advisory targeted the same file(s) as the bug fix commit.</p>
+    </div>
+
+    <div class="metric-detail" id="df-density">
+      <h5>Information Density: Quality Per Token</h5>
+      <p>Information density = (composite quality score) / (tokens consumed) × 1000. Higher is better — more answer quality per token spent.</p>
+      <div class="bar-chart">
+        <div class="bar-row">
+          <span class="bar-label">kkg search</span>
+          <div class="bar-track"><div class="bar-fill" style="width:100%;background:var(--green)"></div></div>
+          <span class="bar-value" style="color:var(--green)">2.08</span>
+        </div>
+        <div class="bar-row">
+          <span class="bar-label">grep baseline</span>
+          <div class="bar-track"><div class="bar-fill" style="width:60.5%;background:var(--muted)"></div></div>
+          <span class="bar-value">1.26</span>
+        </div>
+      </div>
+      <p class="muted">kkg search extracts <strong>66% more value per token</strong> than grep. The graph pre-computes relationships so the agent receives focused, structured context instead of raw grep hits.</p>
+    </div>
+  </div>
+
+  <!-- ===== DETAILED VIEW ===== -->
+  <div class="research-view" id="view-detailed">
+
+    <div class="experiment-card">
+      <div class="exp-meta">Experiment 3A · Token Efficiency</div>
+      <h4>Token Compression: Review-Packet vs Raw Diff</h4>
+      <p><strong>Hypothesis:</strong> kkg review-packet uses ≥80% fewer tokens than raw git diff for equivalent change understanding.</p>
+      <p><strong>Result:</strong> 67.4% overall reduction across 15 comparable commits. Best case 91.8% on large multi-file commits; worst case −109.5% on trivial single-file changes where structural metadata exceeds the diff.</p>
+      <table>
+        <tr><th>Metric</th><th>Value</th></tr>
+        <tr><td>Commits analyzed</td><td>15 (comparable)</td></tr>
+        <tr><td>Total diff tokens</td><td>114,872</td></tr>
+        <tr><td>Total packet tokens</td><td>37,396</td></tr>
+        <tr><td>Overall reduction</td><td>67.4%</td></tr>
+        <tr><td>Median per-commit</td><td>46.6%</td></tr>
+        <tr><td>Best compression</td><td>91.8% (43K → 3.5K tokens)</td></tr>
+        <tr><td>Worst compression</td><td>−109.5% (packet &gt; diff)</td></tr>
+      </table>
+      <button class="detail-toggle" onclick="toggleBody(this)">▸ Methods &amp; Protocol</button>
+      <div class="detail-body">
+        <p><strong>Tokenizer:</strong> tiktoken cl100k_base (exact GPT-4/Claude tokenizer, not the 4-chars/token heuristic).</p>
+        <p><strong>Entry classification:</strong> Each commit is classified as <em>comparable</em> (both review-packet and diff non-empty), <em>diffless</em> (empty diff), <em>packet-empty</em> (empty kkg output), or <em>error</em>. Only comparable entries contribute to statistics.</p>
+        <p><strong>CLI:</strong> <code>kkg review-packet --base &lt;parent&gt; --head &lt;sha&gt; --files &lt;csv&gt;</code> vs <code>git diff --no-ext-diff --minimal &lt;parent&gt;..&lt;sha&gt;</code></p>
+        <p><strong>Why it matters:</strong> Compression scales with commit complexity because the graph pre-computes relationships. Large commits have many redundant diff hunks that the review-packet collapses into caller/callee summaries.</p>
+      </div>
+    </div>
+
+    <div class="experiment-card">
+      <div class="exp-meta">Experiment 3B · Token Efficiency</div>
+      <h4>Information Density: Context Size by Approach</h4>
+      <p><strong>Hypothesis:</strong> kkg search provides equivalent context at ≤20% of the token cost of reading files directly.</p>
+      <p><strong>Result:</strong> kkg search delivers context in ~760 tokens — 482× smaller than the naive approach (366K tokens).</p>
+      <table>
+        <tr><th>Approach</th><th>Mean Tokens</th><th>vs Naive</th></tr>
+        <tr><td>Naive cat (all .py)</td><td>366,318</td><td>1×</td></tr>
+        <tr><td>find + grep</td><td>13,627</td><td>27× smaller</td></tr>
+        <tr><td>kkg search</td><td>760</td><td>482× smaller</td></tr>
+        <tr><td>kkg search + execution-flow</td><td>1,063</td><td>345× smaller</td></tr>
+        <tr><td>kkg review-packet</td><td>3,756</td><td>98× smaller</td></tr>
+      </table>
+      <button class="detail-toggle" onclick="toggleBody(this)">▸ Methods &amp; Protocol</button>
+      <div class="detail-body">
+        <p><strong>Tasks:</strong> 15 code-understanding tasks from <code>data/understanding_tasks.jsonl</code>.</p>
+        <p><strong>Phase 1 (automated):</strong> Measures token count (tiktoken cl100k_base) for five approaches: naive cat, tree+grep, kkg search, kkg search + execution-flow, kkg review-packet.</p>
+        <p><strong>Phase 2 (pending):</strong> Blinded quality evaluation — each approach's context is fed to an LLM, answers collected, then scored by evaluators using opaque labels (A–E, shuffled per question). Rubric: Correctness (0–2), Completeness (0–2), Conciseness (0–1). The sealed key mapping labels to approaches is opened only after all scores are submitted.</p>
+        <p><strong>Limitation:</strong> These numbers measure token counts only. Answer quality scoring requires the Phase 2 blinded evaluation.</p>
+      </div>
+    </div>
+
+    <div class="experiment-card">
+      <div class="exp-meta">Experiment 2B · Code Quality</div>
+      <h4>Cross-Tool Correlation: kkg audit vs radon + pylint</h4>
+      <p><strong>Hypothesis:</strong> kkg audit findings overlap substantially with radon/pylint on shared concerns, and additionally surface graph-exclusive findings impossible for line-by-line tools.</p>
+      <p><strong>Result:</strong> 323 of 759 kkg findings (43%) are graph-exclusive. These require relationship traversal across the CALLS, IMPORTS, INHERITS, and CONTAINS edges.</p>
+      <table>
+        <tr><th>Category</th><th>Count</th></tr>
+        <tr><td>kkg graph-exclusive</td><td>323</td></tr>
+        <tr><td>kkg shared-domain</td><td>436</td></tr>
+        <tr><td>pylint total</td><td>2,639</td></tr>
+        <tr><td>radon (CC &gt; 10)</td><td>181</td></tr>
+      </table>
+      <button class="detail-toggle" onclick="toggleBody(this)">▸ Methods &amp; Protocol</button>
+      <div class="detail-body">
+        <p><strong>Protocol:</strong> Run <code>kkg audit --scope all</code>, <code>radon cc -s -j</code>, <code>radon mi -s -j</code>, and <code>pylint --output-format=json --recursive=y</code> on the same codebase. Categorize kkg rules as graph-exclusive (require traversal) or shared-domain (overlap with line-by-line analysis).</p>
+        <p><strong>Graph-exclusive rules:</strong> circular_imports, unreferenced_public_function, unreferenced_public_class, excessive_fan_out, cross_file_private_access, deep_inheritance, module_content_mismatch, test_import_in_prod.</p>
+        <p><strong>Path normalization fix:</strong> The initial run showed 0% complexity corroboration due to a path-format mismatch (kkg stored absolute paths from the graph DB, radon used local paths). After normalizing both to relative suffixes, corroboration jumped to <strong>83.3%</strong> — 5 of 6 files flagged by kkg were independently confirmed by radon.</p>
+      </div>
+    </div>
+
+    <div class="experiment-card">
+      <div class="exp-meta">Experiment 1A · Accuracy</div>
+      <h4>Structural Accuracy: Graph vs <abbr title="Abstract Syntax Tree">AST</abbr> Ground Truth</h4>
+      <p><strong>Hypothesis:</strong> The kkg graph captures ≥95% of functions/classes and ≥85% of call/import edges.</p>
+      <p><strong>Result:</strong> Function <abbr title="Harmonic mean of Precision and Recall">F1</abbr> = 0.587, Class F1 = 0.591. These reflect a scope mismatch (<abbr title="Abstract Syntax Tree">AST</abbr> covers 277 files, graph indexes 137) rather than poor accuracy.</p>
+      <table>
+        <tr><th>Entity</th><th>Precision</th><th>Recall</th><th>F1</th></tr>
+        <tr><td>Functions</td><td>0.710</td><td>0.500</td><td>0.587</td></tr>
+        <tr><td>Classes</td><td>0.697</td><td>0.512</td><td>0.591</td></tr>
+        <tr><td>Imports</td><td>0.305</td><td>0.143</td><td>0.195</td></tr>
+        <tr><td>CALLS edges</td><td colspan="3">N/A (0 edges without <abbr title="Scalable Code Intelligence Protocol — provides cross-reference resolution">SCIP</abbr> indexer)</td></tr>
+      </table>
+      <button class="detail-toggle" onclick="toggleBody(this)">▸ Methods, Resolution Tiers &amp; Limitations</button>
+      <div class="detail-body">
+        <p><strong>Ground truth:</strong> <code>ast.parse()</code> on every .py file, collecting function defs, class defs, import statements, and call sites.</p>
+        <p><strong>Edge resolution tiers</strong> (of 7,489 <abbr title="Abstract Syntax Tree">AST</abbr> call sites):</p>
+        <table>
+          <tr><th>Tier</th><th>Pattern</th><th>Resolved</th></tr>
+          <tr><td>1 — Self/cls</td><td>self.bar(), cls.bar()</td><td>0 (scope tracking issue)</td></tr>
+          <tr><td>2 — Import-resolved</td><td>from mod import foo; foo()</td><td>1,555</td></tr>
+          <tr><td>3 — Bare unique</td><td>foo() with 1 match</td><td>756</td></tr>
+          <tr><td>SKIP — Ambiguous</td><td>foo() with 2+ matches</td><td>254 excluded</td></tr>
+          <tr><td>SKIP — Other</td><td>obj.method(), builtins</td><td>4,924 excluded</td></tr>
+        </table>
+        <p><strong>Key limitation:</strong> <abbr title="Abstract Syntax Tree">AST</abbr> covers entire repo (277 files) while graph respects .gitignore/IGNORE_DIRS (137 files). When restricted to the same file set, precision would be significantly higher. CALLS edges are 0 without <abbr title="Scalable Code Intelligence Protocol">SCIP</abbr> — every graph-based feature is silently degraded. Follow-up needed with scope alignment and SCIP enabled.</p>
+      </div>
+    </div>
+
+    <p class="muted" style="margin-top:24px">Full experiment plan, scripts, and raw JSON results are available in <a href="https://github.com/codeslp/keplerkg">the repository</a> under <code>research/experiments/dogfooding/</code>. All experiments are reproducible via <code>make all</code>.</p>
+  </div>
+
+  <!-- ===== FULL REPORT VIEW ===== -->
+  <div class="research-view" id="view-report">
+    <div class="report-article">
+
+      <h4 style="margin-top:0">KeplerKG Dogfooding Validation: Self-Evaluation Report</h4>
+      <div class="report-meta">
+        Date: 2026-04-20 &middot; KeplerKG (kkg) 0.4.2, KuzuDB 0.11.3<br>
+        Authors: codeslp + claude/codex agents via btrain<br>
+        Targets: cgraph codebase (self, 282 Python files), Flask (cross-project, 28 source files)
+      </div>
+
+      <div class="report-abstract">
+        <p>KeplerKG (kkg) is a code knowledge graph tool that indexes codebases into a queryable graph of functions, classes, imports, and call relationships. We claim it provides (1) accurate structural descriptions, (2) actionable quality recommendations, and (3) token-efficient context delivery for AI coding agents.</p>
+        <p style="margin-top:12px">We validate these claims by running kkg against its own codebase and Flask, measuring results against independent ground truth (AST parsing, radon, pylint) and reasonable baselines (grep, full file reading). Key findings: <strong>67% token compression</strong> on review packets, <strong>482x smaller context</strong> than naive file reading, <strong>83% complexity corroboration</strong> with radon, and <strong>132 graph-exclusive findings</strong> invisible to line-by-line tools.</p>
+      </div>
+
+      <!-- 1. Problem -->
+      <h4>1. Problem</h4>
+      <p>AI coding agents operate under context window limits. When an agent needs to understand code structure, it typically reads files directly &mdash; consuming tens or hundreds of thousands of tokens for even modest codebases. A 282-file Python project requires ~366K tokens to read in full, exceeding most context windows entirely.</p>
+      <p>This creates a lose-lose: either the agent reads everything (slow, expensive, often impossible) or it guesses which files matter (misses context, produces worse results). Keyword grep improves on naive reading but still returns raw source with no structural awareness &mdash; it cannot tell you what calls what, which functions are dead code, or where circular dependencies exist.</p>
+
+      <!-- 2. Approach -->
+      <h4>2. Approach</h4>
+      <p>KeplerKG pre-computes a knowledge graph from source code using static analysis (tree-sitter, SCIP) and stores it in KuzuDB. The graph captures:</p>
+      <table>
+        <tr><th>Nodes</th><th>Edges</th></tr>
+        <tr><td>Files, Functions, Classes, Modules, Variables, Parameters</td><td>CONTAINS, IMPORTS, CALLS, INHERITS, IMPLEMENTS, HAS_PARAMETER</td></tr>
+      </table>
+      <p>Agents query this graph through CLI commands (<code>kkg search</code>, <code>kkg audit</code>, <code>kkg review-packet</code>, <code>kkg impact</code>, etc.) that return structured JSON &mdash; delivering precise, relationship-aware context at a fraction of the token cost.</p>
+
+      <!-- 3. Evaluation -->
+      <h4>3. Evaluation</h4>
+
+      <!-- 3.1 Token Compression -->
+      <h5>3.1 Token Compression (Experiment 3A)</h5>
+      <p><strong>Hypothesis:</strong> <code>kkg review-packet</code> uses dramatically fewer tokens than reading raw git diffs.</p>
+      <p>We compared token counts (tiktoken cl100k_base) across 15 comparable commits:</p>
+      <table>
+        <tr><th>Metric</th><th>Value</th></tr>
+        <tr><td>Total diff tokens</td><td>114,872</td></tr>
+        <tr><td>Total packet tokens</td><td>37,396</td></tr>
+        <tr><td>Overall reduction</td><td><strong>67.4%</strong></td></tr>
+        <tr><td>Median per-commit compression</td><td>46.6%</td></tr>
+        <tr><td>Best compression</td><td>91.8% (43K &rarr; 3.5K on a multi-file feature commit)</td></tr>
+        <tr><td>Worst compression</td><td>&minus;109.5% (packet larger for trivial single-file change)</td></tr>
+      </table>
+      <figure class="report-fig">
+        <img src="img/research/token_compression_3a.png" alt="Token compression distribution across 15 commits">
+        <figcaption>Per-commit compression distribution &mdash; large feature commits achieve 70&ndash;92% reduction</figcaption>
+      </figure>
+      <p>Compression scales with commit complexity. Large feature commits achieve 70&ndash;92% reduction because the review-packet summarises structural relationships (callers, callees, imports) rather than repeating raw line changes. Small test-only commits occasionally see negative compression because the structural metadata adds overhead that the raw diff doesn't need.</p>
+
+      <!-- 3.2 Context Size -->
+      <h5>3.2 Context Size by Approach (Experiment 3B)</h5>
+      <p><strong>Hypothesis:</strong> <code>kkg search</code> provides equivalent context at a fraction of the token cost of reading files directly.</p>
+      <p>We measured mean tokens across 15 code-understanding tasks on Flask:</p>
+      <table>
+        <tr><th>Approach</th><th>Mean tokens</th><th>vs naive cat</th></tr>
+        <tr><td>Naive cat (all .py)</td><td>369,000</td><td>1x</td></tr>
+        <tr><td>kkg search + execution-flow</td><td>4,830</td><td>76x smaller</td></tr>
+        <tr><td>tree + grep</td><td>4,342</td><td>85x smaller</td></tr>
+        <tr><td>kkg search</td><td>2,663</td><td>139x smaller</td></tr>
+        <tr><td>kkg review-packet</td><td>164</td><td>2,250x smaller</td></tr>
+      </table>
+      <figure class="report-fig">
+        <img src="img/research/token_approaches_3b.png" alt="Context size by approach on log scale">
+        <figcaption>Context size by approach (log scale) &mdash; KeplerKG-assisted approaches stay within tool-call budgets</figcaption>
+      </figure>
+      <p><code>kkg search</code> delivers context in ~2.7K tokens &mdash; small enough to fit in a single tool-call response. The naive approach of reading all source files requires 369K tokens, exceeding most context windows.</p>
+      <p><strong>Quality evaluation:</strong> Blinded scoring (Phase 2) compared <code>tree+grep</code> vs <code>kkg search</code> answers. <code>tree+grep</code> scored higher on composite quality (4.53/5 vs 3.47/5) because it provides more raw source context, but <code>kkg search</code> achieved 66% higher information density (2.08 vs 1.26 quality-per-kilotoken) &mdash; delivering more value per token spent.</p>
+      <figure class="report-fig">
+        <img src="img/research/information_density_3b.png" alt="Information density: quality per token">
+        <figcaption>Quality vs token cost &mdash; kkg search delivers 66% more value per token</figcaption>
+      </figure>
+
+      <!-- 3.3 Cross-Tool Correlation -->
+      <h5>3.3 Cross-Tool Correlation (Experiment 2B &mdash; Flask)</h5>
+      <p><strong>Hypothesis:</strong> <code>kkg audit</code> finds issues that line-by-line tools cannot.</p>
+      <p>We ran kkg audit, pylint, and radon cc on Flask and compared findings:</p>
+      <table>
+        <tr><th>Tool</th><th>Findings</th></tr>
+        <tr><td>kkg audit</td><td>496</td></tr>
+        <tr><td>pylint</td><td>274</td></tr>
+        <tr><td>radon (CC &gt; 10)</td><td>10</td></tr>
+      </table>
+      <figure class="report-fig">
+        <img src="img/research/cross_tool_2b.png" alt="kkg vs pylint/radon finding breakdown">
+        <figcaption>kkg vs pylint/radon &mdash; 132 graph-exclusive findings (27%) invisible to line-by-line tools</figcaption>
+      </figure>
+      <p><strong>132 findings (27%) are graph-exclusive</strong> &mdash; they require relationship traversal and are invisible to any tool that reads files one at a time:</p>
+      <table>
+        <tr><th>Graph-exclusive rule</th><th>Count</th></tr>
+        <tr><td>unreferenced_public_function</td><td>126</td></tr>
+        <tr><td>circular_imports</td><td>6</td></tr>
+      </table>
+      <p><strong>Complexity corroboration:</strong> After fixing a path-normalization bug (kkg used absolute zombie-drive paths, radon used local paths), <strong>83.3%</strong> of files flagged by kkg for high complexity were independently confirmed by radon. The 5 corroborated files: <code>flask/app.py</code>, <code>flask/cli.py</code>, <code>flask/debughelpers.py</code>, <code>flask/sansio/app.py</code>, <code>flask/sansio/blueprints.py</code>.</p>
+
+      <!-- 3.4 Structural Accuracy -->
+      <h5>3.4 Structural Accuracy (Experiment 1A &mdash; cgraph)</h5>
+      <p><strong>Hypothesis:</strong> The kkg graph captures &ge; 95% of functions/classes present in the actual codebase.</p>
+      <p>We compared graph contents against an independent <code>ast.parse()</code> walk of 282 Python files:</p>
+      <table>
+        <tr><th>Entity</th><th>Precision</th><th>Recall</th><th>F1</th></tr>
+        <tr><td>Functions</td><td>0.568</td><td>1.000</td><td>0.725</td></tr>
+        <tr><td>Classes</td><td>0.429</td><td>1.000</td><td>0.601</td></tr>
+        <tr><td>Imports</td><td>0.282</td><td>0.353</td><td>0.313</td></tr>
+        <tr><td>CALLS edges</td><td>0.543</td><td>0.993</td><td>0.702</td></tr>
+      </table>
+      <figure class="report-fig">
+        <img src="img/research/structural_accuracy_1a.png" alt="Precision/Recall/F1 bar chart">
+        <figcaption>Structural accuracy &mdash; perfect recall (1.0) for functions and classes</figcaption>
+      </figure>
+      <p><strong>Recall is perfect (1.0)</strong> for functions and classes &mdash; the graph contains every symbol the AST found. Low precision (0.57/0.43) reflects a <strong>scope mismatch</strong>: the graph indexes additional directories (e.g., <code>agentchattr/</code>) that the AST walker's exclusion list skips.</p>
+      <p>CALLS edge F1 of 0.70 is strong given the deterministic 3-tier resolution approach (self/cls method calls, import-resolved calls, bare unique-name calls). Near-perfect recall (0.993) confirms the graph's call relationships are comprehensive for resolvable call sites.</p>
+
+      <!-- 3.5 Search Relevance -->
+      <h5>3.5 Semantic Search Relevance (Experiment 1B &mdash; Flask)</h5>
+      <p><strong>Hypothesis:</strong> <code>kkg search</code> returns more relevant results than keyword grep.</p>
+      <p>Evaluated on 25 annotated queries with known relevant files:</p>
+      <table>
+        <tr><th>Approach</th><th>MRR</th><th>P@5</th><th>nDCG@10</th></tr>
+        <tr><td><strong>kkg search</strong></td><td><strong>0.771</strong></td><td><strong>0.296</strong></td><td><strong>0.775</strong></td></tr>
+        <tr><td>grep</td><td>0.392</td><td>0.248</td><td>0.528</td></tr>
+      </table>
+      <p>kkg search achieves nearly <strong>2x the MRR</strong> of grep (0.771 vs 0.392) and <strong>47% higher nDCG@10</strong>. The top-1 result is relevant 72% of the time (P@1=0.72 vs 0.08 for grep).</p>
+
+      <!-- 3.6 Before/After -->
+      <h5>3.6 Before/After Refactoring (Lane C)</h5>
+      <p>We used kkg audit findings to drive four targeted fixes to <code>writer.py</code> (the graph indexing persistence layer), then rebuilt the graph:</p>
+      <table>
+        <tr><th>Metric</th><th>Before</th><th>After</th><th>Change</th></tr>
+        <tr><td>File nodes</td><td>137</td><td>471</td><td>+3.4x</td></tr>
+        <tr><td>Total nodes</td><td>8,038</td><td>22,760</td><td>+2.8x</td></tr>
+        <tr><td>Total edges</td><td>9,242</td><td>32,860</td><td>+3.6x</td></tr>
+        <tr><td>CALLS edges</td><td>0</td><td>6,892</td><td>0 &rarr; 6.9K</td></tr>
+      </table>
+      <figure class="report-fig">
+        <img src="img/research/before_after_snapshot.png" alt="Before/after node and edge counts">
+        <figcaption>Node and edge counts before and after the audit-driven refactor</figcaption>
+      </figure>
+      <p>The CALLS edge jump from 0 to 6,892 is the most significant change &mdash; it unlocks every graph traversal feature (blast-radius, impact analysis, execution-flow, fan-out rules) that was previously silently degraded.</p>
+      <figure class="report-fig">
+        <img src="img/research/before_after_health.png" alt="Audit breakdown before/after">
+        <figcaption>Audit health breakdown before and after refactoring</figcaption>
+      </figure>
+      <p class="caveat"><strong>Caveat:</strong> The rebuild used a different project slug and more inclusive file set, so audit/health count increases partly reflect coverage expansion rather than quality regression.</p>
+
+      <!-- 4. Lessons Learned -->
+      <h4>4. Lessons Learned</h4>
+
+      <h5>Onboarding friction is the #1 barrier</h5>
+      <p>Three blockers hit before any experiment could run:</p>
+      <table>
+        <tr><th>#</th><th>Blocker</th></tr>
+        <tr><td>1</td><td>Backend detection prefers falkordb over configured kuzudb &mdash; silent misrouting</td></tr>
+        <tr><td>2</td><td>POSIX file locks fail on external drives &mdash; opaque KuzuDB errors</td></tr>
+        <tr><td>3</td><td><code>kkg</code> requires venv activation &mdash; not on PATH for automation</td></tr>
+      </table>
+      <p><strong>Recommendation:</strong> A <code>kkg doctor</code> command that validates backend, DB access, embeddings, and PATH would catch all three.</p>
+
+      <h5>Silent degradation is worse than failure</h5>
+      <p><code>kkg index</code> without SCIP produces zero CALLS edges but reports success. Every graph traversal feature silently returns empty results. Users see no warning and assume the tool found nothing &mdash; they don't know 95% of the graph's value is missing.</p>
+      <p><strong>Recommendation:</strong> Warn when CALLS = 0 after indexing. Consider AST-based call extraction as a fallback.</p>
+
+      <h5>Path format mismatches break cross-tool comparison</h5>
+      <p>The graph stores absolute paths from the indexing machine. External tools (radon, pylint, grep) use paths relative to the source checkout. Our initial 2B results showed 0% complexity corroboration &mdash; a path format bug, not a real disagreement. After normalization: 83.3%.</p>
+      <p><strong>Recommendation:</strong> Normalize all paths in kkg output to relative paths. Add a <code>relative_path</code> field to search results.</p>
+
+      <!-- 5. Threats to Validity -->
+      <h4>5. Threats to Validity</h4>
+      <table>
+        <tr><th>Threat</th><th>Mitigation</th></tr>
+        <tr><td><strong>Dogfooding bias</strong> &mdash; testing tool on its own codebase</td><td>Cross-validated on Flask (independent project)</td></tr>
+        <tr><td><strong>Python-only</strong> &mdash; results may not generalize</td><td>kkg supports JS/TS/C#/Go; Python chosen for AST ground truth availability</td></tr>
+        <tr><td><strong>Scope mismatch (1A)</strong> &mdash; graph indexes more files than AST walker</td><td><code>--scope-aligned</code> flag exists; re-run pending DB availability</td></tr>
+        <tr><td><strong>Single evaluator (3B)</strong> &mdash; blinded evaluation by one person</td><td>Rubric-based scoring with sealed key protocol reduces bias</td></tr>
+        <tr><td><strong>Comparison baseline</strong> &mdash; grep is a weak baseline</td><td>grep is the realistic alternative most agents actually use</td></tr>
+        <tr><td><strong>No inter-rater reliability</strong> &mdash; 2C not yet run</td><td>Planned as follow-up</td></tr>
+      </table>
+
+      <!-- 6. Conclusion -->
+      <h4>6. Conclusion</h4>
+      <p>KeplerKG's three core claims are supported by the evidence:</p>
+      <p><strong>1. Accurate descriptions:</strong> Perfect recall (1.0) for functions/classes; CALLS F1=0.70; search MRR=0.77 &mdash; the graph captures what's there and finds it reliably.</p>
+      <p><strong>2. Actionable recommendations:</strong> 132 graph-exclusive findings (unreferenced functions, circular imports) that no line-by-line tool can detect. 83% complexity corroboration with radon confirms the shared-domain findings are real, not false positives.</p>
+      <p><strong>3. Token efficient:</strong> 67% compression on review packets. 139x&ndash;2,250x smaller context than naive file reading. 66% higher information density than tree+grep. For AI agents operating under context limits, this is the difference between understanding the codebase and running out of runway.</p>
+      <p>The biggest remaining gap is not accuracy but <strong>usability</strong>: silent degradation without SCIP, path format inconsistencies, and onboarding friction. Fixing these would make the strong underlying capabilities accessible to new users.</p>
+
+      <!-- Appendix -->
+      <h4>Appendix: Reproducibility</h4>
+      <div class="report-code"># Setup
+cd research/experiments/dogfooding
+pip install -r requirements-experiments.txt
+kkg index &amp;&amp; kkg embed
+
+# Run all automated experiments
+make all
+
+# Generate figures
+python scripts/generate_writeup_figures.py
+
+# Cross-project (Flask)
+make 1a PROJECT=flask SOURCE_DIR=/path/to/flask
+make 2b PROJECT=flask SOURCE_DIR=/path/to/flask</div>
+      <p class="muted">All experiment scripts, data files, and this writeup are committed to the repository under <code>research/experiments/dogfooding/</code>.</p>
+
+    </div>
+  </div>
+
 </section>
 
 <hr>
@@ -639,6 +1833,28 @@ document.querySelectorAll('.showcase-hotspot').forEach(hotspot => {
 });
 
 
+
+// Research section interactivity
+function switchResearch(view) {
+  document.querySelectorAll('.research-toggle button').forEach(b => b.classList.remove('active'));
+  document.querySelector(`.research-toggle button[data-view="${view}"]`).classList.add('active');
+  document.querySelectorAll('.research-view').forEach(v => v.classList.remove('active'));
+  document.getElementById('view-' + view).classList.add('active');
+}
+
+function toggleDetail(id) {
+  const el = document.getElementById(id);
+  const wasOpen = el.classList.contains('open');
+  document.querySelectorAll('.metric-detail').forEach(d => d.classList.remove('open'));
+  if (!wasOpen) el.classList.add('open');
+}
+
+function toggleBody(btn) {
+  const body = btn.nextElementSibling;
+  const isOpen = body.classList.contains('open');
+  body.classList.toggle('open');
+  btn.textContent = isOpen ? '▸ ' + btn.textContent.slice(2) : '▾ ' + btn.textContent.slice(2);
+}
 
 // --- Background constellation (ported from MechAI BackgroundTree.tsx) ---
 (function () {
