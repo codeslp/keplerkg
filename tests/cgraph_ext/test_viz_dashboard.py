@@ -72,8 +72,10 @@ class _RationaleConn:
     def __init__(self, rows_by_uid):
         self._rows_by_uid = dict(rows_by_uid)
 
-    def execute(self, _query, **kwargs):
+    def execute(self, _query, *, parameters=None, **kwargs):
         uid = kwargs.get("uid")
+        if uid is None and parameters is not None:
+            uid = parameters.get("uid")
         row = self._rows_by_uid.get(uid)
         if row is None:
             return FakeResult([])
@@ -155,12 +157,13 @@ def test_viz_dashboard_routes_project_before_serving(monkeypatch, tmp_path):
     assert payload["project"] == "flask"
 
 
-def test_viz_dashboard_prefers_project_kuzu_over_global_default_database(monkeypatch, tmp_path):
+def test_viz_dashboard_respects_falkordb_backend_for_project_store(monkeypatch, tmp_path):
     from codegraphcontext_ext.embeddings import runtime
 
     monkeypatch.setenv("DEFAULT_DATABASE", "falkordb")
     monkeypatch.delenv("CGC_RUNTIME_DB_TYPE", raising=False)
-    monkeypatch.setattr(runtime, "is_kuzudb_available", lambda: True)
+    monkeypatch.setattr(runtime, "is_falkordb_available", lambda: True)
+    monkeypatch.setattr(runtime, "is_kuzudb_available", lambda: False)
     graph = {
         "nodes": [{"id": "u1", "name": "foo", "path": "a.py", "line": 1, "type": "Function"}],
         "edges": [],
@@ -202,6 +205,28 @@ def test_viz_dashboard_prefers_project_kuzu_over_global_default_database(monkeyp
     assert payload["kind"] == "viz_dashboard_serving"
     assert payload["project"] == "cgraph"
     assert os.environ.get("CGC_RUNTIME_DB_TYPE") is None
+
+
+def test_fetch_symbol_context_uses_parameters_mapping_for_compat_execute():
+    class _CompatConn:
+        def execute(self, _query, *, parameters=None):
+            assert parameters == {"uid": "fn-1"}
+            return FakeResult([
+                ("demo_fn", "src/demo.py", 12, "Demo doc", "def demo_fn(): ..."),
+            ])
+
+    context = viz_dashboard_mod._fetch_symbol_context(
+        _CompatConn(),
+        {"type": "Function", "uid": "fn-1"},
+    )
+
+    assert context == {
+        "name": "demo_fn",
+        "path": "src/demo.py",
+        "line": 12,
+        "docstring": "Demo doc",
+        "source": "def demo_fn(): ...",
+    }
 
 
 def test_capture_graph_screenshots_extracts_dashboard_url():

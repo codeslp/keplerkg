@@ -91,6 +91,22 @@ def _inventory_from_main_source() -> dict[str, set[str]]:
 
 
 class _FakeSession:
+    class _FakeResult:
+        def __init__(self, rows):
+            self._rows = list(rows)
+
+        def single(self):
+            return self._rows[0] if self._rows else None
+
+        def data(self):
+            return list(self._rows)
+
+        def consume(self):
+            return self
+
+        def __iter__(self):
+            return iter(self._rows)
+
     def __enter__(self):
         return self
 
@@ -99,8 +115,14 @@ class _FakeSession:
 
     def run(self, query, **kwargs):
         if "MATCH (n:File)" in query:
-            return [{"name": "main.py", "path": "repo/main.py", "is_dependency": False}]
-        return [{"type": "Function", "name": "demo", "path": "repo/main.py", "line_number": 1, "is_dependency": False}]
+            return self._FakeResult(
+                [{"name": "main.py", "path": "repo/main.py", "is_dependency": False}]
+            )
+        if "count(f) AS count" in query or "count(c) AS count" in query:
+            return self._FakeResult([{"count": 1}])
+        return self._FakeResult(
+            [{"type": "Function", "name": "demo", "path": "repo/main.py", "line_number": 1, "is_dependency": False}]
+        )
 
 
 class _FakeDriver:
@@ -243,6 +265,7 @@ def cli_test_stubs(monkeypatch, tmp_path):
 
     fake_db = _FakeDBManager()
     monkeypatch.setattr(cli_main, "_initialize_services", lambda *_args, **_kwargs: (fake_db, _FakeGraphBuilder(), _FakeCodeFinder()))
+    monkeypatch.setattr("codegraphcontext.core.get_database_manager", lambda *_args, **_kwargs: fake_db)
     monkeypatch.setattr(cli_main.DatabaseManager, "test_connection", staticmethod(lambda *_args, **_kwargs: (True, None)))
     monkeypatch.setattr(cli_main.typer, "confirm", lambda *_args, **_kwargs: True)
 
@@ -441,36 +464,43 @@ def test_find_content_falkordb_known_limitation_message(monkeypatch):
 
     assert result.exit_code == 0
     assert "Full-text search is not supported on FalkorDB" in result.output
-    assert "cgc find pattern" in result.output
+    assert "kkg find pattern" in result.output
 
 
 class TestNeo4jDatabaseNameCLI:
     """Integration tests for NEO4J_DATABASE display in CLI commands."""
 
-    @patch("codegraphcontext.cli.main.config_manager")
-    @patch("codegraphcontext.core.database.DatabaseManager.test_connection")
-    def test_doctor_passes_database_to_test_connection(self, mock_test_conn, mock_config_mgr):
+    def test_doctor_passes_database_to_test_connection(self):
         """Test that the doctor command passes NEO4J_DATABASE to test_connection."""
-        mock_config_mgr.load_config.return_value = {"DEFAULT_DATABASE": "neo4j"}
-        mock_config_mgr.CONFIG_FILE = MagicMock()
-        mock_config_mgr.CONFIG_FILE.exists.return_value = True
-        mock_config_mgr.validate_config_value.return_value = (True, None)
-        mock_test_conn.return_value = (True, None)
+        with patch("codegraphcontext.cli.main.config_manager") as mock_config_mgr, patch.object(
+            cli_main.DatabaseManager,
+            "test_connection",
+            MagicMock(return_value=(True, None)),
+        ) as mock_test_conn:
+            mock_config_mgr.load_config.return_value = {"DEFAULT_DATABASE": "neo4j"}
+            mock_config_mgr.CONFIG_FILE = MagicMock()
+            mock_config_mgr.CONFIG_FILE.exists.return_value = True
+            mock_config_mgr.CONTEXT_CONFIG_FILE = MagicMock()
+            mock_config_mgr.CONTEXT_CONFIG_FILE.exists.return_value = False
+            mock_config_mgr.CONFIG_DIR = MagicMock()
+            mock_config_mgr.CONFIG_DIR.exists.return_value = True
+            mock_config_mgr.validate_config_value.return_value = (True, None)
 
-        env = {
-            "NEO4J_URI": "bolt://localhost:7687",
-            "NEO4J_USERNAME": "neo4j",
-            "NEO4J_PASSWORD": "password",
-            "NEO4J_DATABASE": "mydb",
-            "DEFAULT_DATABASE": "neo4j",
-        }
-        with patch.dict(os.environ, env, clear=False):
-            with patch("codegraphcontext.cli.main._load_credentials"):
-                runner.invoke(app, ["doctor"])
+            env = {
+                "NEO4J_URI": "bolt://localhost:7687",
+                "NEO4J_USERNAME": "neo4j",
+                "NEO4J_PASSWORD": "password",
+                "NEO4J_DATABASE": "mydb",
+                "CGC_RUNTIME_DB_TYPE": "neo4j",
+                "DEFAULT_DATABASE": "neo4j",
+            }
+            with patch.dict(os.environ, env, clear=False):
+                with patch("codegraphcontext.cli.main._load_credentials"):
+                    cli_main.doctor()
 
-        mock_test_conn.assert_called_once_with(
-            "bolt://localhost:7687", "neo4j", "password", database="mydb"
-        )
+            mock_test_conn.assert_called_once_with(
+                "bolt://localhost:7687", "neo4j", "password", database="mydb"
+            )
 
     @patch("codegraphcontext.cli.main.config_manager")
     def test_load_credentials_displays_database_name(self, mock_config_mgr, monkeypatch, tmp_path):
@@ -562,3 +592,167 @@ def test_load_credentials_displays_kuzudb_backend(monkeypatch, tmp_path):
 
         assert "Using database: KùzuDB" in output.getvalue()
 
+
+def test_load_credentials_defaults_to_falkordb_when_unconfigured(monkeypatch, tmp_path):
+    class _FakeManager:
+        def get_backend_type(self):
+            return "falkordb"
+
+    monkeypatch.setattr(cli_main.config_manager, "ensure_config_dir", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(cli_main.Path, "home", classmethod(lambda cls: tmp_path))
+    monkeypatch.chdir(tmp_path)
+
+    clean_env = {
+        k: v for k, v in os.environ.items()
+        if k not in {
+            "DEFAULT_DATABASE",
+            "CGC_RUNTIME_DB_TYPE",
+            "NEO4J_URI",
+            "NEO4J_USERNAME",
+            "NEO4J_PASSWORD",
+            "NEO4J_DATABASE",
+        }
+    }
+    with patch.dict(os.environ, clean_env, clear=True):
+        output = StringIO()
+        with patch("codegraphcontext.cli.main.console", Console(file=output, force_terminal=False)), patch(
+            "codegraphcontext.core.get_database_manager",
+            return_value=_FakeManager(),
+        ):
+            _load_credentials()
+
+        assert "Using database: FalkorDB Lite" in output.getvalue()
+
+
+def test_context_create_defaults_to_falkordb(monkeypatch):
+    seen: dict[str, str | None] = {}
+
+    monkeypatch.setattr(
+        cli_main.config_manager,
+        "create_context",
+        lambda name, database, db_path: seen.update(
+            name=name,
+            database=database,
+            db_path=db_path,
+        ),
+    )
+    monkeypatch.setattr(cli_main.config_manager, "get_config_value", lambda key: None)
+
+    result = runner.invoke(app, ["context", "create", "demo"])
+
+    assert result.exit_code == 0
+    assert seen["name"] == "demo"
+    assert seen["database"] == "falkordb"
+    assert seen["db_path"] is None
+
+
+def test_known_macos_malloc_warning_filter_suppresses_only_the_noisy_line(tmp_path):
+    stderr_path = tmp_path / "stderr.log"
+    warning = (
+        b"Python(56432) MallocStackLogging: can't turn off malloc stack logging "
+        b"because it was not enabled.\n"
+    )
+    normal = b"real stderr line\n"
+    stderr_fd = sys.stderr.fileno()
+    saved_stderr = os.dup(stderr_fd)
+
+    try:
+        with open(stderr_path, "wb", buffering=0) as sink:
+            os.dup2(sink.fileno(), stderr_fd)
+            with cli_main._suppress_known_macos_stderr():
+                os.write(stderr_fd, warning)
+                os.write(stderr_fd, normal)
+    finally:
+        os.dup2(saved_stderr, stderr_fd)
+        os.close(saved_stderr)
+
+    output = stderr_path.read_bytes()
+    assert warning not in output
+    assert normal in output
+
+
+def test_root_callback_installs_malloc_stderr_filter_on_macos(monkeypatch):
+    installed: list[object] = []
+
+    class _FakeContext:
+        invoked_subcommand = "embed"
+
+        def ensure_object(self, _type):
+            return {}
+
+        def with_resource(self, resource):
+            installed.append(resource)
+            return resource
+
+    monkeypatch.setattr(cli_main.sys, "platform", "darwin")
+
+    cli_main.main(_FakeContext(), database=None, visual=False, version_=None, help_=None)
+
+    assert len(installed) == 1
+
+
+def test_wrap_non_force_embed_fetch_resets_offset_for_resumes():
+    calls: list[dict[str, int | bool]] = []
+
+    def _fake_fetch(_conn, _table, *, force, batch_size, offset):
+        calls.append({
+            "force": force,
+            "batch_size": batch_size,
+            "offset": offset,
+        })
+        return []
+
+    wrapped = cli_main._wrap_non_force_embed_fetch(_fake_fetch)
+
+    wrapped(None, "Function", force=False, batch_size=64, offset=128)
+    wrapped(None, "Function", force=True, batch_size=64, offset=128)
+
+    assert calls == [
+        {"force": False, "batch_size": 64, "offset": 0},
+        {"force": True, "batch_size": 64, "offset": 128},
+    ]
+
+
+def test_embed_runtime_defaults_to_cpu_and_smaller_batches_on_macos(monkeypatch):
+    monkeypatch.setattr(cli_main.sys, "platform", "darwin")
+    monkeypatch.delenv("CGRAPH_EMBED_DEVICE", raising=False)
+    monkeypatch.delenv("CGRAPH_EMBED_BATCH_SIZE", raising=False)
+
+    assert cli_main._embed_device_override() == "cpu"
+    assert cli_main._embed_batch_size_override() == 8
+    assert cli_main._sentence_transformer_model_kwargs() == {
+        "trust_remote_code": True,
+        "device": "cpu",
+    }
+    assert cli_main._embed_encode_kwargs() == {
+        "show_progress_bar": False,
+        "batch_size": 8,
+    }
+
+
+def test_embed_runtime_respects_explicit_env_overrides(monkeypatch):
+    monkeypatch.setattr(cli_main.sys, "platform", "darwin")
+    monkeypatch.setenv("CGRAPH_EMBED_DEVICE", "mps")
+    monkeypatch.setenv("CGRAPH_EMBED_BATCH_SIZE", "4")
+
+    assert cli_main._embed_device_override() == "mps"
+    assert cli_main._embed_batch_size_override() == 4
+
+
+def test_root_callback_installs_embed_runtime_guards_for_embed(monkeypatch):
+    installed: list[str] = []
+
+    class _FakeContext:
+        invoked_subcommand = "embed"
+
+        def ensure_object(self, _type):
+            return {}
+
+        def with_resource(self, resource):
+            return resource
+
+    monkeypatch.setattr(cli_main, "_apply_embed_runtime_guards", lambda: installed.append("embed"))
+
+    cli_main.main(_FakeContext(), database=None, visual=False, version_=None, help_=None)
+
+    assert installed == ["embed"]

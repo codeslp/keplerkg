@@ -183,6 +183,69 @@ def test_traverse_empty_seeds():
     assert result == {"callers": [], "callees": [], "imports": []}
 
 
+# --- Regression: FalkorDB shim translates Kuzu-only label() projections ---
+
+
+def test_falkordb_shim_translates_label_to_labels_on_traverse():
+    """Kuzu-style ``label(target) AS kind`` must become ``labels(target)[0]``
+    when routed through the FalkorDB compat shim, so Falkor-backed traverse
+    returns populated kinds instead of silently empty neighborhoods.
+    """
+    from codegraphcontext.core.database_falkordb import FalkorDBKuzuCompatConnection
+
+    class _FakeFalkorResult:
+        def __init__(self, rows):
+            self.result_set = rows
+
+    class _FakeFalkorGraph:
+        def __init__(self):
+            self.queries: list[str] = []
+
+        def query(self, query, params):
+            self.queries.append(query)
+            if "labels(target)" in query or "labels(source)" in query:
+                return _FakeFalkorResult(
+                    [["uid_caller", "call_me", "src/b.py", 10, "Function"]]
+                )
+            return _FakeFalkorResult([])
+
+    graph = _FakeFalkorGraph()
+    conn = FalkorDBKuzuCompatConnection(graph)
+    result = traverse(conn, ["uid_seed"], depth=1)
+
+    assert not any("label(target)" in q for q in graph.queries), (
+        f"Kuzu-only label() syntax leaked into FalkorDB: {graph.queries!r}"
+    )
+    assert not any("label(source)" in q for q in graph.queries), (
+        f"Kuzu-only label() syntax leaked into FalkorDB: {graph.queries!r}"
+    )
+    assert any("labels(target)[0]" in q for q in graph.queries)
+    assert any("labels(source)[0]" in q for q in graph.queries)
+
+    returned_kinds = {
+        node["kind"]
+        for bucket in ("callers", "callees", "imports")
+        for node in result[bucket]
+    }
+    assert returned_kinds == {"Function"}
+
+
+def test_translate_kuzu_read_query_rewrites_label_and_leaves_rest():
+    from codegraphcontext.core.database_falkordb import _translate_kuzu_read_query
+
+    assert _translate_kuzu_read_query(
+        "MATCH (n) RETURN label(n) AS kind"
+    ) == "MATCH (n) RETURN labels(n)[0] AS kind"
+
+    assert _translate_kuzu_read_query(
+        "MATCH (n) RETURN labels(n) AS kinds"
+    ) == "MATCH (n) RETURN labels(n) AS kinds"
+
+    assert _translate_kuzu_read_query(
+        "MATCH (a)-[r]->(b) RETURN label(a) AS ka, label(b) AS kb"
+    ) == "MATCH (a)-[r]->(b) RETURN labels(a)[0] AS ka, labels(b)[0] AS kb"
+
+
 # --- Unit tests: payload builder ---
 
 
@@ -298,14 +361,32 @@ def test_build_search_payload_with_seeds(monkeypatch):
     assert payload["neighborhood"]["callers"][0]["uid"] == "uid_caller"
 
 
-def test_context_command_rejects_non_kuzu(monkeypatch):
-    monkeypatch.setenv("DEFAULT_DATABASE", "falkordb")
+def test_context_command_rejects_unsupported_backend(monkeypatch):
+    """Spec 006 admits FalkorDB; genuinely unsupported backends (neo4j) still fail."""
+    monkeypatch.setenv("DEFAULT_DATABASE", "neo4j")
+    monkeypatch.setattr(
+        "codegraphcontext_ext.embeddings.runtime.is_falkordb_remote_configured",
+        lambda: False,
+    )
+    monkeypatch.setattr(
+        "codegraphcontext_ext.embeddings.runtime.is_falkordb_available",
+        lambda: False,
+    )
+    monkeypatch.setattr(
+        "codegraphcontext_ext.embeddings.runtime.is_kuzudb_available",
+        lambda: False,
+    )
+    monkeypatch.setattr(
+        "codegraphcontext_ext.embeddings.runtime.is_neo4j_configured",
+        lambda: True,
+    )
     app = _context_app()
     result = runner.invoke(app, ["search", "auth flow"])
 
     assert result.exit_code == 1
     payload = _extract_json(result.output)
     assert payload["kind"] == "unsupported_backend"
+    assert payload["backend"] == "neo4j"
 
 
 # --- search_scoped tests ---

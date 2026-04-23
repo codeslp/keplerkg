@@ -39,8 +39,12 @@ def test_requires_mount_relative():
 # ---------------------------------------------------------------------------
 
 def test_check_storage_no_paths(monkeypatch):
-    """No KUZUDB_PATH or HF_HOME → nothing to check → None."""
+    """No active backend path or HF_HOME → nothing to check → None."""
+    monkeypatch.delenv("CGC_RUNTIME_DB_TYPE", raising=False)
+    monkeypatch.delenv("DEFAULT_DATABASE", raising=False)
     monkeypatch.delenv("KUZUDB_PATH", raising=False)
+    monkeypatch.delenv("FALKORDB_PATH", raising=False)
+    monkeypatch.delenv("FALKORDB_SOCKET_PATH", raising=False)
     monkeypatch.delenv("HF_HOME", raising=False)
     # Prevent upstream config lookup from finding a value
     with patch(
@@ -48,6 +52,8 @@ def test_check_storage_no_paths(monkeypatch):
         new="codegraphcontext_ext.preflight",
     ):
         monkeypatch.delenv("KUZUDB_PATH", raising=False)
+        monkeypatch.delenv("FALKORDB_PATH", raising=False)
+        monkeypatch.delenv("FALKORDB_SOCKET_PATH", raising=False)
         monkeypatch.delenv("HF_HOME", raising=False)
         # Patch the upstream import away
         with patch(
@@ -60,14 +66,19 @@ def test_check_storage_no_paths(monkeypatch):
 
 def test_check_storage_local_paths(monkeypatch):
     """Paths on local disk → no mount needed → None."""
-    monkeypatch.setenv("KUZUDB_PATH", "/Users/someone/data/kuzudb")
+    monkeypatch.delenv("CGC_RUNTIME_DB_TYPE", raising=False)
+    monkeypatch.setenv("DEFAULT_DATABASE", "falkordb")
+    monkeypatch.setenv("FALKORDB_PATH", "/Users/someone/data/falkordb")
+    monkeypatch.setenv("FALKORDB_SOCKET_PATH", "/Users/someone/data/falkordb.sock")
     monkeypatch.setenv("HF_HOME", "/Users/someone/cache/hf")
     assert check_storage() is None
 
 
 def test_check_storage_mounted(monkeypatch):
     """Paths under /Volumes/zombie but zombie IS mounted → None."""
-    monkeypatch.setenv("KUZUDB_PATH", "/Volumes/zombie/cgraph/db/kuzudb")
+    monkeypatch.delenv("CGC_RUNTIME_DB_TYPE", raising=False)
+    monkeypatch.setenv("DEFAULT_DATABASE", "falkordb")
+    monkeypatch.setenv("FALKORDB_PATH", "/Volumes/zombie/cgraph/db/falkordb")
     monkeypatch.setenv("HF_HOME", "/Volumes/zombie/cgraph/hf-cache")
     with patch(
         "codegraphcontext_ext.preflight._mounted_volumes",
@@ -82,7 +93,9 @@ def test_check_storage_mounted(monkeypatch):
 
 def test_check_storage_unmounted(monkeypatch):
     """Zombie not mounted → storage_offline payload."""
-    monkeypatch.setenv("KUZUDB_PATH", "/Volumes/zombie/cgraph/db/kuzudb")
+    monkeypatch.delenv("CGC_RUNTIME_DB_TYPE", raising=False)
+    monkeypatch.setenv("DEFAULT_DATABASE", "falkordb")
+    monkeypatch.setenv("FALKORDB_PATH", "/Volumes/zombie/cgraph/db/falkordb")
     monkeypatch.delenv("HF_HOME", raising=False)
     with patch(
         "codegraphcontext_ext.preflight._mounted_volumes",
@@ -93,13 +106,15 @@ def test_check_storage_unmounted(monkeypatch):
     assert result["ok"] is False
     assert result["kind"] == "storage_offline"
     assert len(result["offline"]) == 1
-    assert result["offline"][0]["variable"] == "KUZUDB_PATH"
+    assert result["offline"][0]["variable"] == "FALKORDB_PATH"
     assert result["offline"][0]["mount_point"] == "/Volumes/zombie"
 
 
 def test_check_storage_both_offline(monkeypatch):
-    """Both KUZUDB_PATH and HF_HOME on unmounted volume."""
-    monkeypatch.setenv("KUZUDB_PATH", "/Volumes/zombie/cgraph/db/kuzudb")
+    """Active backend path and HF_HOME on an unmounted volume."""
+    monkeypatch.delenv("CGC_RUNTIME_DB_TYPE", raising=False)
+    monkeypatch.setenv("DEFAULT_DATABASE", "falkordb")
+    monkeypatch.setenv("FALKORDB_PATH", "/Volumes/zombie/cgraph/db/falkordb")
     monkeypatch.setenv("HF_HOME", "/Volumes/zombie/cgraph/hf-cache")
     with patch(
         "codegraphcontext_ext.preflight._mounted_volumes",
@@ -109,12 +124,14 @@ def test_check_storage_both_offline(monkeypatch):
     assert result is not None
     assert len(result["offline"]) == 2
     variables = {e["variable"] for e in result["offline"]}
-    assert variables == {"KUZUDB_PATH", "HF_HOME"}
+    assert variables == {"FALKORDB_PATH", "HF_HOME"}
 
 
 def test_check_storage_partial_offline(monkeypatch):
-    """KUZUDB_PATH local but HF_HOME on unmounted volume."""
-    monkeypatch.setenv("KUZUDB_PATH", "/Users/someone/data/kuzudb")
+    """Active backend path local but HF_HOME on unmounted volume."""
+    monkeypatch.delenv("CGC_RUNTIME_DB_TYPE", raising=False)
+    monkeypatch.setenv("DEFAULT_DATABASE", "falkordb")
+    monkeypatch.setenv("FALKORDB_PATH", "/Users/someone/data/falkordb")
     monkeypatch.setenv("HF_HOME", "/Volumes/zombie/cgraph/hf-cache")
     with patch(
         "codegraphcontext_ext.preflight._mounted_volumes",
@@ -131,13 +148,36 @@ def test_check_storage_partial_offline(monkeypatch):
 # ---------------------------------------------------------------------------
 
 def test_check_storage_reads_upstream_config(monkeypatch):
-    """When KUZUDB_PATH not in env, falls back to upstream config_manager."""
+    """When FALKORDB_PATH is not in env, falls back to upstream config_manager."""
+    monkeypatch.delenv("CGC_RUNTIME_DB_TYPE", raising=False)
+    monkeypatch.setenv("DEFAULT_DATABASE", "falkordb")
     monkeypatch.delenv("KUZUDB_PATH", raising=False)
+    monkeypatch.delenv("FALKORDB_PATH", raising=False)
+    monkeypatch.delenv("FALKORDB_SOCKET_PATH", raising=False)
     monkeypatch.delenv("HF_HOME", raising=False)
     with patch(
         "codegraphcontext.cli.config_manager.get_config_value",
-        return_value="/Volumes/zombie/cgraph/db/kuzudb",
+        side_effect=lambda key: {
+            "DEFAULT_DATABASE": "falkordb",
+            "FALKORDB_PATH": "/Volumes/zombie/cgraph/db/falkordb",
+            "FALKORDB_SOCKET_PATH": None,
+        }.get(key),
     ), patch(
+        "codegraphcontext_ext.preflight._mounted_volumes",
+        return_value=set(),
+    ):
+        result = check_storage()
+    assert result is not None
+    assert result["offline"][0]["variable"] == "FALKORDB_PATH"
+
+
+def test_check_storage_honors_explicit_kuzudb_backend(monkeypatch):
+    monkeypatch.delenv("CGC_RUNTIME_DB_TYPE", raising=False)
+    monkeypatch.setenv("DEFAULT_DATABASE", "kuzudb")
+    monkeypatch.setenv("KUZUDB_PATH", "/Volumes/zombie/cgraph/db/kuzudb")
+    monkeypatch.delenv("FALKORDB_PATH", raising=False)
+    monkeypatch.delenv("FALKORDB_SOCKET_PATH", raising=False)
+    with patch(
         "codegraphcontext_ext.preflight._mounted_volumes",
         return_value=set(),
     ):
@@ -152,7 +192,9 @@ def test_check_storage_reads_upstream_config(monkeypatch):
 
 def test_require_storage_exits_on_offline(monkeypatch):
     """require_storage() raises SystemExit(1) when offline."""
-    monkeypatch.setenv("KUZUDB_PATH", "/Volumes/zombie/cgraph/db/kuzudb")
+    monkeypatch.delenv("CGC_RUNTIME_DB_TYPE", raising=False)
+    monkeypatch.setenv("DEFAULT_DATABASE", "falkordb")
+    monkeypatch.setenv("FALKORDB_PATH", "/Volumes/zombie/cgraph/db/falkordb")
     with patch(
         "codegraphcontext_ext.preflight._mounted_volumes",
         return_value=set(),
@@ -164,7 +206,9 @@ def test_require_storage_exits_on_offline(monkeypatch):
 
 def test_require_storage_passes_when_ok(monkeypatch):
     """require_storage() returns None when storage is available."""
-    monkeypatch.setenv("KUZUDB_PATH", "/Users/local/kuzudb")
+    monkeypatch.delenv("CGC_RUNTIME_DB_TYPE", raising=False)
+    monkeypatch.setenv("DEFAULT_DATABASE", "falkordb")
+    monkeypatch.setenv("FALKORDB_PATH", "/Users/local/falkordb")
     monkeypatch.delenv("HF_HOME", raising=False)
     # Should not raise
     require_storage()

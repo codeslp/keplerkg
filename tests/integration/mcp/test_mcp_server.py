@@ -1,6 +1,7 @@
 
 import pytest
 import asyncio
+from types import SimpleNamespace
 from unittest.mock import MagicMock, AsyncMock, patch
 from codegraphcontext.server import MCPServer
 
@@ -70,3 +71,29 @@ class TestMCPServer:
         
         asyncio.run(run_test())
 
+    def test_init_resets_local_falkordb_manager_before_connect(self):
+        fake_ctx = SimpleNamespace(
+            mode="global",
+            context_name="",
+            database="falkordb",
+            db_path="/tmp/demo/falkordb",
+            cgcignore_path="/tmp/demo/.cgcignore",
+            is_local=False,
+        )
+
+        with patch("codegraphcontext.server.resolve_context", return_value=fake_ctx), \
+             patch("codegraphcontext.server.discover_child_contexts", return_value=[]), \
+             patch("codegraphcontext.server.get_database_manager") as mock_get_db, \
+             patch("codegraphcontext_ext.project.reset_local_db_manager") as mock_reset, \
+             patch("codegraphcontext.server.JobManager"), \
+             patch("codegraphcontext.server.GraphBuilder"), \
+             patch("codegraphcontext.server.CodeFinder"), \
+             patch("codegraphcontext.server.CodeWatcher"):
+
+            mock_db = MagicMock()
+            mock_get_db.return_value = mock_db
+
+            MCPServer()
+
+        mock_reset.assert_called_once_with("falkordb", "/tmp/demo/falkordb")
+        mock_get_db.assert_called_once_with(db_path="/tmp/demo/falkordb")

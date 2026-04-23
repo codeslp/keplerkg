@@ -56,8 +56,29 @@ def test_resolve_requested_backend_prefers_explicit_env(monkeypatch):
     assert runtime.resolve_requested_backend() == "neo4j"
 
 
-def test_embed_check_model_rejects_non_kuzu_backend(monkeypatch):
+def test_embed_check_model_accepts_falkordb_backend(monkeypatch):
+    """Spec 006: FalkorDB is now a first-class embedding backend alongside Kuzu."""
     monkeypatch.setenv("DEFAULT_DATABASE", "falkordb")
+    monkeypatch.setattr(runtime, "is_falkordb_available", lambda: True)
+    monkeypatch.setattr(runtime, "has_local_embedding_runtime", lambda: True)
+    app = _embed_app()
+
+    result = runner.invoke(app, ["embed", "--check-model"])
+
+    assert result.exit_code == 0
+    payload = json.loads(result.stdout)
+    assert payload["ok"] is True
+    assert payload["backend"] == "falkordb"
+    assert payload["kind"] == "ready"
+
+
+def test_embed_check_model_rejects_unsupported_backend(monkeypatch):
+    """Non-kuzu and non-falkordb backends (e.g. neo4j) are still rejected."""
+    monkeypatch.setenv("DEFAULT_DATABASE", "neo4j")
+    monkeypatch.setattr(runtime, "is_falkordb_remote_configured", lambda: False)
+    monkeypatch.setattr(runtime, "is_falkordb_available", lambda: False)
+    monkeypatch.setattr(runtime, "is_kuzudb_available", lambda: False)
+    monkeypatch.setattr(runtime, "is_neo4j_configured", lambda: True)
     app = _embed_app()
 
     result = runner.invoke(app, ["embed", "--check-model"])
@@ -65,8 +86,21 @@ def test_embed_check_model_rejects_non_kuzu_backend(monkeypatch):
     assert result.exit_code == 1
     payload = json.loads(result.stdout)
     assert payload["kind"] == "unsupported_backend"
+    assert payload["backend"] == "neo4j"
+
+
+def test_embed_check_model_reports_missing_falkordb_dependency(monkeypatch):
+    monkeypatch.setenv("DEFAULT_DATABASE", "falkordb")
+    monkeypatch.setattr(runtime, "is_falkordb_available", lambda: False)
+    app = _embed_app()
+
+    result = runner.invoke(app, ["embed", "--check-model"])
+
+    assert result.exit_code == 1
+    payload = json.loads(result.stdout)
+    assert payload["kind"] == "missing_backend_dependency"
     assert payload["backend"] == "falkordb"
-    assert "requires kuzu" in payload["detail"]
+    assert "falkordblite" in payload["detail"]
 
 
 def test_embed_check_model_reports_missing_local_runtime(monkeypatch):
@@ -277,6 +311,34 @@ def test_ensure_hnsw_indexes_idempotent():
 
     for r in results:
         assert r["action"] == "exists"
+
+
+def test_ensure_embedding_columns_skips_on_falkordb(monkeypatch):
+    """FalkorDB is schemaless — no ALTER TABLE runs; column materializes on SET."""
+    monkeypatch.setenv("DEFAULT_DATABASE", "falkordb")
+    conn = _FakeConn()
+
+    results = ensure_embedding_columns(conn, 768)
+
+    assert len(results) == len(EMBEDDABLE_TABLES)
+    for r in results:
+        assert r["action"] == "skipped_on_backend"
+        assert "schemaless" in r["detail"].lower()
+    assert conn.executed == [], "no DDL should be emitted on FalkorDB"
+
+
+def test_ensure_hnsw_indexes_skips_on_falkordb(monkeypatch):
+    """HNSW is Kuzu-specific — FalkorDB falls back to linear-scan ANN."""
+    monkeypatch.setenv("DEFAULT_DATABASE", "falkordb")
+    conn = _FakeConn()
+
+    results = ensure_hnsw_indexes(conn, 768)
+
+    assert len(results) == len(EMBEDDABLE_TABLES)
+    for r in results:
+        assert r["action"] == "skipped_on_backend"
+        assert "linear-scan" in r["detail"]
+    assert conn.executed == [], "no HNSW DDL should be emitted on FalkorDB"
 
 
 # --- Provider factory tests ---
