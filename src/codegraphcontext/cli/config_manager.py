@@ -23,7 +23,7 @@ DATABASE_CREDENTIAL_KEYS = {"NEO4J_URI", "NEO4J_USERNAME", "NEO4J_PASSWORD", "NE
 
 # Default configuration values
 DEFAULT_CONFIG = {
-    "DEFAULT_DATABASE": "kuzudb",
+    "DEFAULT_DATABASE": "falkordb",
     "KUZUDB_PATH": str(CONFIG_DIR / "global" / "db" / "kuzudb"),
     "FALKORDB_PATH": str(CONFIG_DIR / "global" / "db" / "falkordb"),
     "FALKORDB_SOCKET_PATH": str(CONFIG_DIR / "global" / "db" / "falkordb.sock"),
@@ -540,7 +540,7 @@ VALID_MODES = ["global", "per-repo", "named"]
 class ContextInfo:
     """Metadata for a single named context."""
     name: str
-    database: str = "kuzudb"            # kuzudb | neo4j | falkordb
+    database: str = "falkordb"          # falkordb | kuzudb | neo4j
     db_path: str = ""                    # resolved at init if empty
     repos: List[str] = field(default_factory=list)
     cgcignore_path: str = ""            # resolved at init if empty
@@ -601,7 +601,7 @@ def load_context_config() -> ContextConfig:
         contexts: Dict[str, ContextInfo] = {}
         for name, meta in raw.get("contexts", {}).items():
             meta = meta or {}
-            db = meta.get("database", "kuzudb")
+            db = meta.get("database", "falkordb")
             ctx = ContextInfo(
                 name=name,
                 database=db,
@@ -660,7 +660,7 @@ class ResolvedContext:
     """Result of resolve_context() — everything needed to instantiate the DB."""
     mode: str             # global | per-repo | named
     context_name: str     # empty for global / per-repo
-    database: str         # kuzudb | neo4j | falkordb
+    database: str         # falkordb | kuzudb | neo4j
     db_path: str          # absolute path to the DB directory
     cgcignore_path: str   # path to the applicable .cgcignore
     is_local: bool = False  # True when a local .codegraphcontext/ was found
@@ -700,7 +700,7 @@ def resolve_context(
     # --- 1. Explicit CLI flag ---
     if cli_context:
         ctx = cfg.contexts.get(cli_context)
-        db = ctx.database if ctx else "kuzudb"
+        db = ctx.database if ctx else "falkordb"
         db_path = ctx.db_path if ctx else _default_db_path(cli_context, db)
         cgcignore = (
             ctx.cgcignore_path
@@ -734,12 +734,12 @@ def resolve_context(
     if local_cgc is not None:
         # Read local config.yaml if present
         local_yaml = local_cgc / "config.yaml"
-        local_db = "kuzudb"
+        local_db = "falkordb"
         if local_yaml.exists():
             try:
                 with open(local_yaml) as f:
                     local_raw = yaml.safe_load(f) or {}
-                local_db = local_raw.get("database", "kuzudb")
+                local_db = local_raw.get("database", "falkordb")
             except Exception:
                 pass
         db_path = str(local_cgc / "db" / local_db)
@@ -758,7 +758,7 @@ def resolve_context(
     if mapping:
         mapped_ctx_path = Path(mapping["context_path"])
         if mapped_ctx_path.exists() and mapped_ctx_path.is_dir():
-            mapped_db = mapping.get("database", "kuzudb")
+            mapped_db = mapping.get("database", "falkordb")
             return ResolvedContext(
                 mode="per-repo",
                 context_name="",
@@ -772,7 +772,7 @@ def resolve_context(
     if cfg.mode == "named":
         ctx_name = cfg.default_context
         ctx = cfg.contexts.get(ctx_name) if ctx_name else None
-        db = ctx.database if ctx else "kuzudb"
+        db = ctx.database if ctx else "falkordb"
         db_path = ctx.db_path if ctx else _default_db_path(ctx_name, db) if ctx_name else ""
         if not db_path:
             # No default context set — fall through to global
@@ -792,7 +792,7 @@ def resolve_context(
             )
 
     # --- 4. Global fallback ---
-    db = load_config().get("DEFAULT_DATABASE", "kuzudb")
+    db = load_config().get("DEFAULT_DATABASE", "falkordb")
     return ResolvedContext(
         mode="global",
         context_name="",
@@ -808,7 +808,7 @@ def resolve_context(
 
 def create_context(
     name: str,
-    database: str = "kuzudb",
+    database: str = "falkordb",
     db_path: Optional[str] = None,
 ) -> bool:
     """Create a new named context. Returns True on success."""
@@ -948,13 +948,13 @@ def discover_child_contexts(
                 continue
             candidate = entry / ".codegraphcontext"
             if candidate.exists() and candidate.is_dir() and candidate.resolve() != global_dir:
-                local_db = "kuzudb"
+                local_db = "falkordb"
                 local_yaml = candidate / "config.yaml"
                 if local_yaml.exists():
                     try:
                         with open(local_yaml) as f:
                             raw = yaml.safe_load(f) or {}
-                        local_db = raw.get("database", "kuzudb")
+                        local_db = raw.get("database", "falkordb")
                     except Exception:
                         pass
                 results.append(DiscoveredContext(
@@ -1019,13 +1019,13 @@ def get_workspace_mapping(cwd: Path) -> Optional[Dict[str, str]]:
 def save_workspace_mapping(cwd: Path, context_path: Path) -> None:
     """Persist an association from *cwd* to a ``.codegraphcontext`` directory."""
     context_path = context_path.resolve()
-    local_db = "kuzudb"
+    local_db = "falkordb"
     local_yaml = context_path / "config.yaml"
     if local_yaml.exists():
         try:
             with open(local_yaml) as f:
                 raw = yaml.safe_load(f) or {}
-            local_db = raw.get("database", "kuzudb")
+            local_db = raw.get("database", "falkordb")
         except Exception:
             pass
 

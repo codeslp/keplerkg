@@ -10,8 +10,8 @@ Explicit backend selection (see ``get_database_manager``):
 
 When neither is set, implicit selection:
 - Remote FalkorDB if ``FALKORDB_HOST`` is set (explicit remote signal).
-- Else KùzuDB if installed.
 - Else **Unix**: FalkorDB Lite when Python 3.12+ and ``falkordblite`` work.
+- Else KùzuDB if installed.
 - Else Neo4j if credentials exist.
 """
 import os
@@ -59,8 +59,8 @@ def get_database_manager(db_path: Optional[str] = None) -> Union['DatabaseManage
     Selection logic:
     1. Runtime override: ``CGC_RUNTIME_DB_TYPE`` (CLI ``--database``, MCP context).
     2. Configured default: ``DEFAULT_DATABASE`` (``cgc config db …``, KeplerKG ``.env``).
-    3. Implicit: ``FALKORDB_HOST`` → remote FalkorDB; else KùzuDB; then Unix-only
-       FalkorDB Lite; Neo4j if configured.
+    3. Implicit: ``FALKORDB_HOST`` → remote FalkorDB; else Unix-only
+       FalkorDB Lite; then KùzuDB; Neo4j if configured.
     """
     from codegraphcontext.utils.debug_log import info_logger
 
@@ -120,24 +120,24 @@ def get_database_manager(db_path: Optional[str] = None) -> Union['DatabaseManage
         info_logger("Using remote FalkorDB (auto-detected via FALKORDB_HOST)")
         return FalkorDBRemoteManager()
 
-    # Implicit: KùzuDB is the preferred local backend.
-    if _is_kuzudb_available():
-        from .database_kuzu import KuzuDBManager
-        info_logger(f"Using KùzuDB (default) at {db_path or 'default path'}")
-        return KuzuDBManager(db_path=db_path)
-
-    # Implicit: FalkorDB Lite remains available as a Unix-only fallback.
+    # Implicit: FalkorDB Lite is the preferred local backend.
     if _is_falkordb_available():
         from .database_falkordb import FalkorDBManager, FalkorDBUnavailableError
         try:
             mgr = FalkorDBManager(db_path=db_path)
-            info_logger(f"Using FalkorDB Lite (fallback) at {db_path or 'default path'}")
+            info_logger(f"Using FalkorDB Lite (default) at {db_path or 'default path'}")
             return mgr
         except FalkorDBUnavailableError as falkor_err:
             info_logger(
                 f"FalkorDB Lite not functional in this environment ({falkor_err}). "
                 "Continuing to the next backend."
             )
+
+    # Implicit: KùzuDB remains available as a local fallback.
+    if _is_kuzudb_available():
+        from .database_kuzu import KuzuDBManager
+        info_logger(f"Using KùzuDB (fallback) at {db_path or 'default path'}")
+        return KuzuDBManager(db_path=db_path)
 
     # Implicit: Neo4j when configured
     if _is_neo4j_configured():
@@ -146,10 +146,10 @@ def get_database_manager(db_path: Optional[str] = None) -> Union['DatabaseManage
         return DatabaseManager()
 
     error_msg = "No database backend available.\n"
-    error_msg += "Recommended: Install KùzuDB as the default local backend ('pip install kuzu')\n"
-
     if platform.system() != "Windows":
-        error_msg += "Alternative: Install FalkorDB Lite ('pip install falkordblite')\n"
+        error_msg += "Recommended: Install FalkorDB Lite as the default local backend ('pip install falkordblite')\n"
+
+    error_msg += "Alternative: Install KùzuDB ('pip install kuzu')\n"
 
     error_msg += "Alternative: Run 'cgc neo4j setup' to configure Neo4j."
 
