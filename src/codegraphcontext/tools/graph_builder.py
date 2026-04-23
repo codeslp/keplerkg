@@ -68,7 +68,7 @@ class GraphBuilder:
         self.loop = loop
         self.driver = self.db_manager.get_driver()
         self._writer = GraphWriter(self.driver)
-        self.parsers = dict(PARSER_EXTENSIONS)
+        self.parsers = PARSER_EXTENSIONS
         self._parsed_cache = {}
         self.create_schema()
 

@@ -8,53 +8,50 @@ artifacts) is dropped before the graph pipeline sees it.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Iterable, List, Set, Tuple
+from typing import AbstractSet, Iterable, List, Tuple
 
 
-# Filenames whose presence defines how code is built/deployed. Kept even when
-# the extension is not in the parseable set, since they encode structure.
-STRUCTURAL_FILENAMES: frozenset[str] = frozenset({
+# Exact-basename matches: manifests, build files, and lint/format configs
+# whose names (not extensions) define project structure or quality rules.
+STRUCTURAL_NAMES: frozenset[str] = frozenset({
     # Python
-    "pyproject.toml",
-    "setup.py",
-    "setup.cfg",
-    "requirements.txt",
-    "requirements-dev.txt",
-    "Pipfile",
-    "Pipfile.lock",
-    # JS/TS
-    "package.json",
-    "tsconfig.json",
+    "pyproject.toml", "setup.py", "setup.cfg",
+    "requirements.txt", "requirements-dev.txt",
+    "Pipfile", "Pipfile.lock",
+    # JS / TS
+    "package.json", "tsconfig.json",
     # Rust
     "Cargo.toml",
     # Go
-    "go.mod",
-    "go.sum",
+    "go.mod", "go.sum",
     # JVM
     "pom.xml",
-    "build.gradle",
-    "build.gradle.kts",
-    "settings.gradle",
-    "settings.gradle.kts",
+    "build.gradle", "build.gradle.kts",
+    "settings.gradle", "settings.gradle.kts",
     # Ruby
-    "Gemfile",
-    "Gemfile.lock",
+    "Gemfile", "Gemfile.lock",
     # PHP
     "composer.json",
     # Build / container
     "Dockerfile",
-    "docker-compose.yml",
-    "docker-compose.yaml",
-    "Makefile",
-    "GNUmakefile",
+    "docker-compose.yml", "docker-compose.yaml",
+    "Makefile", "GNUmakefile",
     "CMakeLists.txt",
-    "Taskfile.yml",
-    "Taskfile.yaml",
-    "justfile",
-    "Justfile",
+    "Taskfile.yml", "Taskfile.yaml",
+    "justfile", "Justfile",
+    # Lint / format / type-check configs
+    ".eslintrc", ".eslintrc.js", ".eslintrc.cjs",
+    ".eslintrc.json", ".eslintrc.yml", ".eslintrc.yaml",
+    ".prettierrc", ".prettierrc.js", ".prettierrc.json",
+    ".prettierrc.yml", ".prettierrc.yaml",
+    "ruff.toml", ".ruff.toml",
+    "mypy.ini", ".mypy.ini",
+    "pyrightconfig.json",
+    ".flake8",
+    ".rubocop.yml",
+    ".golangci.yml", ".golangci.yaml",
 })
 
-# Filename prefixes to keep (e.g. tsconfig.base.json, requirements-test.txt).
 STRUCTURAL_FILENAME_PREFIXES: tuple[str, ...] = (
     "tsconfig.",
     "requirements-",
@@ -62,64 +59,22 @@ STRUCTURAL_FILENAME_PREFIXES: tuple[str, ...] = (
     "docker-compose.",
 )
 
-# Extensions that define schema/IDL or code-quality rules.
 STRUCTURAL_EXTENSIONS: frozenset[str] = frozenset({
-    ".proto",
-    ".graphql",
-    ".gql",
-    ".prisma",
-    ".sql",
-})
-
-# Lint/format configs that express code-quality rules. Matched by basename
-# since most are dotfiles with no extension.
-STRUCTURAL_DOTFILES: frozenset[str] = frozenset({
-    ".eslintrc",
-    ".eslintrc.js",
-    ".eslintrc.cjs",
-    ".eslintrc.json",
-    ".eslintrc.yml",
-    ".eslintrc.yaml",
-    ".prettierrc",
-    ".prettierrc.js",
-    ".prettierrc.json",
-    ".prettierrc.yml",
-    ".prettierrc.yaml",
-    "ruff.toml",
-    ".ruff.toml",
-    "mypy.ini",
-    ".mypy.ini",
-    "pyrightconfig.json",
-    ".flake8",
-    ".rubocop.yml",
-    ".golangci.yml",
-    ".golangci.yaml",
+    ".proto", ".graphql", ".gql", ".prisma", ".sql",
 })
 
 
-def is_code_or_structural(path: Path, parseable_extensions: Set[str]) -> bool:
+def is_code_or_structural(path: Path, parseable_extensions: AbstractSet[str]) -> bool:
     """Return True if *path* should be kept under ``--code-only``."""
-    suffix = path.suffix
-    if suffix in parseable_extensions:
+    if path.suffix in parseable_extensions or path.suffix in STRUCTURAL_EXTENSIONS:
         return True
-    if suffix in STRUCTURAL_EXTENSIONS:
-        return True
-
     name = path.name
-    if name in STRUCTURAL_FILENAMES:
-        return True
-    if name in STRUCTURAL_DOTFILES:
-        return True
-    for prefix in STRUCTURAL_FILENAME_PREFIXES:
-        if name.startswith(prefix):
-            return True
-
-    return False
+    return name in STRUCTURAL_NAMES or name.startswith(STRUCTURAL_FILENAME_PREFIXES)
 
 
 def partition_by_code_only(
     files: Iterable[Path],
-    parseable_extensions: Set[str],
+    parseable_extensions: AbstractSet[str],
 ) -> Tuple[List[Path], List[Path]]:
     """Split *files* into (kept, skipped) based on the whitelist."""
     kept: List[Path] = []

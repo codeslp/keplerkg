@@ -1,7 +1,7 @@
 """Enumerate files to index with ignore rules."""
 
 from pathlib import Path
-from typing import List, Optional, Set, Tuple
+from typing import AbstractSet, List, Optional, Tuple
 
 from ...core.cgcignore import build_ignore_spec
 from ...core.code_only_filter import partition_by_code_only
@@ -13,7 +13,7 @@ def discover_files_to_index(
     path: Path,
     cgcignore_path: Optional[str] = None,
     code_only: bool = False,
-    parseable_extensions: Optional[Set[str]] = None,
+    parseable_extensions: Optional[AbstractSet[str]] = None,
 ) -> Tuple[List[Path], Path]:
     """
     Returns (files, ignore_root). *ignore_root* is used for .cgcignore relative matching.
@@ -74,7 +74,7 @@ def discover_files_to_index(
             raise ValueError(
                 "discover_files_to_index(code_only=True) requires parseable_extensions"
             )
-        kept, skipped = partition_by_code_only(files, set(parseable_extensions))
+        kept, skipped = partition_by_code_only(files, parseable_extensions)
         if skipped:
             debug_log(f"code-only filter dropped {len(skipped)} non-code files")
         files = kept

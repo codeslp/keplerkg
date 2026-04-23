@@ -42,7 +42,7 @@ async def run_tree_sitter_index_async(
         path,
         cgcignore_path,
         code_only=code_only,
-        parseable_extensions=set(parsers.keys()) if code_only else None,
+        parseable_extensions=parsers.keys() if code_only else None,
     )
 
     if job_id:

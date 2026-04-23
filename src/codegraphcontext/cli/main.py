@@ -319,18 +319,10 @@ def _confirm_code_only(path: Path, *, assume_yes: bool = False) -> bool:
     parseable = set(PARSER_EXTENSIONS.keys())
     kept, skipped = partition_by_code_only(files, parseable)
 
-    skipped_size = 0
-    for f in skipped:
-        try:
-            skipped_size += f.stat().st_size
-        except OSError:
-            pass
-    skipped_mb = skipped_size / (1024 * 1024)
-
     console.print()
     console.print(f"[bold cyan]--code-only preview for[/bold cyan] {target}")
     console.print(f"  kept:    [green]{len(kept):>6}[/green] files (AST-parseable code + structural configs)")
-    console.print(f"  skipped: [yellow]{len(skipped):>6}[/yellow] files ({skipped_mb:.1f} MB)")
+    console.print(f"  skipped: [yellow]{len(skipped):>6}[/yellow] files")
     console.print()
     console.print(
         "[dim]Implication:[/dim] the graph will reflect only source code and "
