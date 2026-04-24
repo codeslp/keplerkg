@@ -105,24 +105,141 @@
     padding: 60px 32px;
     max-width: 1200px; margin: 0 auto;
   }
-  .showcase-panel { display: none; position: relative; }
-  .showcase-panel.active { display: block; }
-  .showcase-panel img {
-    width: 100%; border: 1px solid var(--border);
+  .showcase-gallery {
+    position: relative;
+    margin-top: 28px;
+  }
+  .showcase-track {
+    border: 1px solid var(--border);
     box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+    background: #070b10;
+  }
+  .showcase-slide { display: none; }
+  .showcase-slide.active { display: block; }
+  .showcase-image-button {
+    display: block;
+    width: 100%;
+    border: 0;
+    background: transparent;
+    cursor: zoom-in;
+    padding: 0;
+  }
+  .showcase-image-button img {
+    width: 100%;
     display: block;
   }
-  /* Invisible clickable hotspots over the tab buttons in the screenshot */
-  .showcase-hotspot {
-    position: absolute; top: 0.5%; height: 5.5%;
-    cursor: pointer; z-index: 2;
-    /* background: rgba(255,0,0,0.15); */ /* uncomment to debug positions */
+  .showcase-slide figcaption {
+    padding: 10px 14px;
+    border-top: 1px solid var(--border-soft);
+    color: var(--muted);
+    font-family: "Antic", "Antic Slab", sans-serif;
+    font-size: 12px;
+    background: var(--bg-panel);
   }
-  .showcase-hotspot:hover { background: rgba(88, 166, 255, 0.08); }
-  .hotspot-2d    { left: 61.5%; width: 9%; }
-  .hotspot-3d    { left: 70.5%; width: 9%; }
-  .hotspot-emb   { left: 79.5%; width: 12%; }
-  .hotspot-about { left: 92.5%; width: 7%; }
+  .showcase-arrow {
+    position: absolute;
+    top: 50%;
+    z-index: 3;
+    width: 44px;
+    height: 56px;
+    border: 1px solid var(--border);
+    background: rgba(13, 17, 23, 0.86);
+    color: var(--text);
+    cursor: pointer;
+    font-family: "Antic", "Antic Slab", sans-serif;
+    font-size: 34px;
+    line-height: 1;
+    transform: translateY(-50%);
+  }
+  .showcase-arrow:hover,
+  .showcase-arrow:focus-visible {
+    color: var(--accent);
+    border-color: var(--accent);
+    outline: none;
+  }
+  .showcase-arrow-prev { left: -18px; }
+  .showcase-arrow-next { right: -18px; }
+  .showcase-meta {
+    margin-top: 12px;
+    text-align: center;
+    color: var(--muted);
+    font-family: "Antic", "Antic Slab", sans-serif;
+    font-size: 12px;
+  }
+  .showcase-lightbox[hidden] { display: none; }
+  .showcase-lightbox {
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 72px 92px;
+    background: rgba(1, 4, 9, 0.94);
+  }
+  .showcase-lightbox img {
+    max-width: 100%;
+    max-height: 100%;
+    border: 1px solid var(--border);
+    box-shadow: 0 16px 48px rgba(0,0,0,0.65);
+  }
+  .showcase-lightbox-close,
+  .showcase-lightbox-arrow {
+    position: fixed;
+    border: 1px solid var(--border);
+    background: rgba(22, 27, 34, 0.9);
+    color: var(--text);
+    cursor: pointer;
+    font-family: "Antic", "Antic Slab", sans-serif;
+    line-height: 1;
+  }
+  .showcase-lightbox-close:hover,
+  .showcase-lightbox-arrow:hover,
+  .showcase-lightbox-close:focus-visible,
+  .showcase-lightbox-arrow:focus-visible {
+    color: var(--accent);
+    border-color: var(--accent);
+    outline: none;
+  }
+  .showcase-lightbox-close {
+    top: 20px;
+    right: 24px;
+    width: 44px;
+    height: 44px;
+    font-size: 28px;
+  }
+  .showcase-lightbox-arrow {
+    top: 50%;
+    width: 50px;
+    height: 70px;
+    font-size: 40px;
+    transform: translateY(-50%);
+  }
+  .showcase-lightbox-prev { left: 24px; }
+  .showcase-lightbox-next { right: 24px; }
+  body.showcase-lightbox-open { overflow: hidden; }
+  @media (max-width: 768px) {
+    .showcase-arrow {
+      width: 38px;
+      height: 48px;
+      font-size: 28px;
+    }
+    .showcase-arrow-prev { left: 8px; }
+    .showcase-arrow-next { right: 8px; }
+    .showcase-lightbox {
+      padding: 64px 16px;
+    }
+    .showcase-lightbox-arrow {
+      top: auto;
+      bottom: 16px;
+      width: 48px;
+      height: 48px;
+      font-size: 34px;
+      transform: none;
+    }
+    .showcase-lightbox-prev { left: 16px; }
+    .showcase-lightbox-next { right: 16px; }
+  }
 
   /* --- FEATURES GRID --- */
   .features {
@@ -217,7 +334,7 @@
   nav { position: relative; z-index: 2; }
   .hero, section, hr, footer { position: relative; z-index: 1; }
   /* Panels, feature cards, and table get opaque bg so text is readable */
-  .feature, table, .code-block, .credit, .showcase-panel img {
+  .feature, table, .code-block, .credit, .showcase-gallery {
     position: relative; z-index: 1;
   }
 </style>
@@ -284,35 +401,71 @@
   <div class="section-label">Showcase</div>
   <h3>See your codebase from every angle</h3>
 
-  <div class="showcase-panel active" id="panel-2d">
-    <img src="img/2d.png" alt="KeplerKG 2D Graph">
-    <div class="showcase-hotspot hotspot-2d" data-panel="panel-2d"></div>
-    <div class="showcase-hotspot hotspot-3d" data-panel="panel-3d"></div>
-    <div class="showcase-hotspot hotspot-emb" data-panel="panel-emb"></div>
-    <div class="showcase-hotspot hotspot-about" data-panel="panel-about"></div>
+  <div class="showcase-gallery" aria-label="KeplerKG product screenshots">
+    <button class="showcase-arrow showcase-arrow-prev" type="button" aria-label="Previous screenshot" data-showcase-prev>&#8249;</button>
+    <div class="showcase-track">
+      <figure class="showcase-slide active" data-showcase-slide>
+        <button class="showcase-image-button" type="button" aria-label="Open 2D concentric graph screenshot full screen" data-lightbox-index="0">
+          <img src="img/showcase-2d-concentric.png" alt="KeplerKG 2D graph in concentric layout">
+        </button>
+        <figcaption>2D graph - concentric layout</figcaption>
+      </figure>
+      <figure class="showcase-slide" data-showcase-slide>
+        <button class="showcase-image-button" type="button" aria-label="Open 2D circle graph screenshot full screen" data-lightbox-index="1">
+          <img src="img/showcase-2d-circle.png" alt="KeplerKG 2D graph in circle layout">
+        </button>
+        <figcaption>2D graph - circle layout</figcaption>
+      </figure>
+      <figure class="showcase-slide" data-showcase-slide>
+        <button class="showcase-image-button" type="button" aria-label="Open embeddings projector screenshot full screen" data-lightbox-index="2">
+          <img src="img/showcase-embeddings.png" alt="KeplerKG embeddings projector with nearest neighbors selected">
+        </button>
+        <figcaption>Embedding projector - nearest neighbors</figcaption>
+      </figure>
+      <figure class="showcase-slide" data-showcase-slide>
+        <button class="showcase-image-button" type="button" aria-label="Open 3D graph screenshot full screen" data-lightbox-index="3">
+          <img src="img/showcase-3d.png" alt="KeplerKG 3D graph visualization">
+        </button>
+        <figcaption>3D graph - full repository view</figcaption>
+      </figure>
+      <figure class="showcase-slide" data-showcase-slide>
+        <button class="showcase-image-button" type="button" aria-label="Open original 2D graph screenshot full screen" data-lightbox-index="4">
+          <img src="img/2d.png" alt="KeplerKG original 2D graph screenshot">
+        </button>
+        <figcaption>Original 2D graph view</figcaption>
+      </figure>
+      <figure class="showcase-slide" data-showcase-slide>
+        <button class="showcase-image-button" type="button" aria-label="Open original 3D graph screenshot full screen" data-lightbox-index="5">
+          <img src="img/3d.png" alt="KeplerKG original 3D graph screenshot">
+        </button>
+        <figcaption>Original 3D graph view</figcaption>
+      </figure>
+      <figure class="showcase-slide" data-showcase-slide>
+        <button class="showcase-image-button" type="button" aria-label="Open original embeddings screenshot full screen" data-lightbox-index="6">
+          <img src="img/embedding.png" alt="KeplerKG original embeddings screenshot">
+        </button>
+        <figcaption>Original embeddings view</figcaption>
+      </figure>
+      <figure class="showcase-slide" data-showcase-slide>
+        <button class="showcase-image-button" type="button" aria-label="Open about dashboard screenshot full screen" data-lightbox-index="7">
+          <img src="img/about.png" alt="KeplerKG about dashboard screenshot">
+        </button>
+        <figcaption>Dashboard about view</figcaption>
+      </figure>
+    </div>
+    <button class="showcase-arrow showcase-arrow-next" type="button" aria-label="Next screenshot" data-showcase-next>&#8250;</button>
   </div>
-  <div class="showcase-panel" id="panel-3d">
-    <img src="img/3d.png" alt="KeplerKG 3D Graph">
-    <div class="showcase-hotspot hotspot-2d" data-panel="panel-2d"></div>
-    <div class="showcase-hotspot hotspot-3d" data-panel="panel-3d"></div>
-    <div class="showcase-hotspot hotspot-emb" data-panel="panel-emb"></div>
-    <div class="showcase-hotspot hotspot-about" data-panel="panel-about"></div>
-  </div>
-  <div class="showcase-panel" id="panel-emb">
-    <img src="img/embedding.png" alt="KeplerKG Embeddings">
-    <div class="showcase-hotspot hotspot-2d" data-panel="panel-2d"></div>
-    <div class="showcase-hotspot hotspot-3d" data-panel="panel-3d"></div>
-    <div class="showcase-hotspot hotspot-emb" data-panel="panel-emb"></div>
-    <div class="showcase-hotspot hotspot-about" data-panel="panel-about"></div>
-  </div>
-  <div class="showcase-panel" id="panel-about">
-    <img src="img/about.png" alt="KeplerKG About">
-    <div class="showcase-hotspot hotspot-2d" data-panel="panel-2d"></div>
-    <div class="showcase-hotspot hotspot-3d" data-panel="panel-3d"></div>
-    <div class="showcase-hotspot hotspot-emb" data-panel="panel-emb"></div>
-    <div class="showcase-hotspot hotspot-about" data-panel="panel-about"></div>
+  <div class="showcase-meta" aria-live="polite">
+    <span data-showcase-counter>1 / 8</span>
   </div>
 </section>
+
+<div class="showcase-lightbox" id="showcase-lightbox" role="dialog" aria-modal="true" aria-label="Full screen showcase image" hidden>
+  <button class="showcase-lightbox-close" type="button" aria-label="Close full screen image" data-lightbox-close>&times;</button>
+  <button class="showcase-lightbox-arrow showcase-lightbox-prev" type="button" aria-label="Previous full screen screenshot" data-lightbox-prev>&#8249;</button>
+  <img data-lightbox-image src="" alt="">
+  <button class="showcase-lightbox-arrow showcase-lightbox-next" type="button" aria-label="Next full screen screenshot" data-lightbox-next>&#8250;</button>
+</div>
 
 <hr>
 
@@ -409,13 +562,90 @@
 </footer>
 
 <script>
-// Showcase hotspots — click the tab area in the screenshot to switch views
-document.querySelectorAll('.showcase-hotspot').forEach(hotspot => {
-  hotspot.addEventListener('click', () => {
-    document.querySelectorAll('.showcase-panel').forEach(p => p.classList.remove('active'));
-    document.getElementById(hotspot.dataset.panel).classList.add('active');
+const showcaseSlides = Array.from(document.querySelectorAll('[data-showcase-slide]'));
+const showcaseCounter = document.querySelector('[data-showcase-counter]');
+const showcaseLightbox = document.getElementById('showcase-lightbox');
+const showcaseLightboxImage = document.querySelector('[data-lightbox-image]');
+const showcaseLightboxClose = document.querySelector('[data-lightbox-close]');
+let showcaseIndex = 0;
+
+function normalizeShowcaseIndex(index) {
+  return (index + showcaseSlides.length) % showcaseSlides.length;
+}
+
+function setShowcaseSlide(index) {
+  if (!showcaseSlides.length) return;
+  showcaseIndex = normalizeShowcaseIndex(index);
+  showcaseSlides.forEach((slide, slideIndex) => {
+    slide.classList.toggle('active', slideIndex === showcaseIndex);
+  });
+  if (showcaseCounter) {
+    showcaseCounter.textContent = `${showcaseIndex + 1} / ${showcaseSlides.length}`;
+  }
+  if (showcaseLightbox && !showcaseLightbox.hidden) {
+    updateShowcaseLightboxImage();
+  }
+}
+
+function getShowcaseImage(index) {
+  return showcaseSlides[index]?.querySelector('img');
+}
+
+function updateShowcaseLightboxImage() {
+  const image = getShowcaseImage(showcaseIndex);
+  if (!image || !showcaseLightboxImage) return;
+  showcaseLightboxImage.src = image.currentSrc || image.src;
+  showcaseLightboxImage.alt = image.alt;
+}
+
+function openShowcaseLightbox(index) {
+  if (!showcaseLightbox) return;
+  setShowcaseSlide(index);
+  updateShowcaseLightboxImage();
+  showcaseLightbox.hidden = false;
+  document.body.classList.add('showcase-lightbox-open');
+  showcaseLightboxClose?.focus();
+}
+
+function closeShowcaseLightbox() {
+  if (!showcaseLightbox) return;
+  showcaseLightbox.hidden = true;
+  document.body.classList.remove('showcase-lightbox-open');
+}
+
+document.querySelector('[data-showcase-prev]')?.addEventListener('click', () => setShowcaseSlide(showcaseIndex - 1));
+document.querySelector('[data-showcase-next]')?.addEventListener('click', () => setShowcaseSlide(showcaseIndex + 1));
+document.querySelector('[data-lightbox-prev]')?.addEventListener('click', () => setShowcaseSlide(showcaseIndex - 1));
+document.querySelector('[data-lightbox-next]')?.addEventListener('click', () => setShowcaseSlide(showcaseIndex + 1));
+showcaseLightboxClose?.addEventListener('click', closeShowcaseLightbox);
+
+document.querySelectorAll('[data-lightbox-index]').forEach(button => {
+  button.addEventListener('click', () => {
+    openShowcaseLightbox(Number(button.dataset.lightboxIndex));
   });
 });
+
+showcaseLightbox?.addEventListener('click', event => {
+  if (event.target === showcaseLightbox) {
+    closeShowcaseLightbox();
+  }
+});
+
+document.addEventListener('keydown', event => {
+  if (!showcaseSlides.length) return;
+  if (showcaseLightbox && !showcaseLightbox.hidden && event.key === 'Escape') {
+    closeShowcaseLightbox();
+    return;
+  }
+  if (event.key === 'ArrowLeft') {
+    setShowcaseSlide(showcaseIndex - 1);
+  }
+  if (event.key === 'ArrowRight') {
+    setShowcaseSlide(showcaseIndex + 1);
+  }
+});
+
+setShowcaseSlide(showcaseIndex);
 
 // --- Background constellation (ported from MechAI BackgroundTree.tsx) ---
 (function () {
