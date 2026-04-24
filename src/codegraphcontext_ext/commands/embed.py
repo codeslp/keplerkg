@@ -76,6 +76,21 @@ def _build_name_text(node: dict[str, Any]) -> str:
     return _humanize_name(name) if name else ""
 
 
+def _next_non_force_offset(
+    *,
+    offset: int,
+    batch_size: int,
+    fetched_count: int,
+    written: int,
+) -> Optional[int]:
+    """Return the next non-force SKIP offset, or None when the table is done."""
+    if written:
+        return 0
+    if fetched_count >= batch_size:
+        return offset + batch_size
+    return None
+
+
 def _fetch_name_nodes(
     conn: Any,
     table: str,
@@ -86,11 +101,10 @@ def _fetch_name_nodes(
 ) -> list[dict[str, Any]]:
     """Fetch a batch of nodes for name embedding."""
     where = "" if force else f"WHERE n.`{NAME_EMBEDDING_COLUMN}` IS NULL "
-    fetch_offset = offset if force else 0
     query = (
         f"MATCH (n:`{table}`) {where}"
         f"RETURN n.uid AS uid, n.name AS name "
-        f"SKIP {fetch_offset} LIMIT {batch_size}"
+        f"SKIP {offset} LIMIT {batch_size}"
     )
     result = conn.execute(query)
     rows: list[dict[str, Any]] = []
@@ -141,6 +155,15 @@ def _run_name_embed(
 
             new_nodes = [n for n in nodes if n["uid"] not in seen_uids]
             if not new_nodes:
+                next_offset = _next_non_force_offset(
+                    offset=offset,
+                    batch_size=_BATCH_SIZE,
+                    fetched_count=len(nodes),
+                    written=0,
+                )
+                if not force and next_offset is not None:
+                    offset = next_offset
+                    continue
                 break
             for n in new_nodes:
                 seen_uids.add(n["uid"])
@@ -149,6 +172,7 @@ def _run_name_embed(
             embeddable_indices = [i for i, t in enumerate(texts) if t.strip()]
             skipped += len(texts) - len(embeddable_indices)
 
+            written = 0
             if embeddable_indices:
                 embeddable_texts = [texts[i] for i in embeddable_indices]
                 vectors = provider.embed_texts(embeddable_texts)
@@ -163,6 +187,17 @@ def _run_name_embed(
 
             if force:
                 offset += _BATCH_SIZE
+                continue
+
+            next_offset = _next_non_force_offset(
+                offset=offset,
+                batch_size=_BATCH_SIZE,
+                fetched_count=len(nodes),
+                written=written,
+            )
+            if next_offset is None:
+                break
+            offset = next_offset
 
         print(file=sys.stderr)
         table_stats.append({
@@ -190,11 +225,10 @@ def _fetch_nodes(
 ) -> list[dict[str, Any]]:
     """Fetch a batch of nodes to embed from a table."""
     where = "" if force else f"WHERE n.`{EMBEDDING_COLUMN}` IS NULL "
-    fetch_offset = offset if force else 0
     query = (
         f"MATCH (n:`{table}`) {where}"
         f"RETURN n.uid AS uid, n.name AS name, n.docstring AS docstring, n.source AS source "
-        f"SKIP {fetch_offset} LIMIT {batch_size}"
+        f"SKIP {offset} LIMIT {batch_size}"
     )
     result = conn.execute(query)
     rows: list[dict[str, Any]] = []
@@ -253,6 +287,15 @@ def _run_embed(
             # Track seen UIDs to break the cycle.
             new_nodes = [n for n in nodes if n["uid"] not in seen_uids]
             if not new_nodes:
+                next_offset = _next_non_force_offset(
+                    offset=offset,
+                    batch_size=_BATCH_SIZE,
+                    fetched_count=len(nodes),
+                    written=0,
+                )
+                if not force and next_offset is not None:
+                    offset = next_offset
+                    continue
                 break
             for n in new_nodes:
                 seen_uids.add(n["uid"])
@@ -261,6 +304,7 @@ def _run_embed(
             embeddable_indices = [i for i, t in enumerate(texts) if t.strip()]
             skipped += len(texts) - len(embeddable_indices)
 
+            written = 0
             if embeddable_indices:
                 embeddable_texts = [texts[i] for i in embeddable_indices]
                 vectors = provider.embed_texts(embeddable_texts)
@@ -279,6 +323,17 @@ def _run_embed(
             # persist, and seen_uids prevents infinite re-fetch of those rows.
             if force:
                 offset += _BATCH_SIZE
+                continue
+
+            next_offset = _next_non_force_offset(
+                offset=offset,
+                batch_size=_BATCH_SIZE,
+                fetched_count=len(nodes),
+                written=written,
+            )
+            if next_offset is None:
+                break
+            offset = next_offset
 
         print(file=sys.stderr)  # newline after \r progress
         table_stats.append({

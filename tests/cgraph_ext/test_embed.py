@@ -561,6 +561,51 @@ def test_run_embed_revisits_first_null_batch_after_writes():
     assert len(conn.writes) == len(EMBEDDABLE_TABLES) * 3
 
 
+def test_run_embed_skips_full_empty_first_batch_to_reach_later_nodes():
+    """Persistent empty rows must not block later embeddable NULL rows."""
+    provider = _MockProvider(dims=4)
+
+    class _EmptyFirstBatchConn:
+        def __init__(self):
+            self.remaining = {
+                table: [
+                    {"uid": f"{table}-empty-1", "name": None, "docstring": None, "source": None},
+                    {"uid": f"{table}-empty-2", "name": None, "docstring": None, "source": None},
+                    {"uid": f"{table}-real", "name": "real", "docstring": None, "source": "def real(): pass"},
+                ]
+                for table in EMBEDDABLE_TABLES
+            }
+            self.writes: list[dict[str, str]] = []
+
+        def execute(self, query, *, parameters=None):
+            if "MATCH" in query and "SET" in query:
+                self.writes.append(parameters)
+                for rows in self.remaining.values():
+                    rows[:] = [row for row in rows if row["uid"] != parameters["uid"]]
+                return _FakeResult([])
+
+            for table in EMBEDDABLE_TABLES:
+                if f"`{table}`" in query and "RETURN" in query:
+                    rows = self.remaining[table]
+                    skip = 0
+                    if "SKIP " in query:
+                        skip = int(query.split("SKIP ", 1)[1].split(" ", 1)[0])
+                    batch = rows[skip:skip + 2]
+                    return _FakeResult([
+                        (row["uid"], row["name"], row["docstring"], row["source"])
+                        for row in batch
+                    ])
+            return _FakeResult([])
+
+    conn = _EmptyFirstBatchConn()
+    with patch("codegraphcontext_ext.commands.embed._BATCH_SIZE", 2):
+        result = _run_embed(conn, provider, force=False)
+
+    assert result["total_embedded"] == len(EMBEDDABLE_TABLES)
+    assert result["total_skipped_empty"] == len(EMBEDDABLE_TABLES) * 2
+    assert len(conn.writes) == len(EMBEDDABLE_TABLES)
+
+
 def test_run_name_embed_revisits_first_null_batch_after_writes():
     """Name embeddings share the same shrinking-window risk as behavior embeddings."""
     provider = _MockProvider(dims=4)
@@ -604,6 +649,51 @@ def test_run_name_embed_revisits_first_null_batch_after_writes():
     assert result["total_embedded"] == len(EMBEDDABLE_TABLES) * 3
     assert result["total_skipped_empty"] == 0
     assert len(conn.writes) == len(EMBEDDABLE_TABLES) * 3
+
+
+def test_run_name_embed_skips_full_empty_first_batch_to_reach_later_nodes():
+    """Persistent empty names must not block later name embeddings."""
+    provider = _MockProvider(dims=4)
+
+    class _EmptyFirstNameBatchConn:
+        def __init__(self):
+            self.remaining = {
+                table: [
+                    {"uid": f"{table}-empty-1", "name": ""},
+                    {"uid": f"{table}-empty-2", "name": None},
+                    {"uid": f"{table}-real", "name": "real_fn"},
+                ]
+                for table in EMBEDDABLE_TABLES
+            }
+            self.writes: list[dict[str, str]] = []
+
+        def execute(self, query, *, parameters=None):
+            if "MATCH" in query and "SET" in query:
+                self.writes.append(parameters)
+                for rows in self.remaining.values():
+                    rows[:] = [row for row in rows if row["uid"] != parameters["uid"]]
+                return _FakeResult([])
+
+            for table in EMBEDDABLE_TABLES:
+                if f"`{table}`" in query and "RETURN n.uid AS uid, n.name AS name" in query:
+                    rows = self.remaining[table]
+                    skip = 0
+                    if "SKIP " in query:
+                        skip = int(query.split("SKIP ", 1)[1].split(" ", 1)[0])
+                    batch = rows[skip:skip + 2]
+                    return _FakeResult([
+                        (row["uid"], row["name"])
+                        for row in batch
+                    ])
+            return _FakeResult([])
+
+    conn = _EmptyFirstNameBatchConn()
+    with patch("codegraphcontext_ext.commands.embed._BATCH_SIZE", 2):
+        result = _run_name_embed(conn, provider, force=False)
+
+    assert result["total_embedded"] == len(EMBEDDABLE_TABLES)
+    assert result["total_skipped_empty"] == len(EMBEDDABLE_TABLES) * 2
+    assert len(conn.writes) == len(EMBEDDABLE_TABLES)
 
 
 def test_embed_write_path_emits_json(monkeypatch):
