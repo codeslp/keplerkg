@@ -132,7 +132,7 @@ class _QuietHandler(http.server.SimpleHTTPRequestHandler):
             super().do_GET()
 
     def _serve_project_list(self):
-        """Return JSON list of available KuzuDB project slugs."""
+        """Return JSON list of available per-project stores (any backend)."""
         data = self._project_list or []
         body = json.dumps(data).encode("utf-8")
         self.send_response(200)
@@ -151,23 +151,50 @@ class _QuietHandler(http.server.SimpleHTTPRequestHandler):
         return
 
 
+_BACKEND_STORES: tuple[tuple[str, str], ...] = (
+    # Kuzu writes a directory; FalkorDB Lite writes a redislite DB file at
+    # `<slug>/falkordb` (see codegraphcontext_ext/project.py). Presence of
+    # the Kuzu dir or the Falkor DB file is the canonical signal that a
+    # per-project store exists for that backend.
+    ("kuzudb", "kuzudb"),
+    ("falkordb", "falkordb"),
+)
+
+
 def _discover_projects() -> list[dict]:
-    """List available KuzuDB project stores."""
+    """List per-project stores for any supported embedded backend.
+
+    Scans `<CGRAPH_DB_ROOT>/<slug>/` for both Kuzu and FalkorDB stores
+    (see spec 006). When both backends coexist for the same slug, emits
+    one entry per backend so the dashboard can surface both.
+    """
     import os
     db_root = Path(os.environ.get("CGRAPH_DB_ROOT", "/Volumes/zombie/cgraph/db"))
     if not db_root.is_dir():
         return []
-    projects = []
+    projects: list[dict] = []
     for d in sorted(db_root.iterdir()):
-        if d.is_dir() and not d.name.startswith("test-") and not d.name.startswith("."):
-            kuzu_path = d / "kuzudb"
-            if kuzu_path.exists():
-                projects.append({
-                    "slug": d.name,
-                    "path": str(kuzu_path),
-                    "size_mb": round(sum(f.stat().st_size for f in kuzu_path.rglob("*") if f.is_file()) / 1048576, 1) if kuzu_path.is_dir() else round(kuzu_path.stat().st_size / 1048576, 1),
-                })
+        if not d.is_dir() or d.name.startswith("test-") or d.name.startswith("."):
+            continue
+        for backend, store_name in _BACKEND_STORES:
+            store = d / store_name
+            if not store.exists():
+                continue
+            projects.append({
+                "slug": d.name,
+                "backend": backend,
+                "path": str(store),
+                "size_mb": _store_size_mb(store),
+            })
     return projects
+
+
+def _store_size_mb(store: Path) -> float:
+    if store.is_dir():
+        total = sum(f.stat().st_size for f in store.rglob("*") if f.is_file())
+    else:
+        total = store.stat().st_size
+    return round(total / 1048576, 1)
 
 
 def build_server(directory: Path, port: int, *, current_project: str = "") -> socketserver.TCPServer:

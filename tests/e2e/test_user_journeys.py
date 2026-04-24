@@ -4,6 +4,7 @@ import shutil
 import subprocess
 import os
 import sys
+from pathlib import Path
 
 # We will need the fixtures we defined in conftest.py
 # (python_sample_project, temp_test_dir)
@@ -22,6 +23,22 @@ class TestUserJourneys:
         cmd = [sys.executable, "-m", "codegraphcontext.cli.main"] + args
         return subprocess.run(cmd, capture_output=True, text=True, cwd=cwd)
 
+    @pytest.fixture(autouse=True)
+    def isolate_cli_db(self, monkeypatch, temp_test_dir):
+        """Keep subprocess journeys away from the developer's configured DB."""
+        src_path = str(Path(__file__).resolve().parents[2] / "src")
+        existing_pythonpath = os.environ.get("PYTHONPATH", "")
+        monkeypatch.setenv(
+            "PYTHONPATH",
+            src_path if not existing_pythonpath else f"{src_path}{os.pathsep}{existing_pythonpath}",
+        )
+        monkeypatch.setenv("CGRAPH_DB_ROOT", str(temp_test_dir / "db"))
+        monkeypatch.setenv("DEFAULT_DATABASE", "falkordb")
+        monkeypatch.setenv("CGC_RUNTIME_DB_TYPE", "falkordb")
+        monkeypatch.delenv("KUZUDB_PATH", raising=False)
+        monkeypatch.delenv("FALKORDB_PATH", raising=False)
+        monkeypatch.delenv("FALKORDB_SOCKET_PATH", raising=False)
+
     @pytest.mark.slow
     def test_first_time_user_workflow(self, python_sample_project, temp_test_dir):
         """
@@ -35,6 +52,7 @@ class TestUserJourneys:
         # 1. Copy sample project to temp dir to avoid polluting global state
         project_dir = temp_test_dir / "my_project"
         shutil.copytree(python_sample_project, project_dir)
+        context = f"journey_{temp_test_dir.name}"
         
         # Ensure clean state (optional, if we use unique DBs per test it's better)
         # For this E2E, we might be hitting the real local DB. 
@@ -44,18 +62,21 @@ class TestUserJourneys:
         
         # 2. Index
         print(f"Indexing {project_dir}...")
-        result = self.run_cgc(["index", str(project_dir)])
+        result = self.run_cgc(["index", "--context", context, str(project_dir)])
         assert result.returncode == 0, f"Indexing failed: {result.stderr}"
-        
+
         # 3. List
-        result = self.run_cgc(["list"])
+        result = self.run_cgc(["list", "--context", context], cwd=project_dir)
         assert result.returncode == 0
         assert str(project_dir) in result.stdout or "my_project" in result.stdout
         
         # 4. Find function
         # This relies on the indexer actually working and writing to DB
         # Correct command: cgc find name foo --type function
-        result = self.run_cgc(["find", "name", "foo", "--type", "function"]) 
+        result = self.run_cgc(
+            ["find", "name", "foo", "--type", "function", "--context", context],
+            cwd=project_dir,
+        )
         assert result.returncode == 0
         # If the sample project has 'foo', we assert it's found
         # assert "foo" in result.stdout (Commented out until we confirm sample content)
@@ -67,15 +88,25 @@ class TestUserJourneys:
         dummy_dir = temp_test_dir / "to_delete"
         dummy_dir.mkdir()
         (dummy_dir / "main.py").write_text("def main(): pass")
+        context = f"journey_{temp_test_dir.name}"
         
-        self.run_cgc(["index", str(dummy_dir)])
+        self.run_cgc(["index", "--context", context, str(dummy_dir)])
         
         # Act: Delete
         # We need to bypass confirmation prompt if any. 
         # Usually delete requires --yes or input.
         # Assuming --force or --yes flag exists, or we pipe input.
         result = subprocess.run(
-            [sys.executable, "-m", "codegraphcontext.cli.main", "delete", str(dummy_dir), "--yes"],
+            [
+                sys.executable,
+                "-m",
+                "codegraphcontext.cli.main",
+                "delete",
+                "--context",
+                context,
+                str(dummy_dir),
+                "--yes",
+            ],
             capture_output=True, text=True
         )
         # If --yes is not supported, this might fail/hang. Checking help first would be wise.
@@ -83,13 +114,20 @@ class TestUserJourneys:
         if result.returncode != 0:
             # Try interactive
             result = subprocess.run(
-                [sys.executable, "-m", "codegraphcontext.cli.main", "delete", str(dummy_dir)],
+                [
+                    sys.executable,
+                    "-m",
+                    "codegraphcontext.cli.main",
+                    "delete",
+                    "--context",
+                    context,
+                    str(dummy_dir),
+                ],
                 input="y\n", capture_output=True, text=True
             )
 
         assert result.returncode == 0
         
         # Verify gone
-        list_res = self.run_cgc(["list"])
+        list_res = self.run_cgc(["list", "--context", context], cwd=temp_test_dir)
         assert str(dummy_dir) not in list_res.stdout
-

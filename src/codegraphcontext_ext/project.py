@@ -149,11 +149,11 @@ def _parse_toml_string(value: str) -> str:
 
 
 def _normalize_slug(raw: str) -> str:
-    slug = re.sub(r"[^a-z0-9]+", "-", raw.lower()).strip("-")
+    slug = re.sub(r"[^a-z0-9_-]+", "-", raw.lower()).strip("-_")
     if slug in _REJECTED_SLUGS:
         raise ValueError(
-            f"Invalid project slug {raw!r}. Choose a non-empty kebab-case slug that is not "
-            "'default' or 'global'."
+            f"Invalid project slug {raw!r}. Choose a non-empty lowercase slug using "
+            "letters, numbers, hyphens, or underscores that is not 'default' or 'global'."
         )
     if not slug:
         raise ValueError(f"Invalid project slug {raw!r}.")

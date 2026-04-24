@@ -60,6 +60,10 @@ kkg viz-dashboard                            # interactive 4-tab dashboard
 KeplerKG can now route each target repo to its own Kuzu store under
 `/Volumes/zombie/cgraph/db/<slug>/kuzudb`.
 
+Slugs are lowercase project identifiers. Letters, numbers, hyphens, and
+underscores are preserved; spaces and other punctuation are normalized to
+hyphens.
+
 Project resolution precedence:
 - `--project <slug>`
 - `CGRAPH_PROJECT=<slug>`

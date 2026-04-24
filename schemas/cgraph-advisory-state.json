@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://codeslp.dev/cgraph/schemas/cgraph-advisory-state.json",
+  "title": "cgraph advisory live-state row",
+  "description": "One JSONL row in .btrain/cgraph-advisory-state.jsonl. Each row is an unresolved cross-lane advisory pinned to a lane. Rows are dropped from the file when the underlying condition clears; resolved rows move to the append-only telemetry log instead.",
+  "type": "object",
+  "required": [
+    "lane",
+    "kind",
+    "context_hash",
+    "first_seen",
+    "last_surfaced",
+    "resolved_at",
+    "detail",
+    "suggestion",
+    "advisory_id"
+  ],
+  "properties": {
+    "lane": {
+      "type": "string",
+      "description": "Lane id this advisory is pinned to (e.g. 'a', 'b')."
+    },
+    "kind": {
+      "type": "string",
+      "description": "Taxonomy label for the advisory (e.g. lock_overlap, drift, stale_index, packet_truncated). Unknown values are accepted so new kinds can ship without a schema bump."
+    },
+    "context_hash": {
+      "type": "string",
+      "description": "Short sha256 prefix derived from the kind-specific context payload. Stable per (lane, kind, context) triple and used to dedupe surfacings across refreshes."
+    },
+    "first_seen": {
+      "type": "string",
+      "description": "ISO-8601 UTC timestamp of the first surfacing for this (lane, kind, context_hash)."
+    },
+    "last_surfaced": {
+      "type": "string",
+      "description": "ISO-8601 UTC timestamp of the most recent pull-model re-confirmation. Equal to first_seen on initial surface."
+    },
+    "resolved_at": {
+      "type": ["string", "null"],
+      "description": "Always null in live state; resolved rows move to the telemetry log. Retained here so live rows and telemetry rows share one shape."
+    },
+    "detail": {
+      "type": "string",
+      "description": "One-line human-readable explanation."
+    },
+    "suggestion": {
+      "type": "string",
+      "description": "Actionable next step. May be empty when the producer emits a raw finding with no linked suggestion."
+    },
+    "advisory_id": {
+      "type": "string",
+      "description": "Stable identifier from `kkg advise` when the advisory maps to a known situation; empty otherwise."
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://codeslp.dev/cgraph/schemas/cgraph-advisory-log.json",
+  "title": "cgraph advisory telemetry-log row",
+  "description": "One JSONL row in .btrain/logs/cgraph-advisories.jsonl. Append-only telemetry for every advisory surfacing and resolution transition across the lane lifecycle. Consumed by replay and adoption analysis; row shape is a strict superset of the shared advisory-core fields.",
+  "type": "object",
+  "required": [
+    "event",
+    "recorded_at",
+    "lane",
+    "kind",
+    "context_hash",
+    "detail",
+    "suggestion",
+    "advisory_id"
+  ],
+  "properties": {
+    "event": {
+      "type": "string",
+      "enum": ["surfaced", "resolved"],
+      "description": "Transition type. 'surfaced' = first write after a new (lane, kind, context_hash) appeared. 'resolved' = previously-live entry cleared because the underlying condition changed or the lane resolved."
+    },
+    "recorded_at": {
+      "type": "string",
+      "description": "ISO-8601 UTC timestamp when this row was written."
+    },
+    "lane": {
+      "type": "string",
+      "description": "Lane id this advisory was pinned to."
+    },
+    "kind": {
+      "type": "string",
+      "description": "Taxonomy label (e.g. lock_overlap, drift, stale_index, packet_truncated)."
+    },
+    "context_hash": {
+      "type": "string",
+      "description": "Short sha256 prefix identifying the underlying context. (lane, kind, context_hash) is stable between the 'surfaced' and 'resolved' rows for one advisory instance."
+    },
+    "detail": {
+      "type": "string",
+      "description": "One-line explanation captured at surface time; preserved on 'resolved' rows so the log is self-contained."
+    },
+    "suggestion": {
+      "type": "string",
+      "description": "Actionable next step captured at surface time. May be empty."
+    },
+    "advisory_id": {
+      "type": "string",
+      "description": "Stable advise-situation id when available, empty otherwise."
+    }
+  },
+  "additionalProperties": false
+}

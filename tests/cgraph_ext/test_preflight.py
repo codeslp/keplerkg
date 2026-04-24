@@ -25,6 +25,10 @@ def _clear_preflight_env(monkeypatch):
         "HF_HOME",
     ):
         monkeypatch.delenv(key, raising=False)
+    monkeypatch.setattr(
+        "codegraphcontext.cli.config_manager.get_config_value",
+        lambda key: None,
+    )
 
 
 # ---------------------------------------------------------------------------

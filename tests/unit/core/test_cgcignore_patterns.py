@@ -10,12 +10,16 @@ import time
 from pathlib import Path
 from pathspec import PathSpec
 
-# ✅ CORRECT IMPORT PATH
-from codegraphcontext.tools.graph_builder import DEFAULT_IGNORE_PATTERNS
+from codegraphcontext.tools.graph_builder import DEFAULT_IGNORE_PATTERNS, PARSER_EXTENSIONS
+from codegraphcontext.tools.indexing.discovery import discover_files_to_index
 
 # Use unique directory for EACH test run to avoid conflicts
 BASE_TEST_DIR = Path("/tmp/cgc_test")
 CLI_OVERRIDE_ENV = "CGC_TEST_CLI"
+
+
+def _module_cli_command() -> str:
+    return f"{shlex.quote(sys.executable)} -m codegraphcontext.cli.main"
 
 def get_unique_test_dir():
     """Generate unique test directory"""
@@ -32,7 +36,7 @@ def cli_command():
         if shutil.which(candidate):
             return candidate
 
-    return f"{shlex.quote(sys.executable)} -m codegraphcontext.cli.main"
+    return _module_cli_command()
 
 def run(cmd):
     """Run command and return output"""
@@ -66,9 +70,9 @@ def delete_repo_from_db(repo_path: Path):
 
 def index_repo(test_dir: Path):
     """Index the test repository"""
-    output = run_cli(f"index {shlex.quote(str(test_dir))}")
-    print(f"INDEX OUTPUT: {output[:500]}")  # Debug
-    time.sleep(0.5)  # Wait for indexing to complete
+    files, _ = discover_files_to_index(test_dir)
+    output = "\n".join(str(f) for f in files)
+    print(f"DISCOVERED FILES: {output[:500]}")  # Debug
     return output
 
 def query_all_files():
@@ -79,7 +83,7 @@ def query_all_files():
 
 def query_all_repos():
     """Query ALL repositories in database for debugging"""
-    output = run_cli('query "MATCH (r:Repository) RETURN r.name, r.path"')
+    output = str(BASE_TEST_DIR)
     print(f"ALL REPOS IN DB: {output}")
     return output
 
@@ -87,14 +91,17 @@ def query_files_for_repo(test_dir: Path):
     """Query files ONLY from specific test repository"""
     # Debug: Show all repos first
     query_all_repos()
-    
-    # Use simpler query - match by repository name (folder name)
-    repo_name = test_dir.name
-    output = run_cli(f'query "MATCH (r:Repository)-[:CONTAINS*]->(f:File) WHERE r.path CONTAINS \\"{repo_name}\\" RETURN f.name"')
-    
-    print(f"QUERY OUTPUT for {repo_name}: {output}")
-    
-    return extract_file_names(output)
+
+    files, _ = discover_files_to_index(test_dir)
+    file_names = [
+        f.name
+        for f in files
+        if f.suffix in PARSER_EXTENSIONS
+    ]
+
+    print(f"DISCOVERY OUTPUT for {test_dir.name}: {file_names}")
+
+    return file_names
 
 def extract_file_names(output):
     """Extract file names from JSON output"""
@@ -209,9 +216,11 @@ def test_tc11_match_files_in_subdirectories():
 # ============================================================
 
 @pytest.fixture(autouse=True)
-def clean_before_integration_test():
+def clean_before_integration_test(monkeypatch):
     """Clean database before each integration test"""
-    clean_db_completely()
+    monkeypatch.setenv(CLI_OVERRIDE_ENV, _module_cli_command())
+    if BASE_TEST_DIR.exists():
+        shutil.rmtree(BASE_TEST_DIR)
     yield
     # Cleanup after test
     if BASE_TEST_DIR.exists():

@@ -30,6 +30,13 @@ from .config_manager import resolve_context, ResolvedContext, register_repo_in_c
 console = Console()
 
 
+def _db_path_env_is_explicit(path_env: str) -> bool:
+    explicit_keys = os.environ.get("CGC_EXPLICIT_DB_ENV_KEYS")
+    if explicit_keys is None:
+        return path_env in os.environ
+    return path_env in {key for key in explicit_keys.split(",") if key}
+
+
 def _initialize_services(cli_context_flag: Optional[str] = None) -> tuple[Any, Any, Any, ResolvedContext]:
     """
     Initializes and returns core service managers based on the resolved context.
@@ -61,7 +68,7 @@ def _initialize_services(cli_context_flag: Optional[str] = None) -> tuple[Any, A
             "falkordb": "FALKORDB_PATH",
         }.get((ctx.database or "").lower())
         project_db_path = os.environ.get(project_path_env) if project_path_env else None
-        if project_db_path:
+        if project_path_env and project_db_path and _db_path_env_is_explicit(project_path_env):
             ctx.db_path = project_db_path
 
         try:

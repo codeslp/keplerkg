@@ -27,7 +27,7 @@
   "$defs": {
     "command_entry": {
       "type": "object",
-      "required": ["name", "summary", "project_aware", "touches_kuzu", "output_modes", "server", "prereqs"],
+      "required": ["name", "summary", "project_aware", "touches_graph_store", "output_modes", "server", "prereqs"],
       "properties": {
         "name": {
           "type": "string",
@@ -46,9 +46,9 @@
           "type": "boolean",
           "description": "True if the command accepts --project and routes to a per-project store."
         },
-        "touches_kuzu": {
+        "touches_graph_store": {
           "type": "boolean",
-          "description": "True if the command opens a KuzuDB connection."
+          "description": "True if the command opens a connection to the active graph store (FalkorDB Lite by default; KuzuDB or Neo4j when selected explicitly)."
         },
         "output_modes": {
           "type": "array",
@@ -63,7 +63,7 @@
         "prereqs": {
           "type": "array",
           "items": { "type": "string" },
-          "description": "Environment variables or services required at runtime (e.g. KUZUDB_PATH, HF_HOME)."
+          "description": "Environment variables or services required at runtime (e.g. FALKORDB_PATH, HF_HOME). The backend-path variable reflects the default backend (FalkorDB Lite); invoke with --database kuzudb to use KUZUDB_PATH instead."
         }
       },
       "additionalProperties": false

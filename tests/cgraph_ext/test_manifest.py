@@ -25,7 +25,7 @@ def test_registry_is_nonempty():
 
 def test_registry_entries_have_required_fields():
     required = {
-        "name", "summary", "project_aware", "touches_kuzu",
+        "name", "summary", "project_aware", "touches_graph_store",
         "output_modes", "server", "prereqs",
     }
     for entry in get_command_registry():
@@ -60,20 +60,25 @@ def test_registry_schema_files_exist():
 # ── Prereqs metadata ───────────────────────────────────────────────
 
 
-def test_kuzu_commands_require_kuzudb_path():
-    """Every command that touches_kuzu must list KUZUDB_PATH in prereqs."""
+def test_graph_store_commands_require_backend_path():
+    """Every command that touches the graph store must declare the
+    default backend-path env var (FALKORDB_PATH) in prereqs so agents
+    know what to configure."""
     for entry in get_command_registry():
-        if entry["touches_kuzu"]:
-            assert "KUZUDB_PATH" in entry["prereqs"], (
-                f"{entry['name']} touches_kuzu but does not list KUZUDB_PATH in prereqs"
+        if entry["touches_graph_store"]:
+            assert "FALKORDB_PATH" in entry["prereqs"], (
+                f"{entry['name']} touches the graph store but does not list "
+                f"FALKORDB_PATH in prereqs"
             )
 
 
-def test_non_kuzu_commands_do_not_require_kuzudb_path():
+def test_non_graph_store_commands_do_not_require_backend_path():
+    backend_vars = {"FALKORDB_PATH", "FALKORDB_SOCKET_PATH", "KUZUDB_PATH"}
     for entry in get_command_registry():
-        if not entry["touches_kuzu"]:
-            assert "KUZUDB_PATH" not in entry["prereqs"], (
-                f"{entry['name']} does not touch kuzu but lists KUZUDB_PATH"
+        if not entry["touches_graph_store"]:
+            leaked = backend_vars.intersection(entry["prereqs"])
+            assert not leaked, (
+                f"{entry['name']} does not touch the graph store but lists {leaked}"
             )
 
 

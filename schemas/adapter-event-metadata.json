@@ -93,6 +93,38 @@
       },
       "additionalProperties": false
     },
+    "drift": {
+      "type": "object",
+      "description": "Compact drift-check summary for the lane's locked files. Present when drift-check ran and succeeded. Full per-node detail lives in fresh_advisories[].",
+      "required": ["drifted_nodes", "neighbor_files"],
+      "properties": {
+        "since": {
+          "type": "string",
+          "description": "Claim timestamp (or explicit --since) used by drift-check as the comparison baseline."
+        },
+        "drifted_nodes": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of graph nodes whose lane-neighborhood changed since 'since'."
+        },
+        "neighbor_files": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of files in the drifted neighborhood."
+        }
+      },
+      "additionalProperties": false
+    },
+    "fresh_advisories": {
+      "type": "array",
+      "description": "Advisories surfaced by the current refresh that were not already live for this (lane, kind, context_hash). Empty/absent when nothing new surfaced.",
+      "items": {"$ref": "#/$defs/cgraphAdvisory"}
+    },
+    "resolved_advisories": {
+      "type": "array",
+      "description": "Advisories that were live in .btrain/cgraph-advisory-state.jsonl but are no longer surfaced by the current refresh (e.g. overlap cleared after a lane resolved). Emitted so reviewers can see what just cleared.",
+      "items": {"$ref": "#/$defs/cgraphAdvisory"}
+    },
     "graph_mode": {
       "type": "string",
       "enum": ["working/a", "working/b", "working/c", "working/d", "working/e", "working/f", "review/a", "review/b", "review/c", "review/d", "review/e", "review/f", "shared-working"],
@@ -100,15 +132,79 @@
     },
     "latency_ms": {
       "type": "object",
-      "description": "Per-command wall-clock latency in milliseconds.",
-      "patternProperties": {
-        "^[a-z_]+$": {
-          "type": "integer",
-          "minimum": 0
+      "description": "Per-command wall-clock latency in milliseconds. Keys are command kinds (e.g. blast_radius, review_packet, audit, drift_check); values are non-negative integers.",
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0
+      }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "cgraphAdvisory": {
+      "type": "object",
+      "description": "Normalized advisory entry used in fresh_advisories[] and resolved_advisories[]. Aggregates raw findings from blast-radius, drift-check, review-packet, and advise into one uniform shape.",
+      "required": ["kind", "level", "detail", "suggestion", "rationale", "advisory_id", "context_hash", "other_lane_ids", "overlapping_node_ids", "changed_node_ids", "stale_file_paths", "truncated_node_ids", "handoff_id"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "description": "Taxonomy label (e.g. lock_overlap, drift, stale_index, packet_truncated). Defaults to 'unknown' when upstream provides nothing."
+        },
+        "level": {
+          "type": "string",
+          "description": "Severity (e.g. warn, info). Defaults to 'warn'."
+        },
+        "detail": {
+          "type": "string",
+          "description": "One-line human-readable explanation."
+        },
+        "suggestion": {
+          "type": "string",
+          "description": "Actionable suggestion from advise-situation lookup (may be empty)."
+        },
+        "rationale": {
+          "type": "string",
+          "description": "Longer-form reasoning from advise-situation lookup (may be empty)."
+        },
+        "advisory_id": {
+          "type": "string",
+          "description": "Stable id from advise (empty when not advise-linked)."
+        },
+        "context_hash": {
+          "type": "string",
+          "description": "Short sha256 prefix keying this advisory into the live-state file."
+        },
+        "other_lane_ids": {
+          "type": "array",
+          "description": "Sorted, deduped lane ids involved in the advisory (used by lock_overlap).",
+          "items": {"type": "string"}
+        },
+        "overlapping_node_ids": {
+          "type": "array",
+          "description": "Sorted, deduped node ids overlapping with other lanes (used by lock_overlap).",
+          "items": {"type": "string"}
+        },
+        "changed_node_ids": {
+          "type": "array",
+          "description": "Sorted, deduped node ids that changed outside the lane (used by drift).",
+          "items": {"type": "string"}
+        },
+        "stale_file_paths": {
+          "type": "array",
+          "description": "Sorted, deduped file paths flagged as stale in the graph index (used by stale_index).",
+          "items": {"type": "string"}
+        },
+        "truncated_node_ids": {
+          "type": "array",
+          "description": "Sorted, deduped node ids dropped by packet truncation (used by packet_truncated).",
+          "items": {"type": "string"}
+        },
+        "handoff_id": {
+          "type": "string",
+          "description": "Handoff identifier the advisory is pinned to (used by packet_truncated)."
         }
       },
       "additionalProperties": false
     }
-  },
-  "additionalProperties": false
+  }
 }

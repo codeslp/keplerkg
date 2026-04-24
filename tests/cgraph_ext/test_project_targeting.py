@@ -48,6 +48,18 @@ def test_resolve_project_target_cli_override_beats_env(monkeypatch, tmp_path):
     assert target.socket_path == tmp_path / "db" / "cli-proj" / "falkordb.sock"
 
 
+def test_resolve_project_target_preserves_underscore_slug(monkeypatch, tmp_path):
+    monkeypatch.setenv("CGRAPH_DB_ROOT", str(tmp_path / "db"))
+    monkeypatch.delenv("CGC_RUNTIME_DB_TYPE", raising=False)
+    monkeypatch.delenv("DEFAULT_DATABASE", raising=False)
+
+    target = resolve_project_target("ai_sales", start_dir=tmp_path)
+
+    assert target.slug == "ai_sales"
+    assert target.db_path == tmp_path / "db" / "ai_sales" / "falkordb"
+    assert target.socket_path == tmp_path / "db" / "ai_sales" / "falkordb.sock"
+
+
 def test_resolve_project_target_env_beats_project_toml(monkeypatch, tmp_path):
     repo = tmp_path / "repo"
     nested = repo / "src"
@@ -209,7 +221,7 @@ def test_embed_command_routes_kuzudb_path(monkeypatch, tmp_path):
 def test_index_command_routes_falkordb_path(monkeypatch, tmp_path):
     repo = tmp_path / "flask"
     repo.mkdir()
-    seen: dict[str, str] = {}
+    seen: dict[str, object] = {}
     monkeypatch.setenv("CGRAPH_DB_ROOT", str(tmp_path / "db"))
     monkeypatch.delenv("CGC_RUNTIME_DB_TYPE", raising=False)
     monkeypatch.delenv("DEFAULT_DATABASE", raising=False)
@@ -217,13 +229,18 @@ def test_index_command_routes_falkordb_path(monkeypatch, tmp_path):
     monkeypatch.setattr(
         cli_main,
         "index_helper",
-        lambda path, context: seen.update(path=path, env=os.environ.get("FALKORDB_PATH", "")),
+        lambda path, context, code_only=False: seen.update(
+            path=path,
+            code_only=code_only,
+            env=os.environ.get("FALKORDB_PATH", ""),
+        ),
     )
 
     result = runner.invoke(main_app, ["index", "--project", "flask", str(repo)])
 
     assert result.exit_code == 0
     assert seen["path"] == str(repo)
+    assert seen["code_only"] is False
     assert seen["env"] == str(tmp_path / "db" / "flask" / "falkordb")
 
 
@@ -246,6 +263,47 @@ def test_watch_command_routes_falkordb_path(monkeypatch, tmp_path):
     assert result.exit_code == 0
     assert seen["path"] == str(repo)
     assert seen["env"] == str(tmp_path / "db" / "flask" / "falkordb")
+
+
+def test_load_credentials_preserves_explicit_db_path_env(monkeypatch, tmp_path):
+    home = tmp_path / "home"
+    config_dir = home / ".codegraphcontext"
+    config_dir.mkdir(parents=True)
+    (config_dir / ".env").write_text(
+        "\n".join(
+            [
+                "DEFAULT_DATABASE=kuzudb",
+                "KUZUDB_PATH=/global/kuzu",
+                "FALKORDB_PATH=/global/falkordb",
+                "FALKORDB_SOCKET_PATH=/global/falkordb.sock",
+                "INDEX_VARIABLES=false",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(cli_main.Path, "home", lambda: home)
+    monkeypatch.setattr(
+        "codegraphcontext.cli.config_manager.codegraphcontext_dotenv_at_cwd",
+        lambda cwd=None: None,
+    )
+    monkeypatch.setenv("DEFAULT_DATABASE", "falkordb")
+    monkeypatch.setenv("CGC_RUNTIME_DB_TYPE", "falkordb")
+    monkeypatch.setenv("KUZUDB_PATH", str(tmp_path / "project" / "kuzudb"))
+    monkeypatch.setenv("FALKORDB_PATH", str(tmp_path / "project" / "falkordb"))
+    monkeypatch.setenv(
+        "FALKORDB_SOCKET_PATH",
+        str(tmp_path / "project" / "falkordb.sock"),
+    )
+
+    cli_main._load_credentials()
+
+    assert os.environ["DEFAULT_DATABASE"] == "falkordb"
+    assert os.environ["CGC_RUNTIME_DB_TYPE"] == "falkordb"
+    assert os.environ["KUZUDB_PATH"] == str(tmp_path / "project" / "kuzudb")
+    assert os.environ["FALKORDB_PATH"] == str(tmp_path / "project" / "falkordb")
+    assert os.environ["FALKORDB_SOCKET_PATH"] == str(tmp_path / "project" / "falkordb.sock")
+    assert os.environ["INDEX_VARIABLES"] == "false"
 
 
 def test_initialize_services_prefers_project_kuzudb_path(monkeypatch, tmp_path):
@@ -318,3 +376,46 @@ def test_initialize_services_prefers_project_falkordb_path(monkeypatch, tmp_path
     assert seen["reset_path"] == str(project_db)
     assert seen["db_path"] == str(project_db)
     assert resolved.db_path == str(project_db)
+
+
+def test_initialize_services_keeps_named_context_path_for_config_loaded_db_env(
+    monkeypatch,
+    tmp_path,
+):
+    context_db = str(tmp_path / "contexts" / "journey" / "falkordb")
+    config_loaded_db = str(tmp_path / "global" / "falkordb")
+    ctx = ResolvedContext(
+        mode="named",
+        context_name="journey",
+        database="falkordb",
+        db_path=context_db,
+        cgcignore_path=str(tmp_path / ".cgcignore"),
+    )
+    seen: dict[str, str] = {}
+
+    class _FakeDBManager:
+        def get_driver(self):
+            return object()
+
+    monkeypatch.setenv("FALKORDB_PATH", config_loaded_db)
+    monkeypatch.setenv("CGC_EXPLICIT_DB_ENV_KEYS", "")
+    monkeypatch.setattr(cli_helpers, "ensure_first_run_bootstrap", lambda: None)
+    monkeypatch.setattr(cli_helpers, "resolve_context", lambda _flag=None: ctx)
+    monkeypatch.setattr(cli_helpers, "GraphBuilder", lambda *args, **kwargs: object())
+    monkeypatch.setattr(cli_helpers, "CodeFinder", lambda *args, **kwargs: object())
+    monkeypatch.setattr(
+        "codegraphcontext_ext.project.reset_local_db_manager",
+        lambda database, db_path: seen.update(reset_db=database, reset_path=str(db_path)),
+    )
+
+    def _fake_get_database_manager(db_path=None):
+        seen["db_path"] = db_path
+        return _FakeDBManager()
+
+    monkeypatch.setattr(cli_helpers, "get_database_manager", _fake_get_database_manager)
+
+    *_services, resolved = cli_helpers._initialize_services("journey")
+
+    assert seen["reset_path"] == context_db
+    assert seen["db_path"] == context_db
+    assert resolved.db_path == context_db

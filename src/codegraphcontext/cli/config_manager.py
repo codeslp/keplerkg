@@ -52,7 +52,7 @@ DEFAULT_CONFIG = {
 
 # Configuration key descriptions
 CONFIG_DESCRIPTIONS = {
-    "DEFAULT_DATABASE": "Default database backend (kuzudb|neo4j|falkordb|falkordb-remote)",
+    "DEFAULT_DATABASE": "Default database backend (falkordb|falkordb-remote|kuzudb|neo4j). FalkorDB Lite is the default embedded backend on Unix with Python 3.12+; KuzuDB remains supported as an explicit override.",
     "KUZUDB_PATH": "Path to KuzuDB database directory",
     "FALKORDB_PATH": "Path to FalkorDB database file",
     "FALKORDB_SOCKET_PATH": "Path to FalkorDB Unix socket",

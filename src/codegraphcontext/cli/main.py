@@ -636,10 +636,18 @@ def _load_credentials():
         merged_config.update(config)
     
     # Apply merged config to environment.
-    # IMPORTANT: DB-selection keys set in the shell must win over .env defaults.
-    # E.g. `DEFAULT_DATABASE=falkordb kkg index …` must not be overridden by
-    # DEFAULT_DATABASE=neo4j sitting in ~/.codegraphcontext/.env
-    DB_OVERRIDE_KEYS = {"CGC_RUNTIME_DB_TYPE", "DEFAULT_DATABASE"}
+    # IMPORTANT: explicit DB selection and location set in the shell must win
+    # over .env defaults. Project-scoped commands export these before loading
+    # credentials, and replacing them would route the command back to a user DB.
+    DB_OVERRIDE_KEYS = {
+        "CGC_RUNTIME_DB_TYPE",
+        "DEFAULT_DATABASE",
+        "KUZUDB_PATH",
+        "FALKORDB_PATH",
+        "FALKORDB_SOCKET_PATH",
+    }
+    explicit_db_env_keys = {key for key in DB_OVERRIDE_KEYS if key in os.environ}
+    os.environ["CGC_EXPLICIT_DB_ENV_KEYS"] = ",".join(sorted(explicit_db_env_keys))
     for key, value in merged_config.items():
         if value is not None:  # Only set non-None values
             # Never let .env clobber a DB-type key that the user already set in the shell
