@@ -1,6 +1,7 @@
 from pathlib import Path
 import warnings
 
+from packaging.requirements import Requirement
 from setuptools import find_packages
 from setuptools.config.pyprojecttoml import read_configuration
 
@@ -35,3 +36,19 @@ def test_pyproject_package_discovery_includes_cgraph_extension_packages():
     assert "codegraphcontext_ext" in discovered
     assert ext_packages
     assert ext_packages.issubset(discovered)
+
+
+def test_pyproject_declares_dependencies_needed_to_register_extension_commands():
+    repo_root = Path(__file__).resolve().parents[2]
+    pyproject_path = repo_root / "pyproject.toml"
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        config = read_configuration(pyproject_path, expand=False)
+
+    dependencies = {
+        Requirement(dependency).name.lower()
+        for dependency in config["project"]["dependencies"]
+    }
+
+    assert "networkx" in dependencies
