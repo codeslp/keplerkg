@@ -471,7 +471,7 @@ def test_dashboard_html_violation_rows_use_resizable_fixed_width_table_contract(
         "category": "coupling",
         "severity": "warn",
         "summary": "Cross-file private access.",
-        "suggestion": "Use a public API.",
+        "suggestion": "Use a public interface.",
         "evidence": "CALLS edge across files.",
         "thresholds": {},
     }])
@@ -507,7 +507,7 @@ def test_dashboard_html_includes_stowable_violations_explainer():
         "category": "coupling",
         "severity": "warn",
         "summary": "Cross-file private access.",
-        "suggestion": "Use a public API.",
+        "suggestion": "Use a public interface.",
         "evidence": "CALLS edge across files.",
         "thresholds": {},
     }])
@@ -545,9 +545,9 @@ def test_dashboard_html_violation_details_include_rule_principle_copy():
         "category": "coupling",
         "severity": "warn",
         "summary": "Cross-file private access.",
-        "suggestion": "Use a public API.",
+        "suggestion": "Use a public interface.",
         "evidence": "CALLS edge across files.",
-        "principle": "Respect module boundaries and keep private implementation details private.",
+        "principle": "Respect module seams and keep private implementation details private.",
         "thresholds": {},
     }])
     violations_json = json.dumps([{
@@ -567,7 +567,7 @@ def test_dashboard_html_violation_details_include_rule_principle_copy():
 
     assert "rule.principle" in html
     assert "Principle:" in html
-    assert "Respect module boundaries and keep private implementation details private." in html
+    assert "Respect module seams and keep private implementation details private." in html
 
 
 def test_load_standards_json_includes_principles_for_shipped_rules():
@@ -582,7 +582,7 @@ def test_load_standards_json_includes_principles_for_shipped_rules():
         item for item in data if item["id"] == "cross_file_private_access"
     )
     assert cross_file_private_access["principle"] == (
-        "Respect module boundaries and keep private implementation details private."
+        "Respect module seams and keep private implementation details private."
     )
 
 # ── Loading animation overlay tests ──────────────────────────────

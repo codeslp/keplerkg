@@ -562,7 +562,7 @@ def audit_command(
     category: Optional[str] = typer.Option(
         None,
         "--category",
-        help="Filter to a specific rule category (e.g. coupling, complexity, compliance).",
+        help="Filter to a specific rule category (e.g. architecture, coupling, complexity, compliance).",
     ),
     profile: Optional[str] = typer.Option(
         None,

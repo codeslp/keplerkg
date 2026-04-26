@@ -131,14 +131,14 @@ per-command quirks.
 | `kkg impact --symbol <name>` | Symbol-oriented blast radius — BFS callers/callees | Focused impact analysis |
 | `kkg execution-flow --symbol <name>` | Forward call-chain trace through CALLS edges | Call tree visualization |
 | `kkg clusters` | Surface Louvain communities from the code graph | Module grouping discovery |
-| `kkg entrypoints` | Entry-point scoring from decorators + in-degree | API surface enumeration |
+| `kkg entrypoints` | Entry-point scoring from decorators + in-degree | Interface surface enumeration |
 | `kkg advise <situation>` | Situational tip lookup (lock_overlap, drift, etc.) | Pre-formatted recommendations |
 
 ### Code quality & standards
 
 | Command | What it does |
 |---------|-------------|
-| `kkg audit` | Run 24 quality rules against the graph — coupling, complexity, dead code, clarity, inheritance, compliance |
+| `kkg audit` | Run 29 quality rules against the graph — architecture, coupling, complexity, dead code, clarity, inheritance, compliance |
 | `kkg audit --profile soc2` | Run with SOC 2 compliance preset (auth-bypass, logging gaps, secrets) |
 | `kkg audit --list` | List all registered standards and their current severity |
 | `kkg audit --explain <id>` | Show a rule's definition, thresholds, evidence, and exemptions |
@@ -173,19 +173,22 @@ per-command quirks.
 
 ## Standards & enforcement
 
-KeplerKG ships 24 code-quality rules that query the graph for structural problems linters can't catch:
+KeplerKG ships 29 code-quality rules that query the graph for structural problems linters can't catch:
 
 | Category | Rules | What they detect |
 |----------|-------|-----------------|
-| **Coupling** (4) | circular_imports, cross_file_private_access, excessive_fan_out, test_import_in_prod | Import cycles, private API misuse, high fan-out, test/prod boundary violations |
+| **Architecture** (4) | shallow_pass_through_function, single_adapter_seam, test_reaches_private_seam, wide_public_function_interface | Shallow modules, hypothetical seams, tests that reach past interfaces, and overly wide interfaces |
+| **Coupling** (4) | circular_imports, cross_file_private_access, excessive_fan_out, test_import_in_prod | Import cycles, private seam misuse, high fan-out, test/prod seam violations |
 | **Complexity** (4) | function_cyclomatic_complexity, function_too_long, class_too_large, parameter_count | Functions and classes that are too complex |
 | **Compliance** (8) | auth_bypass, unlogged_endpoint, sensitive_data_unprotected, hardcoded_secret_in_graph, admin_action_no_audit_trail, rate_limit_missing, separation_of_duties_violation, error_handler_leaks_internals | SOC 2 mapped compliance rules |
 | **Naming** (4) | inconsistent_naming, misleading_name, module_content_mismatch, suggest_better_name | Embedding-backed naming analysis |
 | **Dead code** (2) | unreferenced_public_function, unreferenced_public_class | Public symbols with zero callers in the graph |
-| **Clarity** (1) | missing_docstring_public | Public API without documentation |
+| **Clarity** (2) | missing_docstring_public, missing_public_reexport | Public interface documentation and package interface discoverability |
 | **Inheritance** (1) | deep_inheritance | Inheritance chains deeper than 4 levels |
 
-Every rule is backed by a Cypher query against the knowledge graph — not regex, not heuristics. The `evidence` field in each rule documents exactly what graph pattern proves the finding.
+Architecture rules encode the depth principles used by the code-simplifier skill: apply the deletion test to pass-through modules, keep tests at the same interface callers use, avoid single-adapter seams until real variation exists, and prefer smaller public interfaces that create leverage and locality.
+
+Every rule is backed by a Cypher query or embedding analysis against the knowledge graph. The `evidence` field in each rule documents what graph or embedding signal supports the finding; architecture rules are advisory signals to inspect, not automatic proof that an interface must change.
 
 ### Configuration
 
@@ -273,7 +276,7 @@ src/
     config.py                # Config layer: reads [cgraph] from project.toml
     preflight.py             # Fail-closed storage check (zombie mount guard)
     viz_server.py            # HTTP server for dashboard + projector
-standards/                   # 12 YAML rule definitions + _exemptions.yaml
+standards/                   # YAML rule definitions + _exemptions.yaml
 schemas/                     # JSON Schema for every command output
 scripts/hooks/               # Claude Code enforcement hook scripts
 tests/                       # 575+ tests
