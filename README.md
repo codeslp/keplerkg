@@ -55,10 +55,17 @@ kkg audit --list                             # see available quality rules
 kkg viz-dashboard                            # interactive 4-tab dashboard
 ```
 
+The default local backend is **FalkorDB Lite** (embedded, no server,
+Unix + Python 3.12+). To use Kuzu instead, pass `--database kuzudb` on
+any command or set `DEFAULT_DATABASE=kuzudb` via `kkg config db kuzudb`.
+
 ## Targeting Other Codebases
 
-KeplerKG can now route each target repo to its own Kuzu store under
-`/Volumes/zombie/cgraph/db/<slug>/kuzudb`.
+KeplerKG routes each target repo to its own FalkorDB Lite store under
+`/Volumes/zombie/cgraph/db/<slug>/falkordb/` (with a sibling `falkordb.sock`
+for the embedded Unix-socket server). Explicit `--database kuzudb`
+invocations still land under `/Volumes/zombie/cgraph/db/<slug>/kuzudb` for
+compatibility with existing Kuzu-backed stores.
 
 Slugs are lowercase project identifiers. Letters, numbers, hyphens, and
 underscores are preserved; spaces and other punctuation are normalized to
@@ -90,7 +97,9 @@ kkg viz-graph --project flask
 kkg viz-embeddings --project flask
 ```
 
-Verified on April 18, 2026:
+Verified on April 18, 2026 (Kuzu backend reference baseline; the default
+path is now FalkorDB Lite, see Phase E parity notes in
+[specs/006-progress.md](specs/006-progress.md)):
 - Flask graph store: `/Volumes/zombie/cgraph/db/flask/kuzudb` (`83.6M`)
 - Graph counts: `1` repo, `83` files, `1463` functions, `161` classes
 - Embeddings written: `856`
@@ -99,7 +108,10 @@ Verified on April 18, 2026:
 Notes:
 - `kkg index` and `kkg watch` now honor `--project`.
 - DB-touching extension commands (`search`, `embed`, `audit`, `blast-radius`, `review-packet`, `viz-*`, `export-embeddings`, `drift-check`) honor `--project`.
-- On Kuzu builds that reject `CREATE HNSW INDEX`, semantic search falls back to a linear embedding scan so new project stores stay usable.
+- On FalkorDB Lite, HNSW is not available and semantic search uses the
+  portable linear embedding scan. On Kuzu builds that reject
+  `CREATE HNSW INDEX` the same fallback applies, so new project stores
+  stay usable on either backend.
 
 ## Agent CLI Contract (Phase 2.5 — Complete)
 
@@ -108,15 +120,18 @@ Every command emits a canonical JSON envelope with reserved keys (`ok`, `kind`,
 per-command quirks.
 
 - **`kkg manifest --json`** — enumerate commands, schemas, `--project`
-  support, required env/prereqs, output modes, and KuzuDB dependency.
+  support, required env/prereqs, output modes, and whether the command
+  opens the active graph store.
 - **`kkg repl`** — interactive session with sticky `--project`, audit
   profile, query history, and command dispatch.
 - **Contract tests** — 29 backend-free tests cover envelope schema,
   `make_envelope`, manifest schema, and command metadata without a live graph.
-- **Agent skills** — `kkg-query` and `kkg-audit` skill definitions live in
-  `.claude/skills/` (gitignored; local to each developer's Claude Code
-  environment). See the skill YAML source in the repo wiki or create them
-  locally via `/skill-creator`.
+- **Agent skills** — `kkg-query` and `kkg-audit` live in `.claude/skills/`
+  (gitignored; local to each developer environment). Shared workflow skills
+  such as `code-simplifier` are mirrored into `.claude/skills/` and
+  `.agents/skills/`; use `btrain sync-skills --force --skill code-simplifier`
+  after updating the bundled skill source, and use `/skill-creator` for
+  repo-only skills.
 
 ## Commands
 
@@ -151,7 +166,7 @@ per-command quirks.
 
 | Command | What it does |
 |---------|-------------|
-| `kkg index` | Parse repo into KuzuDB graph (18 node types, 7 edge types) |
+| `kkg index` | Parse repo into the graph store (18 node types, 7 edge types) |
 | `kkg embed` | Batch-embed functions and classes (local Jina v2, 768-dim) |
 | `kkg sync-check` | Report upstream commits not yet merged (see cadence below) |
 
@@ -265,7 +280,7 @@ KeplerKG uses tree-sitter to parse 14 languages with full extraction of function
 
 ```
 src/
-  codegraphcontext/          # Graph indexer, KuzuDB driver, parsers (upstream)
+  codegraphcontext/          # Graph indexer, backend drivers (FalkorDB Lite default, KuzuDB/Neo4j opt-in), parsers (upstream)
   codegraphcontext_ext/      # KeplerKG extensions
     commands/                # CLI: search, review-packet, blast-radius, drift-check,
                              #      advise, audit, embed, viz-*, export, sync-check
@@ -282,7 +297,12 @@ scripts/hooks/               # Claude Code enforcement hook scripts
 tests/                       # 575+ tests
 ```
 
-**Graph store:** KuzuDB (embedded, no server). 18 node tables, 7 relationship groups, HNSW indexes for ANN search.
+**Graph store:** FalkorDB Lite is the default embedded backend on Unix
+with Python 3.12+ (no server process, Unix-socket worker). KuzuDB
+(embedded, no server) is supported via `--database kuzudb` as an explicit
+alternative. Both backends expose 18 node tables and 7 relationship
+groups. ANN search uses HNSW when the backend supports it (Kuzu) and a
+portable linear embedding scan elsewhere (FalkorDB Lite).
 
 **Node uid format:** `{name}{absolute_path}{line_number}` — e.g., `authenticate/Users/dev/project/src/auth.py42`. Search results include both `file` (`relative_path:line`) and `relative_path` (`relative_path`) fields for programmatic consumers.
 

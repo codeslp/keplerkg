@@ -1,0 +1,16 @@
+id: unlogged_endpoint
+advisory_kind: unlogged_endpoint
+severity: warn
+category: compliance
+summary: Request handler has no logging calls in its call chain.
+evidence: "Graph-backed: request handler Function (decorator matches Flask/FastAPI/Django HTTP patterns via framework resolver) has zero CALLS to any function matching log/logger/logging/audit_log/track/record within 2 hops."
+query: |
+  MATCH (handler:Function)
+  WHERE ANY(d IN handler.decorators WHERE d CONTAINS 'action' OR d CONTAINS 'after_request' OR d CONTAINS 'api_route' OR d CONTAINS 'api_view' OR d CONTAINS 'before_request' OR d CONTAINS 'delete' OR d CONTAINS 'errorhandler' OR d CONTAINS 'get' OR d CONTAINS 'head' OR d CONTAINS 'options' OR d CONTAINS 'patch' OR d CONTAINS 'post' OR d CONTAINS 'put' OR d CONTAINS 'route' OR d CONTAINS 'websocket')
+    AND NOT handler.is_dependency
+    AND NOT EXISTS {
+      MATCH (handler)-[:CALLS*1..2]->(log_fn:Function)
+      WHERE log_fn.name CONTAINS 'log' OR log_fn.name CONTAINS 'logger' OR log_fn.name CONTAINS 'audit_log' OR log_fn.name CONTAINS 'track' OR log_fn.name CONTAINS 'record'
+    }
+  RETURN handler.uid, handler.name, handler.path, handler.line_number, NULL AS metric
+suggestion: "{{name}} handles requests without any logging — add audit logging for SOC 2 CC7.1."

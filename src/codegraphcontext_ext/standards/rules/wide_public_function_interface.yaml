@@ -1,0 +1,24 @@
+id: wide_public_function_interface
+advisory_kind: wide_public_function_interface
+severity: warn
+category: architecture
+summary: File exposes too many public functions as its interface.
+evidence: "Graph-backed: File CONTAINS more public Function nodes than the configured interface-width threshold."
+query: |
+  MATCH (file:File)-[:CONTAINS]->(f:Function)
+  WHERE NOT f.name STARTS WITH '_'
+    AND NOT f.name STARTS WITH '__'
+    AND NOT f.name IN ['main', 'setup', 'run', 'app', 'cli']
+    AND NOT f.is_dependency
+    AND NOT file.is_dependency
+    AND NOT file.path CONTAINS '/tests/'
+    AND NOT file.path CONTAINS '/test_'
+    AND NOT file.path ENDS WITH '__init__.py'
+  WITH file, count(DISTINCT f) AS public_functions
+  WHERE public_functions > $warn
+  RETURN file.path AS uid, file.name, file.path, NULL AS line_number,
+         public_functions AS metric
+thresholds:
+  warn: 12
+  hard: 20
+suggestion: "{{name}} exposes {{metric_value}} public functions - group cohesive behavior behind a smaller, deeper interface."

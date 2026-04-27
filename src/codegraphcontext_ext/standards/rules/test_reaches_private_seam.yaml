@@ -1,0 +1,16 @@
+id: test_reaches_private_seam
+advisory_kind: test_reaches_private_seam
+severity: warn
+category: architecture
+summary: Test calls a private production function across a file seam.
+evidence: "Graph-backed: Function in a test path CALLS an underscore-prefixed production Function outside the test tree."
+query: |
+  MATCH (test_fn:Function)-[:CALLS]->(target:Function)
+  WHERE (test_fn.path CONTAINS '/tests/' OR test_fn.path CONTAINS '/test_')
+    AND target.name STARTS WITH '_'
+    AND NOT target.path CONTAINS '/tests/'
+    AND NOT target.path CONTAINS '/test_'
+    AND NOT target.is_dependency
+  RETURN test_fn.uid, test_fn.name, test_fn.path, test_fn.line_number,
+         target.name AS metric
+suggestion: "{{name}} tests private production seam {{metric_value}} - test observable behavior through the module interface or deepen the module until that interface exists."

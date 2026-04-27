@@ -1,0 +1,25 @@
+id: circular_imports
+advisory_kind: circular_imports
+severity: hard
+category: coupling
+summary: Circular import dependency between files.
+evidence: "Graph-backed: bidirectional CALLS edges between Function nodes in different files — A.path calls B.path and B.path calls A.path."
+query: |
+  MATCH (a:Function)-[:CALLS]->(b:Function)
+  WHERE a.path <> b.path
+    AND NOT a.is_dependency AND NOT b.is_dependency
+    AND NOT a.path CONTAINS '/tests/' AND NOT b.path CONTAINS '/tests/'
+    AND NOT a.path CONTAINS '/test_' AND NOT b.path CONTAINS '/test_'
+  WITH a.path AS file_a, b.path AS file_b
+  MATCH (c:Function)-[:CALLS]->(d:Function)
+  WHERE c.path = file_b AND d.path = file_a
+    AND NOT c.is_dependency AND NOT d.is_dependency
+    AND NOT c.path CONTAINS '/tests/' AND NOT d.path CONTAINS '/tests/'
+    AND NOT c.path CONTAINS '/test_' AND NOT d.path CONTAINS '/test_'
+  WITH DISTINCT file_a, file_b
+  WHERE file_a < file_b
+  RETURN file_a AS uid, file_a AS name, file_a AS path, NULL AS line_number,
+         file_b AS metric
+suggestion: "Circular dependency between {{name}} and {{metric_value}} - move shared behavior behind a deeper module or invert the dependency through a real seam. Note: TYPE_CHECKING-guarded imports may cause false positives here; verify the import is runtime, not type-only."
+library_exempt: true
+library_exempt_reason: "In library codebases, bidirectional CALLS can arise from TYPE_CHECKING guards and public interface patterns that are not true circular imports."

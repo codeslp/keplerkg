@@ -1,0 +1,19 @@
+id: class_too_large
+advisory_kind: god_class
+severity: warn
+category: complexity
+summary: Class contains too many methods.
+evidence: "Graph-backed: count of CONTAINS edges from Class to Function nodes."
+query: |
+  MATCH (c:Class)-[:CONTAINS]->(m:Function)
+  WHERE NOT c.is_dependency
+    AND NOT c.path CONTAINS '/tests/'
+  WITH c, count(m) AS method_count
+  WHERE method_count > $warn
+  RETURN c.uid, c.name, c.path, c.line_number,
+         method_count AS metric
+thresholds:
+  warn: 20
+  hard: 40
+suggestion: "{{name}} has {{metric_value}} methods - split only around real seams that improve locality and leverage."
+exemptions: _exemptions.yaml

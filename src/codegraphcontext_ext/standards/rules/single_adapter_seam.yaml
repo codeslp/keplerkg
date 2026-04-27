@@ -1,0 +1,25 @@
+id: single_adapter_seam
+advisory_kind: single_adapter_seam
+severity: warn
+category: architecture
+summary: Named seam abstraction has fewer than two adapters.
+evidence: "Graph-backed: Class names that look like seams (Protocol, Interface, Port, Base, Abstract) with fewer than two INHERITS implementors."
+query: |
+  MATCH (seam:Class)
+  WHERE NOT seam.is_dependency
+    AND NOT seam.path CONTAINS '/tests/'
+    AND (
+      seam.name ENDS WITH 'Protocol'
+      OR seam.name ENDS WITH 'Interface'
+      OR seam.name ENDS WITH 'Port'
+      OR seam.name STARTS WITH 'Base'
+      OR seam.name STARTS WITH 'Abstract'
+    )
+  OPTIONAL MATCH (adapter:Class)-[:INHERITS]->(seam)
+  WITH seam, count(DISTINCT adapter) AS adapter_count
+  WHERE adapter_count < $min_adapters
+  RETURN seam.uid, seam.name, seam.path, seam.line_number,
+         adapter_count AS metric
+thresholds:
+  min_adapters: 2
+suggestion: "{{name}} has {{metric_value}} adapter(s) - keep the seam private or inline it until real variation exists."

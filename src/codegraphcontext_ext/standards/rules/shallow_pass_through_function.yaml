@@ -1,0 +1,27 @@
+id: shallow_pass_through_function
+advisory_kind: shallow_pass_through_function
+severity: warn
+category: architecture
+summary: Public function is a thin pass-through to one callee.
+evidence: "Graph-backed: public Function with low line count, low cyclomatic complexity, exactly one outgoing CALLS edge, and multiple external callers."
+query: |
+  MATCH (f:Function)-[:CALLS]->(callee:Function)
+  WHERE NOT f.name STARTS WITH '_'
+    AND NOT f.is_dependency
+    AND NOT f.path CONTAINS '/tests/'
+    AND NOT f.path CONTAINS '/test_'
+    AND (f.end_line - f.line_number) <= $max_lines
+    AND f.cyclomatic_complexity <= $max_complexity
+  WITH f, count(DISTINCT callee) AS callees, collect(DISTINCT callee.name) AS callee_names
+  MATCH (caller:Function)-[:CALLS]->(f)
+  WHERE NOT caller.is_dependency
+    AND caller.path <> f.path
+  WITH f, callees, callee_names, count(DISTINCT caller) AS callers
+  WHERE callees = 1 AND callers >= $min_callers
+  RETURN f.uid, f.name, f.path, f.line_number,
+         callee_names[0] AS metric
+thresholds:
+  max_lines: 8
+  max_complexity: 2
+  min_callers: 2
+suggestion: "{{name}} mostly forwards to {{metric_value}} - apply the deletion test and keep it only if its interface concentrates caller knowledge."

@@ -1,0 +1,18 @@
+id: function_cyclomatic_complexity
+advisory_kind: high_complexity
+severity: warn
+category: complexity
+summary: Function exceeds cyclomatic complexity threshold.
+evidence: "Graph-backed: Function.cyclomatic_complexity is computed by tree-sitter during indexing and stored on the node."
+query: |
+  MATCH (f:Function)
+  WHERE f.cyclomatic_complexity > $warn
+    AND NOT f.path CONTAINS '/tests/'
+    AND NOT f.is_dependency
+  RETURN f.uid, f.name, f.path, f.line_number,
+         f.cyclomatic_complexity AS metric
+thresholds:
+  warn: 10
+  hard: 15
+suggestion: "Split {{name}} ({{metric_value}} branches) by moving cohesive behavior behind deeper module interfaces, not by creating shallow pass-through helpers."
+exemptions: _exemptions.yaml

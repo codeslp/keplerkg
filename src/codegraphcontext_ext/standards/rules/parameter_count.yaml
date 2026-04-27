@@ -1,0 +1,20 @@
+id: parameter_count
+advisory_kind: long_signature
+severity: warn
+category: complexity
+summary: Function has too many parameters.
+evidence: "Graph-backed: count of HAS_PARAMETER edges from Function to Parameter nodes."
+query: |
+  MATCH (f:Function)-[:HAS_PARAMETER]->(p:Parameter)
+  WHERE NOT f.is_dependency
+    AND NOT f.path CONTAINS '/tests/'
+    AND NOT f.name STARTS WITH '__'
+  WITH f, count(p) AS param_count
+  WHERE param_count > $warn
+  RETURN f.uid, f.name, f.path, f.line_number,
+         param_count AS metric
+thresholds:
+  warn: 5
+  hard: 8
+suggestion: "{{name}} takes {{metric_value}} parameters — consider grouping related parameters into a config object or dataclass."
+exemptions: _exemptions.yaml

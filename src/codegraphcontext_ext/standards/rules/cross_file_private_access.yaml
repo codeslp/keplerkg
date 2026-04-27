@@ -1,0 +1,17 @@
+id: cross_file_private_access
+advisory_kind: cross_file_private_access
+severity: warn
+category: coupling
+summary: Function calls a private (underscore-prefixed) symbol across a file seam.
+evidence: "Graph-backed: CALLS edge where target Function.name starts with '_' and caller.path != target.path."
+query: |
+  MATCH (caller:Function)-[:CALLS]->(target:Function)
+  WHERE target.name STARTS WITH '_'
+    AND caller.path <> target.path
+    AND NOT caller.is_dependency
+    AND NOT target.is_dependency
+    AND NOT caller.path CONTAINS '/tests/'
+  RETURN caller.uid, caller.name, caller.path, caller.line_number,
+         target.name AS metric
+suggestion: "{{name}} accesses private symbol {{metric_value}} across a file seam - call through the module interface or move the behavior behind a deeper seam."
+exemptions: _exemptions.yaml

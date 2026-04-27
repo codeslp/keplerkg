@@ -1,0 +1,21 @@
+id: unreferenced_public_function
+advisory_kind: unreferenced_public_function
+severity: warn
+category: dead_code
+summary: Public function has zero incoming CALLS edges.
+evidence: "Graph-backed: Function node with name not starting with '_', zero incoming CALLS from non-dependency nodes, no exempt decorator."
+query: |
+  MATCH (f:Function)
+  WHERE NOT f.name STARTS WITH '_'
+    AND NOT f.name STARTS WITH '__'
+    AND NOT f.is_dependency
+    AND NOT f.path CONTAINS '/tests/'
+    AND NOT f.path CONTAINS '/test_'
+    AND NOT f.path CONTAINS '/examples/'
+    AND NOT f.name IN ['main', 'setup', 'run', 'app', 'cli']
+    AND NOT EXISTS { MATCH (caller)-[:CALLS]->(f) WHERE NOT caller.is_dependency }
+  RETURN f.uid, f.name, f.path, f.line_number, NULL AS metric
+suggestion: "{{name}} is public but has no callers in the graph - remove it, make it internal, or document why the interface exists for external callers."
+library_exempt: true
+library_exempt_reason: "In library codebases, public functions are called by external consumers not visible in the graph. This rule is most useful for application code."
+exemptions: _exemptions.yaml

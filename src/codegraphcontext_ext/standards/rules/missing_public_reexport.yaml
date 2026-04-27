@@ -1,0 +1,30 @@
+id: missing_public_reexport
+advisory_kind: missing_public_reexport
+severity: warn
+category: clarity
+summary: Public function in a package module is not part of the package interface.
+evidence: "Graph-backed: public Function in a package submodule has no IMPORTS edge from the package's __init__.py File node."
+query: |
+  MATCH (f:Function)
+  WHERE NOT f.name STARTS WITH '_'
+    AND NOT f.is_dependency
+    AND NOT f.path CONTAINS '/tests/'
+    AND NOT f.path CONTAINS '/test_'
+    AND NOT f.path CONTAINS '__init__'
+    AND f.path CONTAINS '/'
+    AND EXISTS {
+      MATCH (init:File)
+      WHERE init.path ENDS WITH '__init__.py'
+        AND f.path STARTS WITH replace(init.path, '__init__.py', '')
+    }
+    AND NOT EXISTS {
+      MATCH (init:File)-[:IMPORTS]->(m:Module)
+      WHERE init.path ENDS WITH '__init__.py'
+        AND f.path STARTS WITH replace(init.path, '__init__.py', '')
+        AND (m.name CONTAINS f.name OR m.full_import_name CONTAINS f.name)
+    }
+    AND EXISTS { MATCH (caller)-[:CALLS]->(f) WHERE NOT caller.is_dependency }
+  RETURN f.uid, f.name, f.path, f.line_number, NULL AS metric
+suggestion: "{{name}} is public and called but not re-exported from __init__.py - either make it internal or expose it intentionally through the package interface."
+library_exempt: false
+exemptions: _exemptions.yaml

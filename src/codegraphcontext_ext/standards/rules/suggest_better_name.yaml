@@ -1,0 +1,13 @@
+id: suggest_better_name
+advisory_kind: suggest_better_name
+severity: warn
+category: naming
+summary: Well-named neighbors suggest better naming for this function.
+detection_method: embedding
+evidence: "Embedding-backed: ANN neighbors with cosine(name_embedding, behavior_embedding) > 0.7 provide naming exemplars for poorly-named functions."
+thresholds:
+  self_low: 0.4
+  exemplar_high: 0.7
+  max_exemplars: 3
+suggestion: "{{name}} may benefit from a name aligned with: {{metric_value}}"
+exemptions: _exemptions.yaml

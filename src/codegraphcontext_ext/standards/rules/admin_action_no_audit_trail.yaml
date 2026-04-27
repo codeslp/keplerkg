@@ -1,0 +1,18 @@
+id: admin_action_no_audit_trail
+advisory_kind: admin_action_no_audit_trail
+severity: hard
+category: compliance
+summary: Admin/privileged function performs mutations without audit logging.
+evidence: "Graph-backed: Function with admin decorator (admin_required/staff_only/superuser) or in admin/ path, CALLS mutation functions (save/update/delete/create/destroy), without CALLS to logging functions."
+query: |
+  MATCH (admin_fn:Function)-[:CALLS]->(mutation:Function)
+  WHERE (ANY(d IN admin_fn.decorators WHERE d CONTAINS 'admin' OR d CONTAINS 'staff' OR d CONTAINS 'superuser')
+    OR admin_fn.path CONTAINS '/admin/')
+    AND (mutation.name CONTAINS 'save' OR mutation.name CONTAINS 'update' OR mutation.name CONTAINS 'delete' OR mutation.name CONTAINS 'create' OR mutation.name CONTAINS 'destroy')
+    AND NOT admin_fn.is_dependency
+    AND NOT EXISTS {
+      MATCH (admin_fn)-[:CALLS]->(log_fn:Function)
+      WHERE log_fn.name CONTAINS 'log' OR log_fn.name CONTAINS 'audit'
+    }
+  RETURN admin_fn.uid, admin_fn.name, admin_fn.path, admin_fn.line_number, mutation.name AS metric
+suggestion: "{{name}} performs admin mutation via {{metric_value}} without audit logging — add audit trail for SOC 2 CC7.2."
