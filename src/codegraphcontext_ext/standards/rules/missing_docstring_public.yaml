@@ -9,6 +9,7 @@ query: |
   WHERE NOT f.name STARTS WITH '_'
     AND (f.docstring IS NULL OR f.docstring = '')
     AND NOT f.is_dependency
+    AND f.path ENDS WITH '.py'
     AND NOT f.path CONTAINS '/tests/'
     AND NONE(d IN f.decorators WHERE d CONTAINS 'overload'
         OR d CONTAINS 'LocalProxy'
