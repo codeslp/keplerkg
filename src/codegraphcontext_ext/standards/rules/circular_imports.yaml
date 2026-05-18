@@ -10,12 +10,16 @@ query: |
     AND NOT a.is_dependency AND NOT b.is_dependency
     AND NOT a.path CONTAINS '/tests/' AND NOT b.path CONTAINS '/tests/'
     AND NOT a.path CONTAINS '/test_' AND NOT b.path CONTAINS '/test_'
+    AND NOT a.path CONTAINS '.test.' AND NOT b.path CONTAINS '.test.'
+    AND NOT a.path CONTAINS '.spec.' AND NOT b.path CONTAINS '.spec.'
   WITH a.path AS file_a, b.path AS file_b
   MATCH (c:Function)-[:CALLS]->(d:Function)
   WHERE c.path = file_b AND d.path = file_a
     AND NOT c.is_dependency AND NOT d.is_dependency
     AND NOT c.path CONTAINS '/tests/' AND NOT d.path CONTAINS '/tests/'
     AND NOT c.path CONTAINS '/test_' AND NOT d.path CONTAINS '/test_'
+    AND NOT c.path CONTAINS '.test.' AND NOT d.path CONTAINS '.test.'
+    AND NOT c.path CONTAINS '.spec.' AND NOT d.path CONTAINS '.spec.'
   WITH DISTINCT file_a, file_b
   WHERE file_a < file_b
   RETURN file_a AS uid, file_a AS name, file_a AS path, NULL AS line_number,
