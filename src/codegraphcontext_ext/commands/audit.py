@@ -35,7 +35,6 @@ COMMAND_NAME = "audit"
 SCHEMA_FILE = "audit.json"
 SUMMARY = "Run code-quality standards against the graph and report violations."
 
-_REPO_STANDARDS_DIR = Path(__file__).resolve().parent.parent.parent.parent / "standards"
 _PACKAGED_STANDARDS_DIR = Path(__file__).resolve().parent.parent / "standards" / "rules"
 
 
@@ -147,9 +146,7 @@ def _find_standards_dir() -> Path:
         if _is_standards_dir(d):
             return d
 
-    if _is_standards_dir(_PACKAGED_STANDARDS_DIR):
-        return _PACKAGED_STANDARDS_DIR
-    return _REPO_STANDARDS_DIR
+    return _PACKAGED_STANDARDS_DIR
 
 
 # ---------------------------------------------------------------------------

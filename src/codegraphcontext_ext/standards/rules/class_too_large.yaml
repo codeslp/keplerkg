@@ -5,12 +5,12 @@ category: complexity
 summary: Class contains too many methods.
 evidence: "Graph-backed: count of CONTAINS edges from Class to Function nodes."
 query: |
-  MATCH (c:Class)-[:CONTAINS]->(m:Function)
-  WHERE NOT c.is_dependency
-    AND NOT c.path CONTAINS '/tests/'
-  WITH c, count(m) AS method_count
+  MATCH (f:Class)-[:CONTAINS]->(m:Function)
+  WHERE NOT f.is_dependency
+    AND NOT f.path CONTAINS '/tests/'
+  WITH f, count(m) AS method_count
   WHERE method_count > $warn
-  RETURN c.uid, c.name, c.path, c.line_number,
+  RETURN f.uid, f.name, f.path, f.line_number,
          method_count AS metric
 thresholds:
   warn: 20

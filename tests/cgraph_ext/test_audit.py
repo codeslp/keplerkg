@@ -693,19 +693,6 @@ def test_audit_list_uses_packaged_standards_outside_source_checkout(tmp_path, mo
     assert "wide_public_function_interface" in ids
 
 
-def test_packaged_standards_match_repo_standards():
-    from codegraphcontext_ext.commands import audit
-
-    repo_standards = Path(__file__).parent.parent.parent / "standards"
-    packaged_standards = audit._PACKAGED_STANDARDS_DIR
-    repo_files = sorted(path.name for path in repo_standards.glob("*.yaml"))
-    packaged_files = sorted(path.name for path in packaged_standards.glob("*.yaml"))
-    assert packaged_files == repo_files
-
-    for file_name in repo_files:
-        assert (packaged_standards / file_name).read_text() == (repo_standards / file_name).read_text()
-
-
 def test_audit_registered():
     from codegraphcontext_ext.cli import register_extensions
     import typer
