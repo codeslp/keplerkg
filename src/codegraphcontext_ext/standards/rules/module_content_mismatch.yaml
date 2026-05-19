@@ -1,0 +1,11 @@
+id: module_content_mismatch
+advisory_kind: module_content_mismatch
+severity: warn
+category: naming
+summary: File name does not describe what its functions do.
+detection_method: embedding
+evidence: "Embedding-backed: cosine(file_name_embedding, centroid(contained function behavior embeddings)) < threshold."
+thresholds:
+  warn: 0.3
+suggestion: "{{path}} has low alignment ({{metric_value}}) between filename and function behavior — consider renaming or reorganizing."
+exemptions: _exemptions.yaml

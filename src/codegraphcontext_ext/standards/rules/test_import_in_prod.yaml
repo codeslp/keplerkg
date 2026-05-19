@@ -1,0 +1,15 @@
+id: test_import_in_prod
+advisory_kind: test_import_in_prod
+severity: hard
+category: coupling
+summary: Production file imports from a test-path module.
+evidence: "Graph-backed: IMPORTS edge from a non-test File to a Module whose path contains /tests/ or /test/."
+query: |
+  MATCH (f:File)-[:IMPORTS]->(m:Module)
+  WHERE NOT f.path CONTAINS '/tests/'
+    AND NOT f.path CONTAINS '/test/'
+    AND NOT f.is_dependency
+    AND (m.path CONTAINS '/tests/' OR m.path CONTAINS '/test/' OR m.name CONTAINS 'test_')
+  RETURN f.uid, f.name, f.path, f.line_number,
+         m.name AS metric
+suggestion: "{{name}} imports test module {{metric_value}} — production code must not depend on test infrastructure."

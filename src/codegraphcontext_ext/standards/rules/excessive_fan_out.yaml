@@ -1,0 +1,19 @@
+id: excessive_fan_out
+advisory_kind: high_fan_out
+severity: warn
+category: coupling
+summary: Function calls too many distinct functions.
+evidence: "Graph-backed: count of distinct outgoing CALLS edges from a Function node."
+query: |
+  MATCH (f:Function)-[:CALLS]->(callee)
+  WHERE NOT f.is_dependency
+    AND NOT f.path CONTAINS '/tests/'
+  WITH f, count(DISTINCT callee) AS fan_out
+  WHERE fan_out > $warn
+  RETURN f.uid, f.name, f.path, f.line_number,
+         fan_out AS metric
+thresholds:
+  warn: 15
+  hard: 25
+suggestion: "{{name}} calls {{metric_value}} distinct functions - concentrate the orchestration behind a deeper module interface instead of scattering pass-through helpers."
+exemptions: _exemptions.yaml

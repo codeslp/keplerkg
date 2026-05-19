@@ -1,0 +1,11 @@
+id: misleading_name
+advisory_kind: misleading_name
+severity: warn
+category: naming
+summary: Function name and behavior occupy distant embedding regions.
+detection_method: embedding
+evidence: "Embedding-backed: cosine(name_embedding, behavior_embedding) < threshold on the same node. The function's name does not describe what it actually does."
+thresholds:
+  warn: 0.15
+suggestion: "{{name}} has low name-behavior alignment ({{metric_value}}) — the name may not describe what the function does."
+exemptions: _exemptions.yaml

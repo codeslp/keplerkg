@@ -1,0 +1,19 @@
+id: missing_docstring_public
+advisory_kind: missing_docstring_public
+severity: warn
+category: clarity
+summary: Public function or class has no docstring.
+evidence: "Graph-backed: Function/Class node has docstring IS NULL and name does not start with underscore."
+query: |
+  MATCH (f:Function)
+  WHERE NOT f.name STARTS WITH '_'
+    AND (f.docstring IS NULL OR f.docstring = '')
+    AND NOT f.is_dependency
+    AND f.path ENDS WITH '.py'
+    AND NOT f.path CONTAINS '/tests/'
+    AND NONE(d IN f.decorators WHERE d CONTAINS 'overload'
+        OR d CONTAINS 'LocalProxy'
+        OR d CONTAINS 'abstractmethod')
+  RETURN f.uid, f.name, f.path, f.line_number, NULL AS metric
+suggestion: "Add a docstring to {{name}} - a public interface should document intent, invariants, error modes, and expected use."
+exemptions: _exemptions.yaml

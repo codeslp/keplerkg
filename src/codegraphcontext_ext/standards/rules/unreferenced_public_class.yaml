@@ -1,0 +1,19 @@
+id: unreferenced_public_class
+advisory_kind: unreferenced_public_class
+severity: warn
+category: dead_code
+summary: Class has no incoming CALLS, INHERITS, or IMPLEMENTS edges.
+evidence: "Graph-backed: Class node with zero incoming CALLS to its methods from external files, zero INHERITS, zero IMPLEMENTS."
+query: |
+  MATCH (f:Class)
+  WHERE NOT f.name STARTS WITH '_'
+    AND NOT f.is_dependency
+    AND NOT f.path CONTAINS '/tests/'
+    AND NOT EXISTS { MATCH ()-[:INHERITS]->(f) }
+    AND NOT EXISTS { MATCH ()-[:IMPLEMENTS]->(f) }
+    AND NOT EXISTS { MATCH (caller)-[:CALLS]->(m:Function)<-[:CONTAINS]-(f) WHERE caller.path <> f.path AND NOT caller.is_dependency }
+  RETURN f.uid, f.name, f.path, f.line_number, NULL AS metric
+suggestion: "{{name}} is public but has no external callers, subclasses, or implementors - remove it, make it internal, or document why the interface exists."
+library_exempt: true
+library_exempt_reason: "In library codebases, public classes are instantiated by external consumers not visible in the graph."
+exemptions: _exemptions.yaml

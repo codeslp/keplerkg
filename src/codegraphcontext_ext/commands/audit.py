@@ -35,7 +35,7 @@ COMMAND_NAME = "audit"
 SCHEMA_FILE = "audit.json"
 SUMMARY = "Run code-quality standards against the graph and report violations."
 
-_DEFAULT_STANDARDS_DIR = Path(__file__).resolve().parent.parent.parent.parent / "standards"
+_PACKAGED_STANDARDS_DIR = Path(__file__).resolve().parent.parent / "standards" / "rules"
 
 
 # ---------------------------------------------------------------------------
@@ -132,15 +132,21 @@ def _filter_violations_by_scope(
     return filtered
 
 
+def _is_standards_dir(candidate: Path) -> bool:
+    """Return True when candidate looks like a standards rule directory."""
+    return candidate.is_dir() and (candidate / "_exemptions.yaml").is_file()
+
+
 def _find_standards_dir() -> Path:
-    """Locate the standards/ directory — check repo root first, then package."""
-    # Walk up from cwd looking for standards/
+    """Locate standards rules: repo override first, then packaged defaults."""
+    # Walk up from cwd looking for repo-local standards/.
     cwd = Path.cwd().resolve()
     for candidate in (cwd, *cwd.parents):
         d = candidate / "standards"
-        if d.is_dir() and (d / "_exemptions.yaml").is_file():
+        if _is_standards_dir(d):
             return d
-    return _DEFAULT_STANDARDS_DIR
+
+    return _PACKAGED_STANDARDS_DIR
 
 
 # ---------------------------------------------------------------------------
@@ -562,7 +568,7 @@ def audit_command(
     category: Optional[str] = typer.Option(
         None,
         "--category",
-        help="Filter to a specific rule category (e.g. coupling, complexity, compliance).",
+        help="Filter to a specific rule category (e.g. architecture, coupling, complexity, compliance).",
     ),
     profile: Optional[str] = typer.Option(
         None,

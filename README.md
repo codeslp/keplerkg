@@ -55,10 +55,17 @@ kkg audit --list                             # see available quality rules
 kkg viz-dashboard                            # interactive 4-tab dashboard
 ```
 
+The default local backend is **FalkorDB Lite** (embedded, no server,
+Unix + Python 3.12+). To use Kuzu instead, pass `--database kuzudb` on
+any command or set `DEFAULT_DATABASE=kuzudb` via `kkg config db kuzudb`.
+
 ## Targeting Other Codebases
 
-KeplerKG can now route each target repo to its own Kuzu store under
-`/Volumes/zombie/cgraph/db/<slug>/kuzudb`.
+KeplerKG routes each target repo to its own FalkorDB Lite store under
+`/Volumes/zombie/cgraph/db/<slug>/falkordb/` (with a sibling `falkordb.sock`
+for the embedded Unix-socket server). Explicit `--database kuzudb`
+invocations still land under `/Volumes/zombie/cgraph/db/<slug>/kuzudb` for
+compatibility with existing Kuzu-backed stores.
 
 Slugs are lowercase project identifiers. Letters, numbers, hyphens, and
 underscores are preserved; spaces and other punctuation are normalized to
@@ -90,7 +97,9 @@ kkg viz-graph --project flask
 kkg viz-embeddings --project flask
 ```
 
-Verified on April 18, 2026:
+Verified on April 18, 2026 (Kuzu backend reference baseline; the default
+path is now FalkorDB Lite, see Phase E parity notes in
+[specs/006-progress.md](specs/006-progress.md)):
 - Flask graph store: `/Volumes/zombie/cgraph/db/flask/kuzudb` (`83.6M`)
 - Graph counts: `1` repo, `83` files, `1463` functions, `161` classes
 - Embeddings written: `856`
@@ -99,7 +108,10 @@ Verified on April 18, 2026:
 Notes:
 - `kkg index` and `kkg watch` now honor `--project`.
 - DB-touching extension commands (`search`, `embed`, `audit`, `blast-radius`, `review-packet`, `viz-*`, `export-embeddings`, `drift-check`) honor `--project`.
-- On Kuzu builds that reject `CREATE HNSW INDEX`, semantic search falls back to a linear embedding scan so new project stores stay usable.
+- On FalkorDB Lite, HNSW is not available and semantic search uses the
+  portable linear embedding scan. On Kuzu builds that reject
+  `CREATE HNSW INDEX` the same fallback applies, so new project stores
+  stay usable on either backend.
 
 ## Agent CLI Contract (Phase 2.5 — Complete)
 
@@ -108,15 +120,18 @@ Every command emits a canonical JSON envelope with reserved keys (`ok`, `kind`,
 per-command quirks.
 
 - **`kkg manifest --json`** — enumerate commands, schemas, `--project`
-  support, required env/prereqs, output modes, and KuzuDB dependency.
+  support, required env/prereqs, output modes, and whether the command
+  opens the active graph store.
 - **`kkg repl`** — interactive session with sticky `--project`, audit
   profile, query history, and command dispatch.
 - **Contract tests** — 29 backend-free tests cover envelope schema,
   `make_envelope`, manifest schema, and command metadata without a live graph.
-- **Agent skills** — `kkg-query` and `kkg-audit` skill definitions live in
-  `.claude/skills/` (gitignored; local to each developer's Claude Code
-  environment). See the skill YAML source in the repo wiki or create them
-  locally via `/skill-creator`.
+- **Agent skills** — `kkg-query` and `kkg-audit` live in `.claude/skills/`
+  (gitignored; local to each developer environment). Shared workflow skills
+  such as `code-simplifier` are mirrored into `.claude/skills/` and
+  `.agents/skills/`; use `btrain sync-skills --force --skill code-simplifier`
+  after updating the bundled skill source, and use `/skill-creator` for
+  repo-only skills.
 
 ## Commands
 
@@ -131,14 +146,14 @@ per-command quirks.
 | `kkg impact --symbol <name>` | Symbol-oriented blast radius — BFS callers/callees | Focused impact analysis |
 | `kkg execution-flow --symbol <name>` | Forward call-chain trace through CALLS edges | Call tree visualization |
 | `kkg clusters` | Surface Louvain communities from the code graph | Module grouping discovery |
-| `kkg entrypoints` | Entry-point scoring from decorators + in-degree | API surface enumeration |
+| `kkg entrypoints` | Entry-point scoring from decorators + in-degree | Interface surface enumeration |
 | `kkg advise <situation>` | Situational tip lookup (lock_overlap, drift, etc.) | Pre-formatted recommendations |
 
 ### Code quality & standards
 
 | Command | What it does |
 |---------|-------------|
-| `kkg audit` | Run 24 quality rules against the graph — coupling, complexity, dead code, clarity, inheritance, compliance |
+| `kkg audit` | Run 29 quality rules against the graph — architecture, coupling, complexity, dead code, clarity, inheritance, compliance |
 | `kkg audit --profile soc2` | Run with SOC 2 compliance preset (auth-bypass, logging gaps, secrets) |
 | `kkg audit --list` | List all registered standards and their current severity |
 | `kkg audit --explain <id>` | Show a rule's definition, thresholds, evidence, and exemptions |
@@ -151,7 +166,7 @@ per-command quirks.
 
 | Command | What it does |
 |---------|-------------|
-| `kkg index` | Parse repo into KuzuDB graph (18 node types, 7 edge types) |
+| `kkg index` | Parse repo into the graph store (18 node types, 7 edge types) |
 | `kkg embed` | Batch-embed functions and classes (local Jina v2, 768-dim) |
 | `kkg sync-check` | Report upstream commits not yet merged (see cadence below) |
 
@@ -173,19 +188,22 @@ per-command quirks.
 
 ## Standards & enforcement
 
-KeplerKG ships 24 code-quality rules that query the graph for structural problems linters can't catch:
+KeplerKG ships 29 code-quality rules that query the graph for structural problems linters can't catch:
 
 | Category | Rules | What they detect |
 |----------|-------|-----------------|
-| **Coupling** (4) | circular_imports, cross_file_private_access, excessive_fan_out, test_import_in_prod | Import cycles, private API misuse, high fan-out, test/prod boundary violations |
+| **Architecture** (4) | shallow_pass_through_function, single_adapter_seam, test_reaches_private_seam, wide_public_function_interface | Shallow modules, hypothetical seams, tests that reach past interfaces, and overly wide interfaces |
+| **Coupling** (4) | circular_imports, cross_file_private_access, excessive_fan_out, test_import_in_prod | Import cycles, private seam misuse, high fan-out, test/prod seam violations |
 | **Complexity** (4) | function_cyclomatic_complexity, function_too_long, class_too_large, parameter_count | Functions and classes that are too complex |
 | **Compliance** (8) | auth_bypass, unlogged_endpoint, sensitive_data_unprotected, hardcoded_secret_in_graph, admin_action_no_audit_trail, rate_limit_missing, separation_of_duties_violation, error_handler_leaks_internals | SOC 2 mapped compliance rules |
 | **Naming** (4) | inconsistent_naming, misleading_name, module_content_mismatch, suggest_better_name | Embedding-backed naming analysis |
 | **Dead code** (2) | unreferenced_public_function, unreferenced_public_class | Public symbols with zero callers in the graph |
-| **Clarity** (1) | missing_docstring_public | Public API without documentation |
+| **Clarity** (2) | missing_docstring_public, missing_public_reexport | Public interface documentation and package interface discoverability |
 | **Inheritance** (1) | deep_inheritance | Inheritance chains deeper than 4 levels |
 
-Every rule is backed by a Cypher query against the knowledge graph — not regex, not heuristics. The `evidence` field in each rule documents exactly what graph pattern proves the finding.
+Architecture rules encode the depth principles used by the code-simplifier skill: apply the deletion test to pass-through modules, keep tests at the same interface callers use, avoid single-adapter seams until real variation exists, and prefer smaller public interfaces that create leverage and locality.
+
+Every rule is backed by a Cypher query or embedding analysis against the knowledge graph. The `evidence` field in each rule documents what graph or embedding signal supports the finding; architecture rules are advisory signals to inspect, not automatic proof that an interface must change.
 
 ### Configuration
 
@@ -262,7 +280,7 @@ KeplerKG uses tree-sitter to parse 14 languages with full extraction of function
 
 ```
 src/
-  codegraphcontext/          # Graph indexer, KuzuDB driver, parsers (upstream)
+  codegraphcontext/          # Graph indexer, backend drivers (FalkorDB Lite default, KuzuDB/Neo4j opt-in), parsers (upstream)
   codegraphcontext_ext/      # KeplerKG extensions
     commands/                # CLI: search, review-packet, blast-radius, drift-check,
                              #      advise, audit, embed, viz-*, export, sync-check
@@ -273,13 +291,18 @@ src/
     config.py                # Config layer: reads [cgraph] from project.toml
     preflight.py             # Fail-closed storage check (zombie mount guard)
     viz_server.py            # HTTP server for dashboard + projector
-standards/                   # 12 YAML rule definitions + _exemptions.yaml
+standards/                   # YAML rule definitions + _exemptions.yaml
 schemas/                     # JSON Schema for every command output
 scripts/hooks/               # Claude Code enforcement hook scripts
 tests/                       # 575+ tests
 ```
 
-**Graph store:** KuzuDB (embedded, no server). 18 node tables, 7 relationship groups, HNSW indexes for ANN search.
+**Graph store:** FalkorDB Lite is the default embedded backend on Unix
+with Python 3.12+ (no server process, Unix-socket worker). KuzuDB
+(embedded, no server) is supported via `--database kuzudb` as an explicit
+alternative. Both backends expose 18 node tables and 7 relationship
+groups. ANN search uses HNSW when the backend supports it (Kuzu) and a
+portable linear embedding scan elsewhere (FalkorDB Lite).
 
 **Node uid format:** `{name}{absolute_path}{line_number}` — e.g., `authenticate/Users/dev/project/src/auth.py42`. Search results include both `file` (`relative_path:line`) and `relative_path` (`relative_path`) fields for programmatic consumers.
 

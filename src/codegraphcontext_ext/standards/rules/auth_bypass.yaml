@@ -1,0 +1,17 @@
+id: auth_bypass
+advisory_kind: auth_bypass
+severity: hard
+category: compliance
+summary: Request handler reaches data store without auth check in call chain.
+evidence: "Graph-backed: request handler Function (decorator matches Flask/FastAPI/Django HTTP patterns via framework resolver) has CALLS path to DB function (query/execute/find/save/delete) with no intermediate CALLS to auth function (authenticate/authorize/check_permission/verify_token/login_required)."
+query: |
+  MATCH (handler:Function)-[:CALLS*1..3]->(db_fn:Function)
+  WHERE ANY(d IN handler.decorators WHERE d CONTAINS 'action' OR d CONTAINS 'after_request' OR d CONTAINS 'api_route' OR d CONTAINS 'api_view' OR d CONTAINS 'before_request' OR d CONTAINS 'delete' OR d CONTAINS 'errorhandler' OR d CONTAINS 'get' OR d CONTAINS 'head' OR d CONTAINS 'options' OR d CONTAINS 'patch' OR d CONTAINS 'post' OR d CONTAINS 'put' OR d CONTAINS 'route' OR d CONTAINS 'websocket')
+    AND (db_fn.name CONTAINS 'query' OR db_fn.name CONTAINS 'execute' OR db_fn.name CONTAINS 'find' OR db_fn.name CONTAINS 'save' OR db_fn.name CONTAINS 'delete')
+    AND NOT handler.is_dependency
+    AND NOT EXISTS {
+      MATCH (handler)-[:CALLS*1..2]->(auth_fn:Function)
+      WHERE auth_fn.name CONTAINS 'auth' OR auth_fn.name CONTAINS 'permission' OR auth_fn.name CONTAINS 'verify_token' OR auth_fn.name CONTAINS 'login_required'
+    }
+  RETURN handler.uid, handler.name, handler.path, handler.line_number, db_fn.name AS metric
+suggestion: "{{name}} accesses data via {{metric_value}} without an auth check in the call chain."

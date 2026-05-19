@@ -1,0 +1,17 @@
+id: error_handler_leaks_internals
+advisory_kind: error_handler_leaks_internals
+severity: warn
+category: compliance
+summary: Error handler outputs exception details without sanitization.
+evidence: "Graph-backed: Function matching error-handler patterns (except/catch/error_handler/on_error) that CALLS output functions (render/respond/send) without calling sanitization (safe_error/sanitize/mask)."
+query: |
+  MATCH (handler:Function)-[:CALLS]->(output:Function)
+  WHERE (handler.name CONTAINS 'error_handler' OR handler.name CONTAINS 'on_error' OR handler.name CONTAINS 'handle_exception' OR handler.name CONTAINS 'exception_handler')
+    AND (output.name CONTAINS 'render' OR output.name CONTAINS 'respond' OR output.name CONTAINS 'send' OR output.name CONTAINS 'return')
+    AND NOT handler.is_dependency AND NOT handler.path CONTAINS '/tests/'
+    AND NOT EXISTS {
+      MATCH (handler)-[:CALLS]->(sanitize:Function)
+      WHERE sanitize.name CONTAINS 'safe_error' OR sanitize.name CONTAINS 'sanitize' OR sanitize.name CONTAINS 'mask'
+    }
+  RETURN handler.uid, handler.name, handler.path, handler.line_number, output.name AS metric
+suggestion: "{{name}} may leak exception internals via {{metric_value}} — sanitize before output (SOC 2 CC7.4)."

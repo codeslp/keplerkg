@@ -1,0 +1,17 @@
+id: rate_limit_missing
+advisory_kind: rate_limit_missing
+severity: warn
+category: compliance
+summary: Request handler calls external services without rate limiting.
+evidence: "Graph-backed: request handler Function CALLS external-service functions (requests.get/post, httpx, aiohttp, or DB write) without any rate-limit function (rate_limit/throttle/limiter) in the call chain."
+query: |
+  MATCH (handler:Function)-[:CALLS]->(ext:Function)
+  WHERE ANY(d IN handler.decorators WHERE d CONTAINS 'route' OR d CONTAINS 'api_view' OR d CONTAINS 'router')
+    AND (ext.name CONTAINS 'request' OR ext.name CONTAINS 'httpx' OR ext.name CONTAINS 'aiohttp' OR ext.name CONTAINS 'fetch')
+    AND NOT handler.is_dependency
+    AND NOT EXISTS {
+      MATCH (handler)-[:CALLS*1..2]->(limiter:Function)
+      WHERE limiter.name CONTAINS 'rate_limit' OR limiter.name CONTAINS 'throttle' OR limiter.name CONTAINS 'limiter'
+    }
+  RETURN handler.uid, handler.name, handler.path, handler.line_number, ext.name AS metric
+suggestion: "{{name}} calls external service {{metric_value}} without rate limiting — add throttling for SOC 2 CC6.6."

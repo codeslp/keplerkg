@@ -1,0 +1,20 @@
+id: deep_inheritance
+advisory_kind: deep_inheritance
+severity: warn
+category: inheritance
+summary: Class inheritance chain exceeds depth threshold.
+evidence: "Graph-backed: transitive INHERITS path length from leaf to root exceeds threshold."
+query: |
+  MATCH path = (leaf:Class)-[:INHERITS*3..]->(root:Class)
+  WHERE NOT leaf.is_dependency
+    AND NOT (root)-[:INHERITS]->()
+  WITH leaf, length(path) AS depth
+  ORDER BY depth DESC
+  WITH leaf, max(depth) AS max_depth
+  WHERE max_depth >= $warn
+  RETURN leaf.uid, leaf.name, leaf.path, leaf.line_number,
+         max_depth AS metric
+thresholds:
+  warn: 4
+  hard: 6
+suggestion: "{{name}} has an inheritance depth of {{metric_value}} — consider composition over inheritance."

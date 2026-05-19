@@ -1,0 +1,18 @@
+id: function_too_long
+advisory_kind: long_function
+severity: warn
+category: complexity
+summary: Function body exceeds line-count threshold.
+evidence: "Graph-backed: end_line - line_number computed from tree-sitter node positions stored on Function."
+query: |
+  MATCH (f:Function)
+  WHERE (f.end_line - f.line_number) > $warn
+    AND NOT f.path CONTAINS '/tests/'
+    AND NOT f.is_dependency
+  RETURN f.uid, f.name, f.path, f.line_number,
+         (f.end_line - f.line_number) AS metric
+thresholds:
+  warn: 50
+  hard: 100
+suggestion: "{{name}} is {{metric_value}} lines - move cohesive behavior behind a clearer module interface and keep internal seams private."
+exemptions: _exemptions.yaml

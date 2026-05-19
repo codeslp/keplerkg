@@ -680,6 +680,19 @@ def test_cli_list():
     assert payload["kind"] == "audit_list"
 
 
+def test_audit_list_uses_packaged_standards_outside_source_checkout(tmp_path, monkeypatch):
+    from codegraphcontext_ext.commands import audit
+
+    monkeypatch.chdir(tmp_path)
+
+    payload = audit.build_list_payload()
+    ids = {rule["id"] for rule in payload["standards"]}
+    assert "shallow_pass_through_function" in ids
+    assert "single_adapter_seam" in ids
+    assert "test_reaches_private_seam" in ids
+    assert "wide_public_function_interface" in ids
+
+
 def test_audit_registered():
     from codegraphcontext_ext.cli import register_extensions
     import typer

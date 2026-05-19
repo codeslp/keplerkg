@@ -1,0 +1,18 @@
+id: separation_of_duties_violation
+advisory_kind: separation_of_duties_violation
+severity: warn
+category: compliance
+summary: Single module contains both infrastructure and business logic.
+evidence: "Graph-backed: same File CONTAINS both deployment/infrastructure functions (deploy/migrate/provision) AND business logic functions that CALL domain model classes."
+query: |
+  MATCH (file:File)-[:CONTAINS]->(infra:Function)
+  WHERE (infra.name CONTAINS 'deploy' OR infra.name CONTAINS 'migrate' OR infra.name CONTAINS 'provision' OR infra.name CONTAINS 'teardown')
+    AND NOT file.is_dependency AND NOT file.path CONTAINS '/tests/'
+  WITH file, collect(infra.name) AS infra_fns
+  MATCH (file)-[:CONTAINS]->(biz:Function)-[:CALLS]->(model:Class)
+  WHERE NOT biz.name CONTAINS 'deploy' AND NOT biz.name CONTAINS 'migrate'
+  WITH file, infra_fns, collect(DISTINCT biz.name) AS biz_fns
+  WHERE size(infra_fns) >= 1 AND size(biz_fns) >= 1
+  RETURN file.uid, file.name, file.path, NULL AS line_number,
+         size(infra_fns) + size(biz_fns) AS metric
+suggestion: "{{name}} mixes infrastructure ({{metric_value}} functions) with business logic — separate for SOC 2 CC6.3."

@@ -1,0 +1,13 @@
+id: inconsistent_naming
+advisory_kind: inconsistent_naming
+severity: warn
+category: naming
+summary: Semantically similar functions with dissimilar names.
+detection_method: embedding
+evidence: "Embedding-backed: cosine(behavior_A, behavior_B) > 0.85 but cosine(name_A, name_B) < 0.5. Two functions do similar work but their names disagree."
+thresholds:
+  behavior_similarity: 0.85
+  name_dissimilarity: 0.5
+  max_nodes: 2000
+suggestion: "{{name}} does similar work to {{metric_value}} but uses a dissimilar name."
+exemptions: _exemptions.yaml

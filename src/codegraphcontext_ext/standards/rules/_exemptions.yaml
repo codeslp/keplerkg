@@ -1,0 +1,41 @@
+# Shared exemptions for cgraph quality standards.
+# Rules that reference "exemptions: _exemptions.yaml" inject these
+# patterns into their WHERE clause to skip framework entrypoints,
+# test code, and known false-positive paths.
+
+decorators:
+  python:
+    - pytest.fixture
+    - pytest.mark.*
+    - app.route
+    - typer.command
+    - click.command
+    - dataclass
+    - property
+    - staticmethod
+    - classmethod
+    - abstractmethod
+  typescript:
+    - Injectable
+    - Controller
+    - getServerSideProps
+  rust:
+    - test
+    - tokio::test
+    - cfg(test)
+    - derive
+
+function_name_patterns:
+  go:
+    - "^Test"
+    - "^Benchmark"
+    - "^Example"
+
+paths:
+  - "**/tests/**"
+  - "**/test/**"
+  - "**/*_test.*"
+  - "**/__pycache__/**"
+  - "**/node_modules/**"
+  - "**/vendor/**"
+  - "**/.venv/**"

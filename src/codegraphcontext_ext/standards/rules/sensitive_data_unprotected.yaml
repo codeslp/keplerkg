@@ -1,0 +1,20 @@
+id: sensitive_data_unprotected
+advisory_kind: sensitive_data_unprotected
+severity: hard
+category: compliance
+summary: Function handles sensitive data and outputs it without sanitization.
+evidence: "Graph-backed: Function CALLS both a sensitive-data function (password/secret/token/credential) AND an output function (render/respond/send/serialize) without calling sanitization (mask/redact/encrypt/hash/sanitize) in between."
+query: |
+  MATCH (fn:Function)-[:CALLS]->(sensitive:Function)
+  WHERE (sensitive.name CONTAINS 'password' OR sensitive.name CONTAINS 'secret' OR sensitive.name CONTAINS 'token' OR sensitive.name CONTAINS 'credential' OR sensitive.name CONTAINS 'api_key')
+    AND NOT fn.is_dependency AND NOT fn.path CONTAINS '/tests/'
+  WITH fn
+  MATCH (fn)-[:CALLS]->(output:Function)
+  WHERE (output.name CONTAINS 'render' OR output.name CONTAINS 'respond' OR output.name CONTAINS 'send' OR output.name CONTAINS 'serialize' OR output.name CONTAINS 'to_json')
+  WITH fn
+  WHERE NOT EXISTS {
+    MATCH (fn)-[:CALLS]->(sanitize:Function)
+    WHERE sanitize.name CONTAINS 'mask' OR sanitize.name CONTAINS 'redact' OR sanitize.name CONTAINS 'encrypt' OR sanitize.name CONTAINS 'hash' OR sanitize.name CONTAINS 'sanitize'
+  }
+  RETURN fn.uid, fn.name, fn.path, fn.line_number, NULL AS metric
+suggestion: "{{name}} handles sensitive data and outputs without sanitization — add masking/encryption for SOC 2 CC6.7."
